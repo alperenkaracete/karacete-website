@@ -25,6 +25,9 @@ let bombs = [];
 let explosions = [];
 let map = [];
 
+// YENİ: Yeniden başlatma oylaması
+let restartVotes = new Set();
+
 // --- SPRITE KOORDİNATLARI (Görsele Göre Milimetrik Ayarlandı) ---
 const spriteSheet = new Image();
 spriteSheet.src = 'assets/bomb_party_v4.png'; // Yol düzeltildi (Aynı klasörde olduğunu varsayıyoruz)
@@ -94,7 +97,13 @@ function connectWebSocket() {
         else if (data.type === 'bomb') { bombs.push(data.bombInfo); triggerExplosion(data.bombInfo, false); }
         else if (data.type === 'map_update') { map = data.map; }
         else if (data.type === 'player_disconnect') { delete otherPlayers[data.id]; }
-        else if (data.type === 'player_death') { delete otherPlayers[data.id]; }
+        else if (data.type === 'player_death') { 
+            otherPlayers[data.id].isDead = true; 
+        }
+        else if (data.type === 'restart_vote') {
+            restartVotes.add(data.id);
+            updateRestartButton();
+        }
     };
 }
 
@@ -108,6 +117,13 @@ function sendMapUpdate() {
     if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'map_update', map: map }));
     }
+}
+
+// YENİ: Yeniden başlatma butonunu güncelle
+function updateRestartButton() {
+    const totalPlayers = Object.keys(otherPlayers).length + 1;
+    const button = document.getElementById('restart-btn');
+    button.textContent = `Yeniden Başlat (${restartVotes.size}/${totalPlayers})`;
 }
 
 // --- ÇİZİM İŞLEMLERİ ---
@@ -132,6 +148,9 @@ function drawMap() {
 }
 
 function drawPlayer(p) {
+    // Ölü oyuncuları çizme
+    if (p.isDead) return;
+    
     ctx.drawImage(spriteSheet, SPRITES.PLAYER_DOWN.sx, SPRITES.PLAYER_DOWN.sy, SPRITES.PLAYER_DOWN.width, SPRITES.PLAYER_DOWN.height, p.x, p.y, GRID_SIZE, GRID_SIZE);
     
     if (p.name) {
@@ -165,25 +184,6 @@ function gameLoop() {
         if(e.type === 'horizontal') s = SPRITES.EXP_HORIZ;
         if(e.type === 'vertical') s = SPRITES.EXP_VERT;
         ctx.drawImage(spriteSheet, s.sx, s.sy, s.width, s.height, e.x, e.y, GRID_SIZE, GRID_SIZE);
-    }
-    
-    // OYUNCU ÖLDÜYSE GAME OVER EKRANINI ÇİZ (İzleyici Modu)
-    if (player.isDead) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.fillStyle = 'red';
-        ctx.font = 'bold 50px Arial';
-        ctx.textAlign = 'center';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 4;
-        ctx.strokeText("GAME OVER", canvas.width/2, canvas.height/2);
-        ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        
-        ctx.fillStyle = 'white';
-        ctx.font = '24px Arial';
-        ctx.strokeText("İzleyici Modundasınız", canvas.width/2, canvas.height/2 + 40);
-        ctx.fillText("İzleyici Modundasınız", canvas.width/2, canvas.height/2 + 40);
     }
     
     requestAnimationFrame(gameLoop);
@@ -234,6 +234,9 @@ function checkFireCollision() {
 
 function die() {
     player.isDead = true;
+    
+    // İzleyici arayüzünü göster
+    document.getElementById('spectator-ui').style.display = 'block';
     
     // Ölüm bilgisini WebSocket üzerinden diğer oyunculara bildir ki seni ekrandan silsinler
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -297,6 +300,42 @@ function triggerExplosion(bombInfo, isLocal) {
     }, 3000); // Bomba 3 saniyede patlar
 }
 
+// YENİ: Oyunu sıfırla
+function resetGame() {
+    // Tüm oyuncuları yeniden başlat
+    player.isDead = false;
+    player.x = GRID_SIZE;
+    player.y = GRID_SIZE;
+    
+    for (const id in otherPlayers) {
+        otherPlayers[id].isDead = false;
+        otherPlayers[id].x = GRID_SIZE;
+        otherPlayers[id].y = GRID_SIZE;
+    }
+    
+    // Haritayı sıfırla
+    createMap();
+    
+    // Bombaları ve patlamaları temizle
+    bombs = [];
+    explosions = [];
+    
+    // Yeniden başlatma oylamasını sıfırla
+    restartVotes.clear();
+    
+    // İzleyici arayüzünü gizle
+    document.getElementById('spectator-ui').style.display = 'none';
+    
+    // Haritayı senkronize et (sadece en küçük ID'li oyuncu yapar)
+    const playerIds = Object.keys(otherPlayers);
+    const allPlayerIds = [...playerIds, player.id];
+    allPlayerIds.sort();
+    
+    if (allPlayerIds[0] === player.id) {
+        sendMapUpdate();
+    }
+}
+
 // --- KONTROLLER ---
 document.addEventListener('keydown', function(e) {
     if(document.getElementById('welcome-screen').style.display !== 'none') return; // Menüdeyken tuşları engelle
@@ -308,6 +347,21 @@ document.addEventListener('keydown', function(e) {
         case 'ArrowLeft': movePlayer(-GRID_SIZE, 0); e.preventDefault(); break;
         case 'ArrowRight': movePlayer(GRID_SIZE, 0); e.preventDefault(); break;
         case ' ': placeBomb(); e.preventDefault(); break; // Boşluk tuşu ile bomba koy
+    }
+});
+
+// YENİ: Yeniden başlatma butonu olayı
+document.getElementById('restart-btn').addEventListener('click', function() {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'restart_vote', id: player.id }));
+        restartVotes.add(player.id);
+        updateRestartButton();
+        
+        // Eğer oyuncu sayısı tamamsa oyunu sıfırla
+        const totalPlayers = Object.keys(otherPlayers).length + 1;
+        if (restartVotes.size >= totalPlayers) {
+            resetGame();
+        }
     }
 });
 

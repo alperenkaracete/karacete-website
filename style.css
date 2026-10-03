@@ -91,6 +91,21 @@ body {
     margin: 5px 0;
 }
 
+#restart-btn {
+    padding: 12px 30px;
+    background-color: #FF5722;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#restart-btn:hover {
+    background-color: #E64A19;
+}
+
 @media (max-width: 850px) {
     #game-container {
         padding: 15px;
