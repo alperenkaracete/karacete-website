@@ -17,7 +17,9 @@ let player = {
     height: GRID_SIZE, 
     color: '#00FF00',
     name: '',
-    isDead: false // YENİ: Oyuncunun hayatta olup olmadığını takip edeceğiz
+    isDead: false, // YENİ: Oyuncunun hayatta olup olmadığını takip edeceğiz
+    direction: 'down', // YENİ: Karakterin yönü
+    animFrame: 0 // YENİ: Animasyon karesi
 };
 
 let otherPlayers = {};
@@ -151,7 +153,16 @@ function drawPlayer(p) {
     // Ölü oyuncuları çizme
     if (p.isDead) return;
     
-    ctx.drawImage(spriteSheet, SPRITES.PLAYER_DOWN.sx, SPRITES.PLAYER_DOWN.sy, SPRITES.PLAYER_DOWN.width, SPRITES.PLAYER_DOWN.height, p.x, p.y, GRID_SIZE, GRID_SIZE);
+    // Yeni animasyon çizimi
+    const sx = p.animFrame * 16; // Animasyon karesi X koordinatı
+    let sy = 224; // Varsayılan aşağı yön
+    
+    // Yöne göre Y koordinatını belirle
+    if (p.direction === 'right') sy = 240;
+    else if (p.direction === 'up') sy = 256;
+    else if (p.direction === 'left') sy = 272;
+    
+    ctx.drawImage(spriteSheet, sx, sy, 16, 16, p.x, p.y, GRID_SIZE, GRID_SIZE);
     
     if (p.name) {
         ctx.fillStyle = 'white';
@@ -306,11 +317,15 @@ function resetGame() {
     player.isDead = false;
     player.x = GRID_SIZE;
     player.y = GRID_SIZE;
+    player.direction = 'down';
+    player.animFrame = 0;
     
     for (const id in otherPlayers) {
         otherPlayers[id].isDead = false;
         otherPlayers[id].x = GRID_SIZE;
         otherPlayers[id].y = GRID_SIZE;
+        otherPlayers[id].direction = 'down';
+        otherPlayers[id].animFrame = 0;
     }
     
     // Haritayı sıfırla
@@ -342,10 +357,34 @@ document.addEventListener('keydown', function(e) {
     if(player.isDead) return; // YENİ: Oyuncu ölüyse hiçbir tuş çalışmaz
     
     switch (e.key) {
-        case 'ArrowUp': movePlayer(0, -GRID_SIZE); e.preventDefault(); break;
-        case 'ArrowDown': movePlayer(0, GRID_SIZE); e.preventDefault(); break;
-        case 'ArrowLeft': movePlayer(-GRID_SIZE, 0); e.preventDefault(); break;
-        case 'ArrowRight': movePlayer(GRID_SIZE, 0); e.preventDefault(); break;
+        case 'ArrowUp': 
+            player.direction = 'up';
+            player.animFrame = (player.animFrame + 1) % 3;
+            movePlayer(0, -GRID_SIZE); 
+            sendPosition();
+            e.preventDefault(); 
+            break;
+        case 'ArrowDown': 
+            player.direction = 'down';
+            player.animFrame = (player.animFrame + 1) % 3;
+            movePlayer(0, GRID_SIZE); 
+            sendPosition();
+            e.preventDefault(); 
+            break;
+        case 'ArrowLeft': 
+            player.direction = 'left';
+            player.animFrame = (player.animFrame + 1) % 3;
+            movePlayer(-GRID_SIZE, 0); 
+            sendPosition();
+            e.preventDefault(); 
+            break;
+        case 'ArrowRight': 
+            player.direction = 'right';
+            player.animFrame = (player.animFrame + 1) % 3;
+            movePlayer(GRID_SIZE, 0); 
+            sendPosition();
+            e.preventDefault(); 
+            break;
         case ' ': placeBomb(); e.preventDefault(); break; // Boşluk tuşu ile bomba koy
     }
 });
