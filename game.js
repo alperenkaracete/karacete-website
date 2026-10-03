@@ -1,274 +1,249 @@
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 
+// MATEMATİK DÜZELTİLDİ: 800x608 (İkisi de 32'ye tam bölünür: 25x19 grid)
+canvas.width = 800;
+canvas.height = 608;
+
+const GRID_SIZE = 32;
+const MAP_WIDTH = canvas.width / GRID_SIZE;
+const MAP_HEIGHT = canvas.height / GRID_SIZE;
+
 let player = { 
     id: "oyuncu_" + Math.floor(Math.random() * 10000),
-    x: 50, 
-    y: 50, 
-    width: 32, 
-    height: 32, 
+    x: GRID_SIZE,
+    y: GRID_SIZE,
+    width: GRID_SIZE, 
+    height: GRID_SIZE, 
     color: '#00FF00',
-    name: ''
+    name: '',
+    isDead: false // YENİ: Oyuncunun hayatta olup olmadığını takip edeceğiz
 };
+
 let otherPlayers = {};
 let bombs = [];
 let explosions = [];
 let map = [];
 
-// Sprite sheet ve sabitler
+// --- SPRITE KOORDİNATLARI (Görsele Göre Milimetrik Ayarlandı) ---
 const spriteSheet = new Image();
-spriteSheet.src = 'assets/bomb_party_v4.png';
+spriteSheet.src = 'assets/bomb_party_v4.png'; // Yol düzeltildi (Aynı klasörde olduğunu varsayıyoruz)
 
 const SPRITES = {
-    GRASS: { sx: 0, sy: 0, width: 32, height: 32 },
-    WALL: { sx: 32, sy: 0, width: 32, height: 32 },
-    BOX: { sx: 64, sy: 0, width: 32, height: 32 },
-    BOMB: { sx: 96, sy: 0, width: 32, height: 32 },
-    EXPLOSION_CENTER: { sx: 128, sy: 0, width: 32, height: 32 },
-    EXPLOSION_HORIZONTAL: { sx: 160, sy: 0, width: 32, height: 32 },
-    EXPLOSION_VERTICAL: { sx: 192, sy: 0, width: 32, height: 32 },
-    PLAYER_DOWN: { sx: 0, sy: 32, width: 32, height: 32 }
+    WALL: { sx: 0, sy: 0, width: 16, height: 16 },         // Dış Duvar ve İç Kolonlar (Koyu Gri)
+    GRASS: { sx: 32, sy: 16, width: 16, height: 16 },      // Temiz Çim
+    
+    // İŞTE DÜZELTİLEN SATIR (Açık Gri Kırılabilir Kutu)
+    BOX: { sx: 32, sy: 32, width: 16, height: 16 },        
+    
+    // Karakter
+    PLAYER_DOWN: { sx: 0, sy: 224, width: 16, height: 16 },
+    
+    // Bomba ve Patlamalar
+    BOMB: { sx: 64, sy: 288, width: 16, height: 16 },
+    EXP_CENTER: { sx: 224, sy: 304, width: 16, height: 16 }, 
+    EXP_HORIZ: { sx: 16, sy: 288, width: 16, height: 16 },   
+    EXP_VERT: { sx: 224, sy: 224, width: 16, height: 16 }    
 };
 
-// Izgara boyutları
-const GRID_SIZE = 32;
-const MAP_WIDTH = canvas.width / GRID_SIZE;
-const MAP_HEIGHT = canvas.height / GRID_SIZE;
-
-// Harita oluşturma
+// --- HARİTA OLUŞTURMA (Ayrık Kutu Kurallı) ---
 function createMap() {
     map = [];
-    
-    // Başlangıç haritası
     for (let y = 0; y < MAP_HEIGHT; y++) {
         map[y] = [];
         for (let x = 0; x < MAP_WIDTH; x++) {
-            // Sabit duvarları satranç tahtası gibi yerleştir
-            if ((x % 2 === 0 && y % 2 === 0) || 
-                (x % 2 === 1 && y % 2 === 1)) {
-                map[y][x] = 1; // Sabit duvar
-            } else {
+            
+            if (x === 0 || x === MAP_WIDTH - 1 || y === 0 || y === MAP_HEIGHT - 1) {
+                map[y][x] = 1; // Dış Çerçeve
+            } 
+            else if (x % 2 === 0 && y % 2 === 0) {
+                map[y][x] = 1; // Sabit Kolonlar
+            } 
+            else if (Math.random() < 0.6) { // Kutular yan yana gelmeyeceği için ihtimali biraz artırdık
+                // Yanında veya yukarısında kutu var mı kontrolü
+                let hasAdjacentBox = false;
+                if (x > 0 && map[y][x-1] === 2) hasAdjacentBox = true;
+                if (y > 0 && map[y-1][x] === 2) hasAdjacentBox = true;
+                
+                if (!hasAdjacentBox) {
+                    map[y][x] = 2; // Etrafı boşsa kutu koy
+                } else {
+                    map[y][x] = 0; // Yanında kutu varsa burayı boş bırak
+                }
+            } 
+            else {
                 map[y][x] = 0; // Zemin
             }
         }
     }
     
-    // Kırılabilir kutuları rastgele yerleştir
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-        for (let x = 0; x < MAP_WIDTH; x++) {
-            // Oyuncu başlangıç noktalarını koru
-            if ((x === 0 && y === 0) || 
-                (x === MAP_WIDTH - 1 && y === MAP_HEIGHT - 1)) {
-                map[y][x] = 0; // Zemin
-            } else if (map[y][x] === 0 && Math.random() < 0.3) {
-                map[y][x] = 2; // Kırılabilir kutu
-            }
-        }
-    }
+    // Oyuncuların doğma noktalarını temizle
+    map[1][1] = 0; map[1][2] = 0; map[2][1] = 0;
 }
 
-// Oyun başlatma
-function initGame() {
-    createMap();
-    connectWebSocket();
-    gameLoop();
-}
-
-// --- WEBSOCKET BAĞLANTISI ---
+// --- WEBSOCKET ---
 let socket = null;
-
 function connectWebSocket() {
-    // WebSocket bağlantısı sadece oyun başladığında kurulur
     socket = new WebSocket('wss://compassionate-alignment-production-165c.up.railway.app/oyun-odasi');
     
-    socket.onopen = function() {
-        console.log("Spring Boot sunucusuna bağlanıldı!");
-        sendPosition(); // Bağlanınca ilk konumumuzu sunucuya gönder
-    };
-
+    socket.onopen = function() { sendPosition(); };
+    
     socket.onmessage = function(event) {
         const data = JSON.parse(event.data);
-        
-        // Eğer gelen mesaj bir oyuncu hareketi ise:
-        if (data.type === 'move') {
-            otherPlayers[data.id] = data.playerInfo;
-        }
-        // Eğer gelen mesaj bomba ise:
-        else if (data.type === 'bomb') {
-            bombs.push(data.bombInfo);
-            triggerExplosion(data.bombInfo);
-        }
-        // Harita güncellemesi
-        else if (data.type === 'map_update') {
-            map = data.map;
-        }
-        // Oyuncu bağlantısı kesildi
-        else if (data.type === 'player_disconnect') {
-            delete otherPlayers[data.id];
-        }
-    };
-    
-    socket.onclose = function() {
-        console.log("WebSocket bağlantısı kapatıldı");
-        // Bağlantı kesildiğinde oyuncuyu sil
-        if (otherPlayers[player.id]) {
-            delete otherPlayers[player.id];
-        }
+        if (data.type === 'move') { otherPlayers[data.id] = data.playerInfo; }
+        else if (data.type === 'bomb') { bombs.push(data.bombInfo); triggerExplosion(data.bombInfo, false); }
+        else if (data.type === 'map_update') { map = data.map; }
+        else if (data.type === 'player_disconnect') { delete otherPlayers[data.id]; }
+        else if (data.type === 'player_death') { delete otherPlayers[data.id]; }
     };
 }
 
 function sendPosition() {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            type: 'move',
-            id: player.id,
-            playerInfo: player
-        }));
+        socket.send(JSON.stringify({ type: 'move', id: player.id, playerInfo: player }));
     }
 }
 
 function sendMapUpdate() {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            type: 'map_update',
-            map: map
-        }));
+        socket.send(JSON.stringify({ type: 'map_update', map: map }));
     }
 }
-// -----------------------------
 
-// Harita çizimi
+// --- ÇİZİM İŞLEMLERİ ---
 function drawMap() {
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
-            const tileType = map[y][x];
-            let sprite;
+            // Şeffaflık sorununu önlemek için HER HÜCREYE önce çim çiziyoruz
+            ctx.drawImage(spriteSheet, SPRITES.GRASS.sx, SPRITES.GRASS.sy, SPRITES.GRASS.width, SPRITES.GRASS.height, x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
             
-            switch (tileType) {
-                case 0: // Zemin
-                    sprite = SPRITES.GRASS;
-                    break;
-                case 1: // Sabit duvar
-                    sprite = SPRITES.WALL;
-                    break;
-                case 2: // Kırılabilir kutu
-                    sprite = SPRITES.BOX;
-                    break;
-            }
+            // Eğer o hücrede Duvar veya Kutu varsa çimin üstüne çiziyoruz
+            const tileType = map[y][x];
+            let sprite = null;
+            
+            if (tileType === 1) sprite = SPRITES.WALL;
+            else if (tileType === 2) sprite = SPRITES.BOX;
             
             if (sprite) {
-                ctx.drawImage(
-                    spriteSheet,
-                    sprite.sx, sprite.sy, sprite.width, sprite.height,
-                    x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE
-                );
+                ctx.drawImage(spriteSheet, sprite.sx, sprite.sy, sprite.width, sprite.height, x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
             }
         }
     }
 }
 
-// Oyuncu çizimi
-function drawPlayer(x, y, color, name) {
-    // Oyuncu sprite'ını çiz
-    ctx.drawImage(
-        spriteSheet,
-        SPRITES.PLAYER_DOWN.sx, SPRITES.PLAYER_DOWN.sy, SPRITES.PLAYER_DOWN.width, SPRITES.PLAYER_DOWN.height,
-        x, y, GRID_SIZE, GRID_SIZE
-    );
+function drawPlayer(p) {
+    ctx.drawImage(spriteSheet, SPRITES.PLAYER_DOWN.sx, SPRITES.PLAYER_DOWN.sy, SPRITES.PLAYER_DOWN.width, SPRITES.PLAYER_DOWN.height, p.x, p.y, GRID_SIZE, GRID_SIZE);
     
-    // Oyuncu ismini karakterin üstüne yaz
-    if (name) {
+    if (p.name) {
         ctx.fillStyle = 'white';
-        ctx.font = '12px Arial';
+        ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(name, x + GRID_SIZE/2, y - 5);
+        // İsim okunabilsin diye arkasına siyah gölge (stroke) ekliyoruz
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeText(p.name, p.x + GRID_SIZE/2, p.y - 5);
+        ctx.fillText(p.name, p.x + GRID_SIZE/2, p.y - 5);
     }
 }
 
-// Bomba çizimi
-function drawBomb(x, y) {
-    ctx.drawImage(
-        spriteSheet,
-        SPRITES.BOMB.sx, SPRITES.BOMB.sy, SPRITES.BOMB.width, SPRITES.BOMB.height,
-        x, y, GRID_SIZE, GRID_SIZE
-    );
-}
-
-// Patlama çizimi
-function drawExplosion(x, y, type) {
-    let sprite;
-    
-    switch (type) {
-        case 'center':
-            sprite = SPRITES.EXPLOSION_CENTER;
-            break;
-        case 'horizontal':
-            sprite = SPRITES.EXPLOSION_HORIZONTAL;
-            break;
-        case 'vertical':
-            sprite = SPRITES.EXPLOSION_VERTICAL;
-            break;
-    }
-    
-    if (sprite) {
-        ctx.drawImage(
-            spriteSheet,
-            sprite.sx, sprite.sy, sprite.width, sprite.height,
-            x, y, GRID_SIZE, GRID_SIZE
-        );
-    }
-}
-
-// Çarpışma kontrolü
-function checkCollision(x, y) {
-    const gridX = Math.floor(x / GRID_SIZE);
-    const gridY = Math.floor(y / GRID_SIZE);
-    
-    // Harita sınırlarını kontrol et
-    if (gridX < 0 || gridX >= MAP_WIDTH || gridY < 0 || gridY >= MAP_HEIGHT) {
-        return true;
-    }
-    
-    // Engel var mı kontrol et
-    const tileType = map[gridY][gridX];
-    return tileType === 1 || tileType === 2; // Sabit duvar veya kutu
-}
-
-// Oyun döngüsü
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Haritayı çiz
     drawMap();
     
-    // Oyuncuyu çiz
-    drawPlayer(player.x, player.y, player.color, player.name);
-    
-    // Diğer oyuncuları çiz
-    for (const id in otherPlayers) {
-        const otherPlayer = otherPlayers[id];
-        drawPlayer(otherPlayer.x, otherPlayer.y, otherPlayer.color, otherPlayer.name);
+    // Sadece hayattaysa oyuncuyu çiz ve ateş kontrolü yap
+    if (!player.isDead) {
+        drawPlayer(player);
+        checkFireCollision();
     }
     
-    // Bombaları çiz
-    for (const bomb of bombs) {
-        drawBomb(bomb.x, bomb.y);
+    for (const id in otherPlayers) { drawPlayer(otherPlayers[id]); }
+    
+    for (const b of bombs) { ctx.drawImage(spriteSheet, SPRITES.BOMB.sx, SPRITES.BOMB.sy, SPRITES.BOMB.width, SPRITES.BOMB.height, b.x, b.y, GRID_SIZE, GRID_SIZE); }
+    for (const e of explosions) {
+        let s = SPRITES.EXP_CENTER;
+        if(e.type === 'horizontal') s = SPRITES.EXP_HORIZ;
+        if(e.type === 'vertical') s = SPRITES.EXP_VERT;
+        ctx.drawImage(spriteSheet, s.sx, s.sy, s.width, s.height, e.x, e.y, GRID_SIZE, GRID_SIZE);
     }
     
-    // Patlamaları çiz
-    for (const explosion of explosions) {
-        drawExplosion(explosion.x, explosion.y, explosion.type);
+    // OYUNCU ÖLDÜYSE GAME OVER EKRANINI ÇİZ (İzleyici Modu)
+    if (player.isDead) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = 'red';
+        ctx.font = 'bold 50px Arial';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 4;
+        ctx.strokeText("GAME OVER", canvas.width/2, canvas.height/2);
+        ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '24px Arial';
+        ctx.strokeText("İzleyici Modundasınız", canvas.width/2, canvas.height/2 + 40);
+        ctx.fillText("İzleyici Modundasınız", canvas.width/2, canvas.height/2 + 40);
     }
     
     requestAnimationFrame(gameLoop);
 }
 
-// Oyuncu hareketi
+// --- ÇARPIŞMA KONTROLÜ (Bomba Engeli Eklendi) ---
+function checkCollision(x, y) {
+    const gridX = Math.floor(x / GRID_SIZE);
+    const gridY = Math.floor(y / GRID_SIZE);
+    
+    // 1. Harita Sınırı Kontrolü
+    if (gridX < 0 || gridX >= MAP_WIDTH || gridY < 0 || gridY >= MAP_HEIGHT) return true;
+    
+    // 2. Duvar ve Kutu Kontrolü
+    if (map[gridY][gridX] === 1 || map[gridY][gridX] === 2) return true;
+    
+    // 3. Bomba Kontrolü (Gidilecek hedefte bomba var mı?)
+    for (const b of bombs) {
+        const bombGridX = Math.floor(b.x / GRID_SIZE);
+        const bombGridY = Math.floor(b.y / GRID_SIZE);
+        
+        if (gridX === bombGridX && gridY === bombGridY) {
+            return true; // Hedefte bomba varsa geçiş yasak!
+        }
+    }
+    
+    return false; // Engel yoksa harekete izin ver
+}
+
+// --- ÖLÜM MEKANİĞİ ---
+function checkFireCollision() {
+    if (player.isDead) return;
+
+    const gridX = Math.floor(player.x / GRID_SIZE);
+    const gridY = Math.floor(player.y / GRID_SIZE);
+
+    for (const e of explosions) {
+        const expGridX = Math.floor(e.x / GRID_SIZE);
+        const expGridY = Math.floor(e.y / GRID_SIZE);
+        
+        // Eğer oyuncunun koordinatları ile ateşin koordinatları eşleşirse ölür
+        if (gridX === expGridX && gridY === expGridY) {
+            die();
+            break;
+        }
+    }
+}
+
+function die() {
+    player.isDead = true;
+    
+    // Ölüm bilgisini WebSocket üzerinden diğer oyunculara bildir ki seni ekrandan silsinler
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'player_death', id: player.id }));
+    }
+}
+
 function movePlayer(dx, dy) {
     const newX = player.x + dx;
     const newY = player.y + dy;
-    
-    // Çarpışma kontrolü
     if (!checkCollision(newX, newY)) {
         player.x = newX;
         player.y = newY;
@@ -276,147 +251,79 @@ function movePlayer(dx, dy) {
     }
 }
 
-// Bomba yerleştirme
 function placeBomb() {
-    const bombInfo = { 
-        x: Math.floor(player.x / GRID_SIZE) * GRID_SIZE,
-        y: Math.floor(player.y / GRID_SIZE) * GRID_SIZE,
-        id: Date.now()
-    };
-    
-    // Bomba konumunu kontrol et (zemin olmalı)
-    const gridX = Math.floor(bombInfo.x / GRID_SIZE);
-    const gridY = Math.floor(bombInfo.y / GRID_SIZE);
-    
-    if (map[gridY][gridX] === 0) {
-        bombs.push(bombInfo);
-        triggerExplosion(bombInfo);
-        
-        // Bombayı diğer oyunculara gönder
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-                type: 'bomb',
-                bombInfo: bombInfo
-            }));
-        }
+    const b = { x: player.x, y: player.y, id: Date.now() };
+    bombs.push(b);
+    triggerExplosion(b, true);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'bomb', bombInfo: b }));
     }
 }
 
-// Patlama mekanikleri
-function triggerExplosion(bombInfo) {
-    const gridX = Math.floor(bombInfo.x / GRID_SIZE);
-    const gridY = Math.floor(bombInfo.y / GRID_SIZE);
-    
-    // Patlama merkezi
-    explosions.push({ x: bombInfo.x, y: bombInfo.y, type: 'center' });
-    
-    // Patlama ışınları (yukarı, aşağı, sağ, sol)
-    const directions = [
-        { dx: 0, dy: -1 }, // yukarı
-        { dx: 0, dy: 1 },  // aşağı
-        { dx: 1, dy: 0 },  // sağ
-        { dx: -1, dy: 0 }  // sol
-    ];
-    
-    // Patlama menzili
-    const explosionRange = 2;
-    
-    for (const dir of directions) {
-        for (let i = 1; i <= explosionRange; i++) {
-            const checkX = gridX + (dir.dx * i);
-            const checkY = gridY + (dir.dy * i);
-            
-            // Harita sınırlarını kontrol et
-            if (checkX < 0 || checkX >= MAP_WIDTH || checkY < 0 || checkY >= MAP_HEIGHT) {
-                break;
-            }
-            
-            const tileType = map[checkY][checkX];
-            
-            // Sabit duvara çarparsa patlama durur
-            if (tileType === 1) {
-                break;
-            }
-            
-            // Kırılabilir kutuya çarparsa kutuyu yok et
-            if (tileType === 2) {
-                map[checkY][checkX] = 0; // Kutuyu zemine dönüştür
-                sendMapUpdate(); // Haritayı senkronize et
-                break;
-            }
-            
-            // Patlama ışını çiz
-            const explosionX = checkX * GRID_SIZE;
-            const explosionY = checkY * GRID_SIZE;
-            
-            // Yön bazlı patlama tipi belirle
-            let type = 'horizontal';
-            if (dir.dx === 0) {
-                type = 'vertical';
-            }
-            
-            explosions.push({ x: explosionX, y: explosionY, type: type });
-        }
-    }
-    
-    // Patlamayı sil
+function triggerExplosion(bombInfo, isLocal) {
     setTimeout(() => {
-        explosions = explosions.filter(e => e.x !== bombInfo.x || e.y !== bombInfo.y);
+        const gridX = Math.floor(bombInfo.x / GRID_SIZE);
+        const gridY = Math.floor(bombInfo.y / GRID_SIZE);
         
-        // Bombayı sil
+        explosions.push({ x: bombInfo.x, y: bombInfo.y, type: 'center' });
+        
+        const dirs = [{dx:0, dy:-1, t:'vertical'}, {dx:0, dy:1, t:'vertical'}, {dx:1, dy:0, t:'horizontal'}, {dx:-1, dy:0, t:'horizontal'}];
+        
+        for (const d of dirs) {
+            for (let i = 1; i <= 2; i++) {
+                const cx = gridX + (d.dx * i);
+                const cy = gridY + (d.dy * i);
+                
+                if (cx < 0 || cx >= MAP_WIDTH || cy < 0 || cy >= MAP_HEIGHT) break;
+                if (map[cy][cx] === 1) break; // Sabit duvar patlamayı durdurur
+                
+                explosions.push({ x: cx * GRID_SIZE, y: cy * GRID_SIZE, type: d.t });
+                
+                if (map[cy][cx] === 2) {
+                    if (isLocal) {
+                        map[cy][cx] = 0; // Kutuyu kır
+                        sendMapUpdate();
+                    }
+                    break; // Kutu kırıldıysa patlama arkasına geçmez
+                }
+            }
+        }
+        
         bombs = bombs.filter(b => b.id !== bombInfo.id);
-    }, 1000);
+        
+        setTimeout(() => {
+            explosions = explosions.filter(e => Math.abs(e.x - bombInfo.x) > GRID_SIZE * 2 || Math.abs(e.y - bombInfo.y) > GRID_SIZE * 2);
+        }, 300); // Patlama efekti 0.3 saniye ekranda kalsın
+    }, 3000); // Bomba 3 saniyede patlar
 }
 
-// Klavye olayları
-function handleKeyDown(e) {
+// --- KONTROLLER ---
+document.addEventListener('keydown', function(e) {
+    if(document.getElementById('welcome-screen').style.display !== 'none') return; // Menüdeyken tuşları engelle
+    if(player.isDead) return; // YENİ: Oyuncu ölüyse hiçbir tuş çalışmaz
+    
     switch (e.key) {
-        case 'ArrowUp':
-            movePlayer(0, -GRID_SIZE);
-            break;
-        case 'ArrowDown':
-            movePlayer(0, GRID_SIZE);
-            break;
-        case 'ArrowLeft':
-            movePlayer(-GRID_SIZE, 0);
-            break;
-        case 'ArrowRight':
-            movePlayer(GRID_SIZE, 0);
-            break;
-        case ' ':
-            placeBomb();
-            break;
+        case 'ArrowUp': movePlayer(0, -GRID_SIZE); e.preventDefault(); break;
+        case 'ArrowDown': movePlayer(0, GRID_SIZE); e.preventDefault(); break;
+        case 'ArrowLeft': movePlayer(-GRID_SIZE, 0); e.preventDefault(); break;
+        case 'ArrowRight': movePlayer(GRID_SIZE, 0); e.preventDefault(); break;
+        case ' ': placeBomb(); e.preventDefault(); break; // Boşluk tuşu ile bomba koy
     }
-}
+});
 
-// Oyun başlatma işlemi
+// --- BAŞLATMA ---
 document.getElementById('start-game-btn').addEventListener('click', function() {
     const nickname = document.getElementById('nickname-input').value.trim();
-    
     if (nickname) {
         player.name = nickname;
-        
-        // Menüyü gizle ve oyunu başlat
         document.getElementById('welcome-screen').style.display = 'none';
         canvas.style.display = 'block';
-        
-        // Oyunu başlat
-        initGame();
+        createMap();
+        connectWebSocket();
+        gameLoop();
     }
 });
 
-// Enter tuşu ile oyun başlatma
 document.getElementById('nickname-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        document.getElementById('start-game-btn').click();
-    }
+    if (e.key === 'Enter') document.getElementById('start-game-btn').click();
 });
-
-// Klavye olayı dinleyici
-document.addEventListener('keydown', handleKeyDown);
-
-// Sprite sheet yükleme
-spriteSheet.onload = function() {
-    // Sprite yüklendiğinde haritayı oluştur
-    createMap();
-};
