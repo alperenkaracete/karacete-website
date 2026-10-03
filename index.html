@@ -9,7 +9,17 @@
 <body>
     <div id="game-container">
         <h1>Bomberman Oyunu</h1>
-        <canvas id="game-canvas"></canvas>
+        
+        <!-- Giriş Ekranı -->
+        <div id="welcome-screen">
+            <h2>Oyuna Başla</h2>
+            <input type="text" id="nickname-input" placeholder="Takma Adını Gir" maxlength="20">
+            <button id="start-game-btn">Bomberman Oyna</button>
+        </div>
+        
+        <!-- Oyun Alanı -->
+        <canvas id="game-canvas" style="display: none;"></canvas>
+        
         <div id="instructions">
             <p>Yön tuşları ile hareket et, boşluk tuşu ile bomba koy</p>
         </div>

@@ -2,12 +2,13 @@ const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 
 let player = { 
-    id: "oyuncu_" + Math.floor(Math.random() * 10000), // Benzersiz ID
+    id: "oyuncu_" + Math.floor(Math.random() * 10000),
     x: 50, 
     y: 50, 
     width: 20, 
     height: 20, 
-    color: '#00FF00' 
+    color: '#00FF00',
+    name: ''
 };
 let otherPlayers = {};
 let bombs = [];
@@ -17,30 +18,34 @@ canvas.width = 800;
 canvas.height = 600;
 
 // --- WEBSOCKET BAĞLANTISI ---
-// Spring Boot sunucunuzu Railway/Render'a yüklediğinizde buradaki URL'yi wss://... olarak değiştirin.
-const socket = new WebSocket('wss://compassionate-alignment-production-165c.up.railway.app/oyun-odasi');
+let socket = null;
 
-socket.onopen = function() {
-    console.log("Spring Boot sunucusuna bağlanıldı!");
-    sendPosition(); // Bağlanınca ilk konumumuzu sunucuya gönder
-};
-
-socket.onmessage = function(event) {
-    const data = JSON.parse(event.data);
+function connectWebSocket() {
+    // WebSocket bağlantısı sadece oyun başladığında kurulur
+    socket = new WebSocket('wss://compassionate-alignment-production-165c.up.railway.app/oyun-odasi');
     
-    // Eğer gelen mesaj bir oyuncu hareketi ise:
-    if (data.type === 'move') {
-        otherPlayers[data.id] = data.playerInfo;
-    }
-    // Eğer gelen mesaj bomba ise:
-    else if (data.type === 'bomb') {
-        bombs.push(data.bombInfo);
-        triggerExplosion(data.bombInfo);
-    }
-};
+    socket.onopen = function() {
+        console.log("Spring Boot sunucusuna bağlanıldı!");
+        sendPosition(); // Bağlanınca ilk konumumuzu sunucuya gönder
+    };
+
+    socket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        
+        // Eğer gelen mesaj bir oyuncu hareketi ise:
+        if (data.type === 'move') {
+            otherPlayers[data.id] = data.playerInfo;
+        }
+        // Eğer gelen mesaj bomba ise:
+        else if (data.type === 'bomb') {
+            bombs.push(data.bombInfo);
+            triggerExplosion(data.bombInfo);
+        }
+    };
+}
 
 function sendPosition() {
-    if (socket.readyState === WebSocket.OPEN) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
             type: 'move',
             id: player.id,
@@ -50,9 +55,17 @@ function sendPosition() {
 }
 // -----------------------------
 
-function drawPlayer(x, y, color) {
+function drawPlayer(x, y, color, name) {
     ctx.fillStyle = color;
     ctx.fillRect(x, y, player.width, player.height);
+    
+    // Oyuncu ismini karakterin üstüne yaz
+    if (name) {
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(name, x + player.width/2, y - 5);
+    }
 }
 
 function drawBomb(x, y) {
@@ -68,10 +81,12 @@ function drawExplosion(x, y) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    drawPlayer(player.x, player.y, player.color);
+    // Oyuncuyu çiz
+    drawPlayer(player.x, player.y, player.color, player.name);
 
+    // Diğer oyuncuları çiz
     for (const id in otherPlayers) {
-        drawPlayer(otherPlayers[id].x, otherPlayers[id].y, otherPlayers[id].color);
+        drawPlayer(otherPlayers[id].x, otherPlayers[id].y, otherPlayers[id].color, otherPlayers[id].name);
     }
 
     for (const bomb of bombs) {
@@ -125,7 +140,7 @@ function placeBomb() {
     triggerExplosion(bombInfo);
     
     // Bombayı diğer oyunculara gönder
-    if (socket.readyState === WebSocket.OPEN) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
             type: 'bomb',
             bombInfo: bombInfo
@@ -145,5 +160,29 @@ function triggerExplosion(bombInfo) {
     }, 3000);
 }
 
+// Oyun başlatma işlemi
+document.getElementById('start-game-btn').addEventListener('click', function() {
+    const nickname = document.getElementById('nickname-input').value.trim();
+    
+    if (nickname) {
+        player.name = nickname;
+        
+        // Menüyü gizle ve oyunu başlat
+        document.getElementById('welcome-screen').style.display = 'none';
+        canvas.style.display = 'block';
+        
+        // WebSocket bağlantısını kur ve oyun döngüsünü başlat
+        connectWebSocket();
+        gameLoop();
+    }
+});
+
+// Enter tuşu ile oyun başlatma
+document.getElementById('nickname-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        document.getElementById('start-game-btn').click();
+    }
+});
+
+// Oyun başlatma butonuna tıklama olayı
 document.addEventListener('keydown', handleKeyDown);
-gameLoop();
