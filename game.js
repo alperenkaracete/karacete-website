@@ -455,23 +455,56 @@ if(restartBtn) {
     });
 }
 
-document.getElementById('start-game-btn').addEventListener('click', function() {
-    const nickname = document.getElementById('nickname-input').value.trim();
-    if (nickname) {
-        player.name = nickname;
-        document.getElementById('welcome-screen').style.display = 'none';
-        canvas.style.display = 'block';
-        createMap();
-        connectWebSocket();
-        gameLoop();
+// --- BAŞLATMA (Mobil Uyumlu ve Uyarı Sistemli) ---
+const startBtn = document.getElementById('start-game-btn');
+const nickInput = document.getElementById('nickname-input');
+
+function startGame(e) {
+    if (e) e.preventDefault(); // Mobilde "click" ve "touch" olaylarının çift tetiklenmesini engeller
+    
+    const nickname = nickInput.value.trim();
+    
+    // İsim girilmediyse kullanıcıyı uyar
+    if (!nickname) {
+        alert("Lütfen oyuna başlamadan önce bir takma ad girin!");
+        return;
     }
-});
+    
+    player.name = nickname;
+    
+    // Giriş menüsünü gizle, Canvas'ı aç
+    document.getElementById('welcome-screen').style.display = 'none';
+    canvas.style.display = 'block';
+    
+    // Joystick ve Bomba butonunu mobildeysek aktif et
+    const mobileControls = document.getElementById('mobile-controls');
+    if (window.innerWidth <= 850 && mobileControls) {
+        mobileControls.style.display = 'flex';
+    }
+    
+    createMap();
+    connectWebSocket();
+    gameLoop();
+}
 
-document.getElementById('nickname-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') document.getElementById('start-game-btn').click();
-});
+// Hem bilgisayar (click) hem de mobil (touchstart) için butonu dinle
+if (startBtn) {
+    startBtn.addEventListener('click', startGame);
+    startBtn.addEventListener('touchstart', startGame, { passive: false });
+}
 
-// --- MOBİL DOKUNMATİK KONTROLLER ---
+if (nickInput) {
+    nickInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') startGame();
+    });
+}
+
+// --- MOBİL ÇEKMELİ JOYSTICK KONTROLLERİ ---
+const joystickBase = document.getElementById('joystick-base');
+const joystickKnob = document.getElementById('joystick-knob');
+let joystickDir = null;
+let moveInterval = null;
+
 function handleMobileInput(direction) {
     const welcome = document.getElementById('welcome-screen');
     if(welcome && welcome.style.display !== 'none') return;
@@ -491,16 +524,90 @@ function handleMobileInput(direction) {
     else if (direction === 'right') movePlayer(GRID_SIZE, 0);
 }
 
-// Dokunmatik (Mobil) Olayları
-document.getElementById('btn-up').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('up'); });
-document.getElementById('btn-down').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('down'); });
-document.getElementById('btn-left').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('left'); });
-document.getElementById('btn-right').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('right'); });
-document.getElementById('btn-bomb').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('bomb'); });
+function startJoystickMovement(dir) {
+    if (joystickDir === dir) return; 
+    joystickDir = dir;
+    
+    if (moveInterval) clearInterval(moveInterval);
+    
+    handleMobileInput(dir);
+    
+    moveInterval = setInterval(() => {
+        handleMobileInput(joystickDir);
+    }, 150);
+}
 
-// Fare ile (PC'de ekranı küçülterek) test edebilmeniz için Fare Olayları
-document.getElementById('btn-up').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('up'); });
-document.getElementById('btn-down').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('down'); });
-document.getElementById('btn-left').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('left'); });
-document.getElementById('btn-right').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('right'); });
-document.getElementById('btn-bomb').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('bomb'); });
+function stopJoystickMovement() {
+    joystickDir = null;
+    if (moveInterval) {
+        clearInterval(moveInterval);
+        moveInterval = null;
+    }
+    if (joystickKnob) {
+        joystickKnob.style.transition = "transform 0.2s ease-out"; 
+        joystickKnob.style.transform = `translate(-50%, -50%)`;
+    }
+}
+
+function handleJoystickDrag(e) {
+    e.preventDefault(); 
+    if (joystickKnob) joystickKnob.style.transition = "none"; 
+
+    let clientX, clientY;
+    if (e.type.includes('mouse')) {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    } else {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    }
+
+    const rect = joystickBase.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+    
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = rect.width / 2;
+    
+    if (distance > maxRadius) {
+        const ratio = maxRadius / distance;
+        dx *= ratio;
+        dy *= ratio;
+    }
+    
+    if (joystickKnob) joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+    if (distance < 15) {
+        stopJoystickMovement();
+        return;
+    }
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0) startJoystickMovement('right');
+        else startJoystickMovement('left');
+    } else {
+        if (dy > 0) startJoystickMovement('down');
+        else startJoystickMovement('up');
+    }
+}
+
+if (joystickBase) {
+    joystickBase.addEventListener('touchstart', handleJoystickDrag, { passive: false });
+    joystickBase.addEventListener('touchmove', handleJoystickDrag, { passive: false });
+    joystickBase.addEventListener('touchend', stopJoystickMovement);
+    joystickBase.addEventListener('touchcancel', stopJoystickMovement);
+
+    let isDragging = false;
+    joystickBase.addEventListener('mousedown', (e) => { isDragging = true; handleJoystickDrag(e); });
+    document.addEventListener('mousemove', (e) => { if(isDragging) handleJoystickDrag(e); });
+    document.addEventListener('mouseup', () => { if(isDragging) { isDragging = false; stopJoystickMovement(); } });
+}
+
+const btnBomb = document.getElementById('btn-bomb');
+if (btnBomb) {
+    btnBomb.addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('bomb'); }, { passive: false });
+    btnBomb.addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('bomb'); });
+}

@@ -25,25 +25,25 @@
         
         <!-- Oyun Alanı -->
         <canvas id="game-canvas" style="display: none;"></canvas>
-        <!-- YENİ: Mobil Kontroller (Varsayılan olarak gizli) -->
+        
+        <!-- Mobil Kontroller -->
         <div id="mobile-controls">
-            <div id="d-pad">
-                <button id="btn-up" class="control-btn">⬆️</button>
-                <div class="horizontal-btns">
-                    <button id="btn-left" class="control-btn">⬅️</button>
-                    <button id="btn-right" class="control-btn">➡️</button>
+            <!-- ÇEKMELİ JOYSTICK -->
+            <div id="joystick-zone">
+                <div id="joystick-base">
+                    <div id="joystick-knob"></div>
                 </div>
-                <button id="btn-down" class="control-btn">⬇️</button>
             </div>
+            
             <div id="action-pad">
                 <button id="btn-bomb" class="control-btn action-btn">💣</button>
             </div>
         </div>
         
-        <div id="instructions">
-            <p>Yön tuşları ile hareket et, boşluk tuşu ile bomba koy</p>
-        </div>
-    </div>
-    <script src="game.js"></script>
+    </div> <!-- game-container kapanışı eklendi -->
+
+    <!-- İŞTE EKSİK OLAN VE OYUNU ÇALIŞTIRACAK HAYATİ SATIR -->
+    <!-- Eğer JS dosyanızın adı game_3.js ise burayı ona göre değiştirin -->
+    <script src="game.js"></script> 
 </body>
 </html>
