@@ -130,3 +130,74 @@ body {
         width: 100%;
     }
 }
+
+/* --- MOBİL KONTROLLER --- */
+#mobile-controls {
+    display: none; /* Mobilde görünür yapacağız */
+    position: absolute;
+    bottom: 30px;
+    left: 0;
+    width: 100%;
+    justify-content: space-between;
+    padding: 0 30px;
+    box-sizing: border-box;
+    pointer-events: none; /* Tıklamalar arkadaki canvas'a da geçebilsin */
+}
+
+.control-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    color: white;
+    pointer-events: auto; /* Sadece butonlar tıklanabilsin */
+    touch-action: manipulation; /* Çift tıklama zoom'unu engeller */
+    user-select: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.control-btn:active {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+#d-pad {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.horizontal-btns {
+    display: flex;
+    gap: 50px;
+}
+
+#action-pad {
+    display: flex;
+    align-items: flex-end;
+    margin-bottom: 20px;
+}
+
+.action-btn {
+    width: 75px;
+    height: 75px;
+    font-size: 32px;
+    background: rgba(255, 50, 50, 0.3);
+    border-color: rgba(255, 50, 50, 0.6);
+}
+
+/* Ekran 850px'den küçükse (Mobil ise) kontrolleri göster */
+@media (max-width: 850px) {
+    #mobile-controls {
+        display: flex;
+    }
+    #instructions {
+        display: none; /* Mobilde klavye talimatını gizle */
+    }
+}

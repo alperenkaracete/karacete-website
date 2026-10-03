@@ -470,3 +470,37 @@ document.getElementById('start-game-btn').addEventListener('click', function() {
 document.getElementById('nickname-input').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') document.getElementById('start-game-btn').click();
 });
+
+// --- MOBİL DOKUNMATİK KONTROLLER ---
+function handleMobileInput(direction) {
+    const welcome = document.getElementById('welcome-screen');
+    if(welcome && welcome.style.display !== 'none') return;
+    if(player.isDead) return;
+
+    if (direction === 'bomb') {
+        placeBomb();
+        return;
+    }
+
+    player.direction = direction;
+    player.animFrame = (player.animFrame + 1) % 3;
+
+    if (direction === 'up') movePlayer(0, -GRID_SIZE);
+    else if (direction === 'down') movePlayer(0, GRID_SIZE);
+    else if (direction === 'left') movePlayer(-GRID_SIZE, 0);
+    else if (direction === 'right') movePlayer(GRID_SIZE, 0);
+}
+
+// Dokunmatik (Mobil) Olayları
+document.getElementById('btn-up').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('up'); });
+document.getElementById('btn-down').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('down'); });
+document.getElementById('btn-left').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('left'); });
+document.getElementById('btn-right').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('right'); });
+document.getElementById('btn-bomb').addEventListener('touchstart', (e) => { e.preventDefault(); handleMobileInput('bomb'); });
+
+// Fare ile (PC'de ekranı küçülterek) test edebilmeniz için Fare Olayları
+document.getElementById('btn-up').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('up'); });
+document.getElementById('btn-down').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('down'); });
+document.getElementById('btn-left').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('left'); });
+document.getElementById('btn-right').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('right'); });
+document.getElementById('btn-bomb').addEventListener('mousedown', (e) => { e.preventDefault(); handleMobileInput('bomb'); });
