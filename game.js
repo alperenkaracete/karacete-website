@@ -1,13 +1,54 @@
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 
-let player = { x: 50, y: 50, width: 20, height: 20, color: '#00FF00' };
+let player = { 
+    id: "oyuncu_" + Math.floor(Math.random() * 10000), // Benzersiz ID
+    x: 50, 
+    y: 50, 
+    width: 20, 
+    height: 20, 
+    color: '#00FF00' 
+};
 let otherPlayers = {};
 let bombs = [];
 let explosions = [];
 
 canvas.width = 800;
 canvas.height = 600;
+
+// --- WEBSOCKET BAĞLANTISI ---
+// Spring Boot sunucunuzu Railway/Render'a yüklediğinizde buradaki URL'yi wss://... olarak değiştirin.
+const socket = new WebSocket('wss://compassionate-alignment-production-165c.up.railway.app/oyun-odasi');
+
+socket.onopen = function() {
+    console.log("Spring Boot sunucusuna bağlanıldı!");
+    sendPosition(); // Bağlanınca ilk konumumuzu sunucuya gönder
+};
+
+socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    
+    // Eğer gelen mesaj bir oyuncu hareketi ise:
+    if (data.type === 'move') {
+        otherPlayers[data.id] = data.playerInfo;
+    }
+    // Eğer gelen mesaj bomba ise:
+    else if (data.type === 'bomb') {
+        bombs.push(data.bombInfo);
+        triggerExplosion(data.bombInfo);
+    }
+};
+
+function sendPosition() {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            type: 'move',
+            id: player.id,
+            playerInfo: player
+        }));
+    }
+}
+// -----------------------------
 
 function drawPlayer(x, y, color) {
     ctx.fillStyle = color;
@@ -45,71 +86,64 @@ function gameLoop() {
 }
 
 function handleKeyDown(e) {
+    let moved = false;
     switch (e.key) {
         case 'ArrowUp':
             player.y -= 5;
-            // Boundary checking
             if (player.y < 0) player.y = 0;
+            moved = true;
             break;
         case 'ArrowDown':
             player.y += 5;
-            // Boundary checking
             if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
+            moved = true;
             break;
         case 'ArrowLeft':
             player.x -= 5;
-            // Boundary checking
             if (player.x < 0) player.x = 0;
+            moved = true;
             break;
         case 'ArrowRight':
             player.x += 5;
-            // Boundary checking
             if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+            moved = true;
             break;
         case ' ':
             placeBomb();
             break;
     }
+    
+    // Eğer oyuncu hareket ettiyse yeni koordinatları Spring Boot'a bildir
+    if (moved) {
+        sendPosition();
+    }
 }
 
 function placeBomb() {
-    const bomb = { 
-        x: player.x, 
-        y: player.y, 
-        id: Date.now() // Unique ID for the bomb
-    };
-    bombs.push(bomb);
+    const bombInfo = { x: player.x, y: player.y, id: Date.now() };
+    bombs.push(bombInfo);
+    triggerExplosion(bombInfo);
     
-    // Remove bomb after a delay (simulating explosion)
+    // Bombayı diğer oyunculara gönder
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            type: 'bomb',
+            bombInfo: bombInfo
+        }));
+    }
+}
+
+function triggerExplosion(bombInfo) {
     setTimeout(() => {
-        const explosion = { x: bomb.x, y: bomb.y };
+        const explosion = { x: bombInfo.x, y: bombInfo.y };
         explosions.push(explosion);
         
-        // Remove explosion after a short time
         setTimeout(() => {
             explosions = explosions.filter(e => e !== explosion);
         }, 1000);
-    }, 3000); // Bomb explodes after 3 seconds
+        bombs = bombs.filter(b => b.id !== bombInfo.id); // Patlayan bombayı sil
+    }, 3000);
 }
 
 document.addEventListener('keydown', handleKeyDown);
-
-// Simulate other players (for demo purposes)
-setInterval(() => {
-    const randomPlayer = {
-        x: Math.floor(Math.random() * (canvas.width - 20)),
-        y: Math.floor(Math.random() * (canvas.height - 20)),
-        color: '#' + Math.floor(Math.random() * 16777215).toString(16)
-    };
-    
-    // Add some randomness to make it more interesting
-    const playerId = `player_${Date.now()}_${Math.random()}`;
-    otherPlayers[playerId] = randomPlayer;
-    
-    // Remove player after some time
-    setTimeout(() => {
-        delete otherPlayers[playerId];
-    }, 5000);
-}, 2000);
-
 gameLoop();
