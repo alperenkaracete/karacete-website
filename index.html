@@ -17,9 +17,15 @@
             <button id="start-game-btn">Bomberman Oyna</button>
         </div>
         
-        <!-- İzleyici Arayüzü -->
-        <div id="spectator-ui" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.8); padding: 30px; border-radius: 15px; z-index: 20;">
-            <h2 style="color: red; margin-top: 0;">GAME OVER - İzleyici Modu</h2>
+        <!-- YENİ: Skor Tablosu -->
+        <div id="scoreboard" style="display: none; position: absolute; top: 15px; right: 15px; background: rgba(0, 0, 0, 0.7); border: 2px solid rgba(255, 255, 255, 0.2); color: white; padding: 15px; border-radius: 10px; z-index: 10; min-width: 130px; text-align: left; box-shadow: 0 4px 10px rgba(0,0,0,0.5); pointer-events: none;">
+            <h3 style="margin: 0 0 10px 0; font-size: 16px; text-align: center; color: #4CAF50; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px;">🏆 Skorlar</h3>
+            <ul id="score-list" style="list-style: none; padding: 0; margin: 0; font-size: 14px;"></ul>
+        </div>
+        
+        <!-- İzleyici ve Kazanan Arayüzü -->
+        <div id="spectator-ui" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.85); padding: 30px; border-radius: 15px; z-index: 20; border: 2px solid #555;">
+            <h2 id="end-title" style="color: red; margin-top: 0;">GAME OVER</h2>
             <button id="restart-btn">Yeniden Başlat (0/1)</button>
         </div>
         
@@ -28,7 +34,6 @@
         
         <!-- Mobil Kontroller -->
         <div id="mobile-controls">
-            <!-- ÇEKMELİ JOYSTICK -->
             <div id="joystick-zone">
                 <div id="joystick-base">
                     <div id="joystick-knob"></div>
@@ -40,10 +45,8 @@
             </div>
         </div>
         
-    </div> <!-- game-container kapanışı eklendi -->
+    </div>
 
-    <!-- İŞTE EKSİK OLAN VE OYUNU ÇALIŞTIRACAK HAYATİ SATIR -->
-    <!-- Eğer JS dosyanızın adı game_3.js ise burayı ona göre değiştirin -->
     <script src="game.js"></script> 
 </body>
 </html>
