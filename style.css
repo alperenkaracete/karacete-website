@@ -263,7 +263,7 @@ body {
 
 /* --- İKİ KİŞİLİK SIRA TABANLI OYUNLAR (ortak kabuk) --- */
 .duel {
-    width: min(92vw, 440px);
+    width: min(calc(100vw - 56px), 440px);
     margin: 0 auto;
     color: white;
 }

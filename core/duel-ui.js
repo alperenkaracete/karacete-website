@@ -111,7 +111,7 @@ window.DuelUI = (function () {
             rematchBtn.disabled = view.myVoted;
             rematchBtn.textContent = view.myVoted ? 'Rakip bekleniyor…' :
                 (view.opponentVoted ? 'Rövanş (rakip hazır!)' : 'Rövanş');
-            boardWrap.classList.toggle('inactive', view.phase !== 'playing');
+            boardWrap.classList.toggle('inactive', view.phase === 'waiting' || view.phase === 'abandoned');
         }
 
         function destroy() {
