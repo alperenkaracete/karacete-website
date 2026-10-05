@@ -52,6 +52,7 @@
     let ctx = null;
     let room = null;
     let send = function () {};
+    let isHost = function () { return true; };
     let player = null;
     let otherPlayers = {};
     let bombs = [];
@@ -132,10 +133,13 @@
             }
         }
         else if (data.type === 'bomb') { bombs.push(data.bombInfo); triggerExplosion(data.bombInfo, false); }
-        else if (data.type === 'map_update') { map = data.map; }
+        else if (data.type === 'map_update') { if (Array.isArray(data.map)) map = data.map; }
+        else if (data.type === 'player_joined') {
+            // Yeni gelene mevcut haritayı host gönderir.
+            if (isHost() && map.length) sendMapUpdate();
+        }
         else if (data.type === 'player_disconnect') {
-            delete otherPlayers[data.id];
-            checkWinCondition();
+            handlePlayerLeft(data.id);
         }
         else if (data.type === 'player_death') {
             if (otherPlayers[data.id]) otherPlayers[data.id].isDead = true;
@@ -144,6 +148,28 @@
         else if (data.type === 'restart_vote') {
             restartVotes.add(data.id);
             updateRestartButton();
+        }
+    }
+
+    function handlePlayerLeft(id) {
+        delete otherPlayers[id];
+        delete scores[id];
+        restartVotes.delete(id);
+        updateScoreboardUI();
+        updateRestartButton();
+
+        // Host ayrıldıysa ve henüz harita almadıysak, yeni host haritayı kurar.
+        if (!map.length && isHost()) {
+            createMap();
+            sendMapUpdate();
+        }
+
+        checkWinCondition();
+
+        // Kalanların hepsi yeniden başlatmaya oy verdiyse beklemeden başlat.
+        const totalPlayers = Object.keys(otherPlayers).length + 1;
+        if (gameEnded && restartVotes.size > 0 && restartVotes.size >= totalPlayers) {
+            resetGame();
         }
     }
 
@@ -160,14 +186,19 @@
         const list = document.getElementById('score-list');
         if (!list) return;
 
-        list.innerHTML = '';
+        list.textContent = '';
         if (!scores[player.id]) scores[player.id] = { name: player.name, score: 0 };
 
         // Puanlara göre büyükten küçüğe sırala
         const sortedScores = Object.values(scores).sort((a, b) => b.score - a.score);
 
+        // Takma adlar başka oyunculardan geliyor: HTML olarak değil, metin olarak yaz.
         for (const s of sortedScores) {
-            list.innerHTML += `<li>${s.name}: <strong>${s.score}</strong></li>`;
+            const li = document.createElement('li');
+            const strong = document.createElement('strong');
+            strong.textContent = s.score;
+            li.append(`${s.name}: `, strong);
+            list.appendChild(li);
         }
     }
 
@@ -210,10 +241,10 @@
         const title = document.getElementById('end-title');
 
         if (winnerId === player.id) {
-            title.innerHTML = "🏆 KAZANDIN! 🏆";
+            title.textContent = "🏆 KAZANDIN! 🏆";
             title.style.color = "gold";
         } else {
-            title.innerHTML = `🏆 KAZANAN:<br>${winnerName}`;
+            title.replaceChildren('🏆 KAZANAN:', document.createElement('br'), winnerName);
             title.style.color = "gold";
         }
 
@@ -224,7 +255,7 @@
         gameEnded = true;
         const ui = document.getElementById('spectator-ui');
         const title = document.getElementById('end-title');
-        title.innerHTML = "🤝 BERABERE 🤝";
+        title.textContent = "🤝 BERABERE 🤝";
         title.style.color = "orange";
         if (ui) ui.style.display = 'block';
     }
@@ -307,9 +338,17 @@
         if (!running) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        drawMap();
+        if (map.length) {
+            drawMap();
+        } else {
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Harita bekleniyor…', canvas.width / 2, canvas.height / 2);
+        }
 
-        if (!player.isDead) {
+        if (map.length && !player.isDead) {
             drawPlayer(player);
             checkFireCollision();
         }
@@ -375,7 +414,7 @@
         if (!gameEnded) {
             const ui = document.getElementById('spectator-ui');
             const title = document.getElementById('end-title');
-            title.innerHTML = "GAME OVER - İzleyici Modu";
+            title.textContent = "GAME OVER - İzleyici Modu";
             title.style.color = "red";
             if (ui) ui.style.display = 'block';
         }
@@ -515,7 +554,7 @@
     }
 
     function onKeyDown(e) {
-        if (player.isDead || gameEnded) return; // Oyun bittiyse hareket edemez
+        if (!map.length || player.isDead || gameEnded) return; // Harita yokken / oyun bittiyse hareket edemez
 
         switch (e.key) {
             case 'ArrowUp':
@@ -548,7 +587,7 @@
 
     // --- MOBİL ÇEKMELİ JOYSTICK ---
     function handleMobileInput(direction) {
-        if (player.isDead || gameEnded) return;
+        if (!map.length || player.isDead || gameEnded) return;
 
         if (direction === 'bomb') {
             placeBomb();
@@ -672,6 +711,7 @@
         root = info.root;
         room = info.room;
         send = info.send;
+        isHost = info.isHost;
         root.innerHTML = TEMPLATE;
 
         canvas = document.getElementById('game-canvas');
@@ -714,7 +754,8 @@
         }
 
         bindControls();
-        createMap();
+        // Haritayı odanın hostu üretir; katılanlar host'tan gelen map_update'i bekler.
+        if (isHost()) createMap();
         sendPosition();
 
         running = true;
