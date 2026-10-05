@@ -3,50 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bomberman</title>
+    <title>Karacete Oyunlar</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="game-container">
-        <h1>Bomberman Oyunu</h1>
-        
+        <h1>Karacete Oyunlar</h1>
+
         <!-- Giriş Ekranı -->
         <div id="welcome-screen">
             <h2>Oyuna Başla</h2>
             <input type="text" id="nickname-input" placeholder="Takma Adını Gir" maxlength="20">
-            <button id="start-game-btn">Bomberman Oyna</button>
+            <button id="start-game-btn">Oda Kur</button>
         </div>
-        
-        <!-- YENİ: Skor Tablosu -->
-        <div id="scoreboard">
-            <h3>🏆 Skorlar</h3>
-            <ul id="score-list"></ul>
-        </div>
-        
-        <!-- İzleyici ve Kazanan Arayüzü -->
-        <div id="spectator-ui">
-            <h2 id="end-title">GAME OVER</h2>
-            <button id="restart-btn">Yeniden Başlat (0/1)</button>
-        </div>
-        
-        <!-- Oyun Alanı -->
-        <canvas id="game-canvas"></canvas>
-        
-        <!-- Mobil Kontroller -->
-        <div id="mobile-controls">
-            <div id="joystick-zone">
-                <div id="joystick-base">
-                    <div id="joystick-knob"></div>
-                </div>
-            </div>
-            
-            <div id="action-pad">
-                <button id="btn-bomb" class="control-btn action-btn">💣</button>
-            </div>
-        </div>
-        
+
+        <!-- Seçilen oyun kendi arayüzünü buraya kurar -->
+        <div id="game-root"></div>
     </div>
 
-    <script src="game.js"></script> 
+    <script src="config.js"></script>
+    <script src="core/games.js"></script>
+    <script src="core/connection.js"></script>
+    <script src="core/lobby.js"></script>
+    <script src="games/bomberman.js"></script>
+    <script src="core/main.js"></script>
 </body>
 </html>
