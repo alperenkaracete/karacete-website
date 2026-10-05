@@ -148,6 +148,7 @@
         else if (data.type === 'restart_vote') {
             restartVotes.add(data.id);
             updateRestartButton();
+            resetIfAllVoted();
         }
     }
 
@@ -167,10 +168,14 @@
         checkWinCondition();
 
         // Kalanların hepsi yeniden başlatmaya oy verdiyse beklemeden başlat.
+        if (restartVotes.size > 0) resetIfAllVoted();
+    }
+
+    // Herkes oy verdiyse oyunu sıfırla. Oy hem kendi tıklamamızdan hem de
+    // diğer oyunculardan geldiği için her iki yerde de çağrılır.
+    function resetIfAllVoted() {
         const totalPlayers = Object.keys(otherPlayers).length + 1;
-        if (gameEnded && restartVotes.size > 0 && restartVotes.size >= totalPlayers) {
-            resetGame();
-        }
+        if (restartVotes.size >= totalPlayers) resetGame();
     }
 
     function sendPosition() {
@@ -684,11 +689,7 @@
             send({ type: 'restart_vote', id: player.id });
             restartVotes.add(player.id);
             updateRestartButton();
-
-            const totalPlayers = Object.keys(otherPlayers).length + 1;
-            if (restartVotes.size >= totalPlayers) {
-                resetGame();
-            }
+            resetIfAllVoted();
         });
 
         const joystickBase = document.getElementById('joystick-base');
