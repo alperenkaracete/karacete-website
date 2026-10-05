@@ -77,6 +77,8 @@
                 round: state.round,
                 board: state.board,
                 result: state.result,
+                winnerId: state.result && state.result.status === 'win' ? state.order[state.result.winner] : null,
+                turnId: state.phase === 'playing' ? state.order[state.turn] : null,
                 lastCell: state.lastCell,
                 room: ctx.room,
                 me: { id: ctx.me.id, name: ctx.me.name },
