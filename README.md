@@ -87,3 +87,9 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 - Oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
 - Sunucu yalnızca `https://karacete.com` ve yerel adreslerden gelen bağlantılara izin verir. Farklı bir
   adresten (örn. `www.karacete.com`) yayın yapılacaksa backend'in `ALLOWED_ORIGINS` ortam değişkenine eklenmelidir.
+
+## Yayın
+
+Site GitHub Pages ile `main` dalından yayınlanır (özel alan adı: `CNAME`). Backend Railway'de çalışır;
+izinli origin listesi Railway'deki `ALLOWED_ORIGINS` değişkenindedir ve en az
+`https://karacete.com` ile `https://www.karacete.com` adreslerini içermelidir.
