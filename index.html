@@ -10,11 +10,24 @@
     <div id="game-container">
         <h1>Karacete Oyunlar</h1>
 
-        <!-- Giriş Ekranı -->
+        <!-- Lobi -->
         <div id="welcome-screen">
             <h2>Oyuna Başla</h2>
-            <input type="text" id="nickname-input" placeholder="Takma Adını Gir" maxlength="20">
-            <button id="start-game-btn">Oda Kur</button>
+            <input type="text" id="nickname-input" placeholder="Takma Adını Gir" maxlength="20" autocomplete="off">
+            <select id="game-select" aria-label="Oyun"></select>
+            <button id="create-room-btn" class="lobby-btn primary">Oda Kur</button>
+            <div class="lobby-divider">ya da</div>
+            <input type="text" id="room-code-input" placeholder="Oda Kodu" maxlength="6" autocomplete="off">
+            <button id="join-room-btn" class="lobby-btn secondary">Oda Koduna Katıl</button>
+            <p id="lobby-error" role="alert"></p>
+        </div>
+
+        <!-- Oda çubuğu (odadayken görünür) -->
+        <div id="room-bar">
+            <span>Oda: <strong id="room-code"></strong></span>
+            <button id="copy-code-btn" class="bar-btn">Kodu Kopyala</button>
+            <button id="share-link-btn" class="bar-btn">Bağlantıyı Paylaş</button>
+            <button id="leave-room-btn" class="bar-btn danger">Odadan Çık</button>
         </div>
 
         <!-- Seçilen oyun kendi arayüzünü buraya kurar -->

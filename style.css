@@ -55,9 +55,39 @@ body {
     text-align: center;
 }
 
-#start-game-btn {
+#nickname-input,
+#room-code-input,
+#game-select {
+    box-sizing: border-box;
+    display: block;
+    margin: 0 auto 12px;
+}
+
+#game-select {
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    width: 250px;
+    font-size: 16px;
+    text-align: center;
+}
+
+#room-code-input {
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    width: 250px;
+    font-size: 16px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+}
+
+.lobby-btn {
+    display: block;
+    width: 250px;
+    margin: 0 auto 12px;
     padding: 12px 30px;
-    background-color: #4CAF50;
     color: white;
     border: none;
     border-radius: 8px;
@@ -66,9 +96,55 @@ body {
     transition: background-color 0.3s;
 }
 
-#start-game-btn:hover {
-    background-color: #45a049;
+.lobby-btn.primary { background-color: #4CAF50; }
+.lobby-btn.primary:hover { background-color: #45a049; }
+.lobby-btn.secondary { background-color: #3f51b5; }
+.lobby-btn.secondary:hover { background-color: #3949a3; }
+.lobby-btn:disabled { opacity: 0.6; cursor: default; }
+
+.lobby-divider {
+    color: rgba(255, 255, 255, 0.6);
+    margin: 4px 0 12px;
+    font-size: 14px;
 }
+
+#lobby-error {
+    display: none;
+    margin: 12px 0 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background-color: rgba(244, 67, 54, 0.85);
+    color: white;
+    font-size: 14px;
+}
+
+#room-bar {
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    color: white;
+}
+
+#room-code {
+    letter-spacing: 3px;
+    font-size: 18px;
+}
+
+.bar-btn {
+    padding: 6px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.bar-btn:hover { background: rgba(0, 0, 0, 0.55); }
+.bar-btn.danger { border-color: rgba(255, 90, 90, 0.7); }
 
 #game-canvas {
     display: none;
@@ -255,7 +331,10 @@ body {
         padding: 20px;
     }
     
-    #nickname-input {
+    #nickname-input,
+    #room-code-input,
+    #game-select,
+    .lobby-btn {
         width: 100%;
     }
     

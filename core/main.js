@@ -78,6 +78,7 @@
     // request: { name, gameId } (oda kur) veya { name, room } (odaya katıl)
     function begin(request) {
         closeSession();
+        Lobby.showError('');
         var s = {
             state: 'connecting',
             me: { id: myId, name: request.name },
@@ -112,6 +113,7 @@
     }
 
     Lobby.init({
-        onCreate: function (name) { begin({ name: name, gameId: Games.list()[0].id }); }
+        onCreate: function (name, gameId) { begin({ name: name, gameId: gameId }); },
+        onJoin: function (name, room) { begin({ name: name, room: room }); }
     });
 })();
