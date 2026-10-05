@@ -5,7 +5,16 @@
 oyun mantığı tarayıcıdadır, sunucu ([bomberman-backend](https://github.com/alperenkaracete/bomberman-backend))
 yalnızca odaları yönetir ve mesajları aynı odadaki oyunculara iletir.
 
-Şu an tek oyun: **Bomberman** (2–4 oyuncu).
+Oyunlar:
+
+| Oyun | Oyuncu | Tür |
+|------|--------|-----|
+| 💣 **Bomberman** | 2–4 | gerçek zamanlı |
+| ⭕ **XOX** | 2 | sıra tabanlı |
+| 🔴 **Dörtlü Bağla** | 2 | sıra tabanlı |
+
+Oyun lobide kartlardan seçilir; oda kurulurken seçilen oyun sunucuya `game` alanı olarak gider
+(`bomberman`, `xox`, `connect4`).
 
 ## Yerelde çalıştırma
 
@@ -29,7 +38,12 @@ core/games.js        oyun kayıt defteri (Games.register / Games.get / Games.lis
 core/connection.js   WebSocket sarmalayıcı (JSON gönder/al)
 core/lobby.js        takma ad, oyun seçimi, oda kur/katıl, paylaşım bağlantısı
 core/main.js         akış: lobi → bağlantı → oda → oyun; oyuncu listesi ve host takibi
+core/duel.js         sıra tabanlı iki kişilik oyunlar için ortak protokol/durum makinesi (DOM'suz)
+core/duel-ui.js      aynı oyunlar için ortak arayüz kabuğu (skor, sıra, bekleme, rövanş)
 games/bomberman.js   Bomberman
+games/xox.js         XOX tahtası (çizim)          games/xox-rules.js       XOX kuralları (saf)
+games/connect4.js    Dörtlü Bağla tahtası (çizim) games/connect4-rules.js  Dörtlü Bağla kuralları (saf)
+tests/               node:test ile birim testleri
 assets/              sprite'lar
 ```
 
@@ -47,6 +61,23 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 İstemci–sunucu mesaj protokolü backend reposunun README'sinde anlatılır
 (`create_room`, `join_room`, `room_created`, `room_joined`, `player_joined`, `player_disconnect`, `error`).
 
+## Testler
+
+Kazanma/beraberlik kuralları ve ortak sıra tabanlı protokol saf fonksiyonlardır; Node'un yerleşik
+test çalıştırıcısıyla çalışır (paket kurulumu gerekmez, Node 20+):
+
+```bash
+node --test
+```
+
+## İki sekmeyle deneme
+
+1. Yerel backend'i çalıştır (`mvn spring-boot:run`) ve siteyi statik sunucuyla aç (yukarıdaki komut).
+2. Sekme 1: takma ad gir, **XOX** ya da **Dörtlü Bağla** kartını seç, **Oda Kur**. Bekleme ekranında oda kodu görünür.
+3. Sekme 2 (ya da gizli pencere): `http://localhost:5173/?oda=KOD` adresini aç, takma ad gir, **Oda Koduna Katıl**.
+4. Sırası gelen oyuncu "Sıra sende!" görür; oyun bitince **Rövanş** için iki taraf da oy verir, başlayan taraf değişir.
+5. Bir sekmeyi kapat: diğer tarafta "Rakip ayrıldı" ve **Lobiye Dön** çıkar.
+
 ## Yeni oyun ekleme
 
 1. `games/<oyun>.js` oluştur ve kendini kaydet:
@@ -55,7 +86,9 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
    (function () {
        Games.register({
            id: 'yilan',            // sunucuya `game` olarak gider
-           name: 'Yılan',          // lobideki oyun listesinde görünür
+           name: 'Yılan',          // lobideki oyun kartında görünür
+           icon: '🐍',             // kartın ikonu (emoji)
+           tagline: '2 oyuncu',    // kartın alt yazısı
            maxPlayers: 2,
            init(ctx) {
                // ctx.root       oyunun DOM'unu kuracağı eleman
@@ -64,6 +97,7 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
                // ctx.room       oda kodu
                // ctx.players    odadaki oyuncular [{ id, name }] (katılış sırasıyla, canlı güncellenir)
                // ctx.isHost()   ilk sıradaki oyuncu mu (ortak başlangıç durumunu o üretir)
+               // ctx.leave()    odadan çıkıp lobiye döner
            },
            onMessage(data) {
                // Odaya girdikten sonra gelen her mesaj (player_joined / player_disconnect dahil)
@@ -77,14 +111,32 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 
 2. `index.html` içine, `core/main.js`'den **önce** script etiketini ekle:
    `<script src="games/yilan.js"></script>`
-3. Birden fazla oyun olunca lobide oyun seçimi kendiliğinden görünür. Sunucu tarafında değişiklik gerekmez.
+3. Oyun lobide otomatik olarak yeni bir kart olur. Sunucu tarafında değişiklik gerekmez.
 
-`games/bomberman.js` örnek olarak kullanılabilir.
+`games/bomberman.js` gerçek zamanlı bir oyun için örnektir.
+
+### Sıra tabanlı iki kişilik oyun eklemek
+
+Sıra, başlangıç oyuncusu, hamle doğrulama, rövanş, skor ve "rakip ayrıldı" mantığı ortaktır; yeni oyun
+yalnızca kurallarını ve tahtasını yazar:
+
+1. `games/<oyun>-rules.js`: saf kurallar. `initial()`, `parse(mesaj)`, `toMessage(hamle)`,
+   `validate(tahta, hamle, oyuncuIndeksi)`, `apply(tahta, hamle, oyuncuIndeksi)` → `{ board, cell }`,
+   `result(tahta)` → `null | { status:'win', winner, line } | { status:'draw' }`. XOX/Dörtlü Bağla'daki
+   gibi hem tarayıcıda hem Node'da yüklenecek şekilde yaz ve `tests/` altında test et.
+2. `games/<oyun>.js`: `DuelUI.mount(ctx.root, ...)` ile ortak kabuğu kur, tahtayı `ui.boardEl` içine çiz,
+   `Duel.create({ prefix, rules, ctx, onChange })` ile protokolü bağla; tıklamada `duel.move(hamle)`,
+   `onMessage` içinde `duel.onMessage(data)` çağır. `games/xox.js` en kısa örnektir.
+3. Script etiketlerini `index.html`'e ekle (kurallar, sonra oyun).
+
+Mesajlar `<prefix>_start`, `<prefix>_move`, `<prefix>_rematch` biçimindedir. Gelen hamleler her iki
+tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler yok sayılır.
 
 ## Bilinen sınırlamalar
 
-- Oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
-- Oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
+- Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
+- Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
+- XOX / Dörtlü Bağla: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
 - Sunucu yalnızca `https://karacete.com` ve yerel adreslerden gelen bağlantılara izin verir. Farklı bir
   adresten (örn. `www.karacete.com`) yayın yapılacaksa backend'in `ALLOWED_ORIGINS` ortam değişkenine eklenmelidir.
 

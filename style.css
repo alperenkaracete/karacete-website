@@ -52,21 +52,47 @@ body {
 }
 
 #nickname-input,
-#room-code-input,
-#game-select {
+#room-code-input {
     box-sizing: border-box;
     display: block;
     margin: 0 auto 12px;
 }
 
-#game-select {
-    padding: 12px;
-    border: none;
-    border-radius: 8px;
+#game-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     width: 250px;
-    font-size: 16px;
-    text-align: center;
+    margin: 0 auto 12px;
 }
+
+.game-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.game-card:hover { background: rgba(255, 255, 255, 0.16); }
+
+.game-card.selected {
+    border-color: #4CAF50;
+    background: rgba(76, 175, 80, 0.25);
+}
+
+.game-card-icon { font-size: 28px; line-height: 1; }
+
+.game-card-text { display: flex; flex-direction: column; }
+
+.game-card-text small { color: rgba(255, 255, 255, 0.7); }
 
 #room-code-input {
     padding: 12px;
@@ -235,6 +261,209 @@ body {
     background-color: #E64A19;
 }
 
+/* --- İKİ KİŞİLİK SIRA TABANLI OYUNLAR (ortak kabuk) --- */
+.duel {
+    width: min(calc(100vw - 56px), 440px);
+    margin: 0 auto;
+    color: white;
+}
+
+.duel-title {
+    margin: 0 0 10px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.duel-scores {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.duel-score,
+.duel-draws {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid transparent;
+    min-width: 0;
+}
+
+.duel-score { flex: 1; }
+.duel-score.waiting { color: rgba(255, 255, 255, 0.6); font-size: 14px; text-align: center; }
+.duel-score.active { border-color: #4CAF50; background: rgba(76, 175, 80, 0.3); }
+.duel-score-name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel-score-wins { font-size: 26px; line-height: 1.1; }
+.duel-draws { text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.75); }
+.duel-draws strong { font-size: 20px; color: white; }
+
+.duel-status {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.duel-status.my-turn { background: #2e9e4a; animation: duel-pulse 1.4s ease-in-out infinite; }
+.duel-status.their-turn { background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.85); }
+.duel-status.won { background: #d4a017; }
+.duel-status.lost { background: #b23b3b; }
+.duel-status.draw { background: #5a6acf; }
+
+@keyframes duel-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+    50% { box-shadow: 0 0 0 8px rgba(76, 175, 80, 0); }
+}
+
+.duel-board-wrap { position: relative; }
+.duel-board-wrap.inactive .duel-board { opacity: 0.55; }
+
+.duel-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    border-radius: 12px;
+    background: rgba(20, 20, 40, 0.88);
+    z-index: 5;
+}
+
+.duel-overlay.show { display: flex; }
+.duel-overlay-title { font-size: 22px; }
+.duel-overlay-hint { font-size: 14px; color: rgba(255, 255, 255, 0.8); }
+
+.duel-room-code {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    padding: 6px 14px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    user-select: all;
+}
+
+.duel-actions {
+    display: none;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.duel-actions.show { display: flex; }
+
+.duel-btn {
+    flex: 1;
+    min-height: 48px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.duel-btn.primary { background: #4CAF50; }
+.duel-btn.secondary { background: #3f51b5; }
+.duel-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* XOX */
+.xox-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.35);
+    transition: opacity 0.2s;
+}
+
+.xox-cell {
+    aspect-ratio: 1;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    font-family: inherit;
+    font-size: clamp(44px, 18vw, 84px);
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s, transform 0.15s;
+    touch-action: manipulation;
+}
+
+.xox-cell:not(:disabled):hover { background: rgba(255, 255, 255, 0.28); }
+.xox-cell:disabled { cursor: default; }
+.xox-cell.mark-x { color: #ff6b81; }
+.xox-cell.mark-o { color: #48dbfb; }
+.xox-cell.last { animation: xox-pop 0.25s ease-out; }
+.xox-cell.win { background: rgba(255, 215, 0, 0.35); animation: duel-win 0.9s ease-in-out infinite; }
+
+@keyframes xox-pop {
+    from { transform: scale(0.4); }
+    to { transform: scale(1); }
+}
+
+@keyframes duel-win {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.07); }
+}
+
+/* Dörtlü Bağla */
+.c4-board {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    padding: 8px;
+    border-radius: 12px;
+    background: #1e3a8a;
+    box-shadow: inset 0 0 0 3px #162d6e;
+    transition: opacity 0.2s;
+}
+
+.c4-column {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    touch-action: manipulation;
+    min-width: 0;
+}
+
+.c4-column:not(:disabled):hover { background: rgba(255, 255, 255, 0.15); }
+.c4-column:disabled { cursor: default; }
+
+.c4-cell {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #0b1b4d;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.c4-cell.disc.red { background: radial-gradient(circle at 35% 30%, #ff7676, #d82a2a 70%); }
+.c4-cell.disc.yellow { background: radial-gradient(circle at 35% 30%, #fff08a, #e6b800 70%); }
+.c4-cell.drop { animation: c4-drop calc(0.12s + var(--drop-rows, 1) * 0.06s) ease-in; }
+.c4-cell.win { box-shadow: 0 0 0 3px white, 0 0 14px 4px rgba(255, 255, 255, 0.8); animation: duel-win 0.9s ease-in-out infinite; }
+
+@keyframes c4-drop {
+    from { transform: translateY(calc(var(--drop-rows, 1) * -110%)); }
+    to { transform: translateY(0); }
+}
+
 /* --- MOBİL KONTROLLER --- */
 #mobile-controls {
     display: none; /* Oyun başlayana kadar gizli */
@@ -330,7 +559,7 @@ body {
     
     #nickname-input,
     #room-code-input,
-    #game-select,
+    #game-cards,
     .lobby-btn {
         width: 100%;
     }
