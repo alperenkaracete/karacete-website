@@ -38,7 +38,11 @@
             me: s.me,
             room: room,
             players: s.players,
-            isHost: function () { return s.players.length > 0 && s.players[0].id === s.me.id; }
+            isHost: function () { return s.players.length > 0 && s.players[0].id === s.me.id; },
+            leave: function () {
+                closeSession();
+                Lobby.show();
+            }
         });
     }
 

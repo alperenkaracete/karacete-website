@@ -52,21 +52,47 @@ body {
 }
 
 #nickname-input,
-#room-code-input,
-#game-select {
+#room-code-input {
     box-sizing: border-box;
     display: block;
     margin: 0 auto 12px;
 }
 
-#game-select {
-    padding: 12px;
-    border: none;
-    border-radius: 8px;
+#game-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     width: 250px;
-    font-size: 16px;
-    text-align: center;
+    margin: 0 auto 12px;
 }
+
+.game-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.game-card:hover { background: rgba(255, 255, 255, 0.16); }
+
+.game-card.selected {
+    border-color: #4CAF50;
+    background: rgba(76, 175, 80, 0.25);
+}
+
+.game-card-icon { font-size: 28px; line-height: 1; }
+
+.game-card-text { display: flex; flex-direction: column; }
+
+.game-card-text small { color: rgba(255, 255, 255, 0.7); }
 
 #room-code-input {
     padding: 12px;
@@ -330,7 +356,7 @@ body {
     
     #nickname-input,
     #room-code-input,
-    #game-select,
+    #game-cards,
     .lobby-btn {
         width: 100%;
     }

@@ -5,7 +5,7 @@ window.Lobby = (function () {
 
     var screen = document.getElementById('welcome-screen');
     var nickInput = document.getElementById('nickname-input');
-    var gameSelect = document.getElementById('game-select');
+    var gameCards = document.getElementById('game-cards');
     var createBtn = document.getElementById('create-room-btn');
     var codeInput = document.getElementById('room-code-input');
     var joinBtn = document.getElementById('join-room-btn');
@@ -16,6 +16,7 @@ window.Lobby = (function () {
     var shareBtn = document.getElementById('share-link-btn');
     var leaveBtn = document.getElementById('leave-room-btn');
 
+    var selectedGame = null;
     var currentRoom = null;
     var onLeave = null;
 
@@ -61,15 +62,39 @@ window.Lobby = (function () {
 
     function populateGames() {
         var games = Games.list();
-        gameSelect.innerHTML = '';
+        gameCards.textContent = '';
         games.forEach(function (g) {
-            var opt = document.createElement('option');
-            opt.value = g.id;
-            opt.textContent = g.name;
-            gameSelect.appendChild(opt);
+            var card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'game-card';
+            card.dataset.game = g.id;
+            card.setAttribute('role', 'radio');
+
+            var icon = document.createElement('span');
+            icon.className = 'game-card-icon';
+            icon.textContent = g.icon || '🎮';
+            var text = document.createElement('span');
+            text.className = 'game-card-text';
+            var name = document.createElement('strong');
+            name.textContent = g.name;
+            var info = document.createElement('small');
+            info.textContent = g.tagline || '';
+            text.append(name, info);
+            card.append(icon, text);
+
+            card.addEventListener('click', function () { selectGame(g.id); });
+            gameCards.appendChild(card);
         });
-        // Tek oyun varsa seçim göstermeye gerek yok.
-        gameSelect.style.display = games.length > 1 ? 'block' : 'none';
+        if (games.length) selectGame(games[0].id);
+    }
+
+    function selectGame(id) {
+        selectedGame = id;
+        Array.prototype.forEach.call(gameCards.children, function (card) {
+            var on = card.dataset.game === id;
+            card.classList.toggle('selected', on);
+            card.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
     }
 
     function init(handlers) {
@@ -90,7 +115,7 @@ window.Lobby = (function () {
 
         function create() {
             var name = nickname();
-            if (name) handlers.onCreate(name, gameSelect.value);
+            if (name) handlers.onCreate(name, selectedGame);
         }
 
         function join() {

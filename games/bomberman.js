@@ -782,6 +782,8 @@
     Games.register({
         id: 'bomberman',
         name: 'Bomberman',
+        icon: '💣',
+        tagline: '2–4 oyuncu · gerçek zamanlı',
         maxPlayers: 4,
         init: init,
         onMessage: onMessage,
