@@ -431,12 +431,13 @@
             return M.S.filter(function (s) { return !s.b && s.c && !gone[s.i] && s.i !== M.ld; });
         }
 
-        function takeOver() {
+        // rejoined: bu kimlik yeni geri döndü (kopmuş sayılmaz)
+        function takeOver(rejoined) {
             M.ep++;
             M.ld = me.id;
             M.S.forEach(function (x) {
                 if (x.i === me.id) { x.c = 1; x.dAt = 0; }
-                else if (gone[x.i] && !x.b) markDisconnected(x);      // eski lider ve diğer kopanlar
+                else if (gone[x.i] && !x.b && x.i !== rejoined) markDisconnected(x);      // kopanlar
             });
             if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
@@ -485,6 +486,16 @@
                 }
                 case 'player_joined': {
                     delete gone[data.id];
+                    // Backend aynı kimlikle gelen yeni oturumu eskisinin yerine koyar ve player_disconnect YAYINLAMAZ.
+                    // Lider yeniden katıldıysa (yenileme/kopma) durumu kaybolmuş olabilir: lider düşmüş gibi devret.
+                    if (M && !isLeader() && data.id === M.ld && data.id !== me.id) {
+                        gone[data.id] = true;
+                        var cands = candidates();
+                        delete gone[data.id];
+                        if (cands.length && cands[0].i === me.id) takeOver(data.id);
+                        else emit();
+                        return;
+                    }
                     if (!M || !isLeader()) return;
                     var s = seatOf(data.id);
                     if (s) {

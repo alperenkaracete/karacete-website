@@ -61,6 +61,27 @@ function room(options) {
             });
             api.flush();
         },
+        // backend'in yeni davranışı: aynı kimlikle gelen oturum eskisinin yerini ALIR (sıra korunur, player_disconnect yok)
+        takeover(id) {
+            const old = nodes[id];
+            old.online = false;
+            const node = { id, name: old.name, online: true, players: roomPlayers.map((p) => ({ id: p.id, name: p.name })) };
+            nodes[id] = node;
+            Object.values(nodes).forEach((o) => {
+                if (o.id !== id && o.online) queue.push({ to: o.id, msg: { type: 'player_joined', id, name: old.name } });
+            });
+            node.m = Machine.create({
+                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
+                send: (msg) => {
+                    if (!node.online) return;
+                    const copy = JSON.parse(JSON.stringify(msg));
+                    api.sent.push({ from: id, msg: copy });
+                    Object.values(nodes).forEach((o) => { if (o.id !== id && o.online) queue.push({ to: o.id, msg: copy }); });
+                }
+            });
+            api.flush();
+            return node.m;
+        },
         // sayfa yenileme: aynı kimlik, yeni makine, listenin sonunda
         rejoin(id, name) { return api.join(id, name || nodes[id].name); },
         flush() {
@@ -510,4 +531,40 @@ test('lider kopup dönerse eski epoch yayını yok sayılır ve güncel lider on
     r.advance(1000);
     r.m('B').onMessage(staleMsg);
     assert.ok(r.sent.slice(n).some((s) => s.from === 'B' && s.msg.type === 'pt_state' && s.msg.ep === ep), 'güncel lider yayınladı');
+});
+
+test('backend devralma: yenilenen lider (player_disconnect yok) lider sayılmaz, durum kaybolmaz; sıra korunur', () => {
+    const r = started(3);
+    const g0 = JSON.stringify(r.state('B').g.P);
+    r.takeover('A');
+    r.flush();
+    r.advance(2000);
+    assert.equal(r.state('B').ld, 'B', 'B lider oldu');
+    assert.equal(r.state('C').ld, 'B');
+    assert.equal(r.state('A').ld, 'B', 'yenilenen eski lider durumu aldı');
+    assert.equal(r.view('A').isLeader, false);
+    assert.equal(r.view('A').mode, 'play');
+    assert.equal(JSON.stringify(r.state('A').g.P), g0, 'oyun durumu korundu');
+    assert.equal(r.view('B').seats.find((s) => s.i === 'A').c, 1, 'dönen oyuncu bağlı sayılır, 3 dk sayacı yok');
+    assert.deepEqual(r.view('B').disconnected, []);
+});
+
+test('backend devralma: yenilenen takipçi aynı koltukta kalır, tam durumu alır; lider değişmez', () => {
+    const r = started(3);
+    r.takeover('C');
+    r.flush();
+    r.advance(1500);
+    assert.equal(r.state('A').ld, 'A');
+    assert.equal(r.state('A').ep, 1);
+    assert.equal(r.view('C').mode, 'play');
+    assert.equal(r.view('C').game.order.length, 3);
+    assert.equal(r.view('C').isLeader, false);
+});
+
+test('backend devralma: tek başına yenilenen kurucu yeni lobi kurar (kaybedecek durum yok)', () => {
+    const r = room();
+    r.join('A', 'Ayse');
+    r.takeover('A');
+    assert.equal(r.view('A').isLeader, true);
+    assert.equal(r.view('A').phase, 'lobby');
 });
