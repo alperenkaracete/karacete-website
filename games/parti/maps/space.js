@@ -8,7 +8,7 @@
     return {
         id: "space",
         name: "Uzay",
-        palette: {"bgTop": "#06061f", "bgBottom": "#2b0f5c", "path": "#9fe8ff", "pathEdge": "#2d4cc8", "label": "#ffffff", "wave": "rgba(255,255,255,0.1)"},
+        palette: {"bgTop": "#06061f", "bgBottom": "#2b0f5c", "path": "#9fe8ff", "pathEdge": "#2d4cc8", "label": "#ffffff", "wave": "rgba(255,255,255,0.1)", "fx": "stars"},
         // düğüm: { id, x, y, type: normal|start|treasure|weapon|event, next: [id, ...] } (1000x700)
         nodes: [
             {"id":0,"x":123,"y":88,"type":"normal","next":[1]},

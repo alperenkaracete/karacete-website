@@ -8,7 +8,7 @@
     return {
         id: "pirate",
         name: "Korsan Adası",
-        palette: {"bgTop": "#0a5a8c", "bgBottom": "#0f9bbd", "path": "#f6dfa6", "pathEdge": "#8a5a2b", "label": "#ffffff", "wave": "rgba(255,255,255,0.22)"},
+        palette: {"bgTop": "#0a5a8c", "bgBottom": "#0f9bbd", "path": "#f6dfa6", "pathEdge": "#8a5a2b", "label": "#ffffff", "wave": "rgba(255,255,255,0.22)", "fx": "waves"},
         // düğüm: { id, x, y, type: normal|start|treasure|weapon|event, next: [id, ...] } (1000x700)
         nodes: [
             {"id":0,"x":500,"y":535,"type":"normal","next":[1]},

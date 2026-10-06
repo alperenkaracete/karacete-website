@@ -14,9 +14,10 @@ Oyunlar:
 | 🔴 **Dörtlü Bağla** | 2 | sıra tabanlı |
 | 🐱 **Kedi - Köpek** | 2 | sıra tabanlı atış düellosu |
 | ⚽ **Kafa Topu** | 2 | gerçek zamanlı, yandan görünüşlü futbol (kendi yüzünle) |
+| 🎲 **Parti** | 2–8 | tahta/parti oyunu (zar, silahlar, yıldız toplama; botlar, takım modu) |
 
 Oyun lobide kartlardan seçilir; oda kurulurken seçilen oyun sunucuya `game` alanı olarak gider
-(`bomberman`, `xox`, `connect4`, `catdog`, `kafatopu`).
+(`bomberman`, `xox`, `connect4`, `catdog`, `kafatopu`, `parti`).
 
 ## Yerelde çalıştırma
 
@@ -50,6 +51,13 @@ games/kafatopu.js    Kafa Topu arayüzü (canvas, yüz seçimi, girdi)
 games/kafatopu-rules.js  fizik adımı, anlık görüntü, interpolasyon, doğrulayıcılar (saf)
 games/kafatopu-predict.js  katılanda tahmin + uzlaştırma (saf)
 games/kafatopu-net.js    kurucu-otorite ağ/maç denetleyicisi (DOM'suz)
+games/parti/config.js    Parti ayarları: silahlar, olaylar, ödüller, süreler
+games/parti/graph.js     tahta grafı: yürüme, en kısa adım mesafesi, harita doğrulayıcı (saf)
+games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dekor
+games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
+games/parti/minigame.js  startMinigame sözleşmesi + yer tutucu "Şans Çarkı"
+games/parti/machine.js   lider/takipçi ağ durum makinesi: pt_state, lider devri, kopma bekleme (DOM'suz)
+games/parti/ui.js        Parti arayüzü (canvas tahta, lobi/ayarlar, paneller)
 tests/               node:test ile birim testleri
 assets/              sprite'lar
 ```
@@ -133,6 +141,66 @@ canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa
   `kt_state/kt_start/kt_goal/kt_end` kabul eder. Kurucu ayrılırsa kalan oyuncu otorite olmaz, oyun biter.
 - Yalnızca testler için: `window.KAFATOPU_OPTIONS = { countdown, matchTime, goalLimit, ball }` kısa maç / başlangıç topu verir.
 
+## Parti (2–8 kişilik tahta oyunu)
+
+**Kurallar.** Tur = herkesin sırayla bir hamlesi: 🎲 zar (1-6) → zar kadar adım yürü (dallanmada yön seç) → durduğun
+kutucuğun etkisi → isteğe bağlı bir silah → turu bitir. Her adım için **20 sn** vardır; dolunca otomatik oynanır (zar atılır,
+yön rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüller → yeni sandıklar.
+- **Kutucuklar:** başlangıç 🏁, hazine ✨ (sandık çıkar), silah bölgesi ⚔️ (rastgele silah), olay 🎁 (rastgele küçük olay:
+  +1 ⭐, 15 hasar, başlangıca ışınlanma, silah, bir tur dinlenme).
+- **Sandıklar:** her tur başında boş hazine noktalarına 2 yıldız sandığı (1 ya da 2 ⭐, %70/%30) ve 1 silah sandığı çıkar.
+  Üzerinden geçen ya da orada duran alır. Envanter (en çok 3) doluysa bir öğeyi bırakma ya da vazgeçme seçeneği sunulur.
+- **Silahlar** (tek atımlık, can 100; menzil = tahtadaki en kısa adım sayısı): 👊 Yumruk menzil 1 / 30 · 🔫 Pompalı menzil 3,
+  1/2/3 adımda 45/30/15 · 🏹 Yay menzil 5 / 20 · 💣 Bomba menzil 4, seçilen kutucuktaki herkese (kendine de) 30 · 🛡️ Kalkan
+  bir sonraki saldırıyı engeller (kurmak turu harcamaz). Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
+- **Ölüm:** can 0 olunca yıldızların yarısı (aşağı) saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
+  can dolar, bir tur atlanır, envanter korunur.
+- **Kazanma:** bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
+- **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: kalkan (düelloda kazanan 1., kaybeden 2.).
+  Envanter doluysa silah ödülü kaybolur, kalkan hemen kurulur.
+- **Lobi:** lider mod (Bireysel / 2'şerli Takım), harita (Korsan Adası / Uzay), hedef ⭐ (5-25), bot ekleme/çıkarma ve oyuncu
+  atma işlemlerini yapar; herkes benzersiz bir emoji avatar seçer. Takım modunda sayı çift ve her takımda tam 2 kişi olmalıdır.
+
+**Mimari.** Oda kurucusu **lider**dir: durumu hesaplar ve her kabul edilen eylemden sonra **tam** `pt_state` görüntüsünü
+yayınlar (≈2-6 KB; testle 20 KB altı doğrulanır). Diğer oyuncular `pt_action {id, a}` yollar, lider sırayı/geçerliliği
+doğrular. Rastgelelik yalnızca liderde ve durumdaki tohumdan (`rs`) üretilir; kurallar (`rules.js`) saf ve deterministiktir.
+- **Lider devri:** lider `players[0]`'dan değil durumdan (`ld`) türetilir, çünkü backend yeniden katılanı listenin sonuna ekler.
+  Lider düşerse bağlı insan koltuklar arasında koltuk sırasına göre ilk kişi lider olur (herkes aynı kuralı yerelde uygular),
+  `ep` (devir sayısı) artar ve saklı son durumdan devam eder. Eski epoch'tan gelen görüntüler yok sayılır; kopup dönen eski lider
+  lider olmaz, durumu alır.
+- **Kopma/yeniden bağlanma:** çekirdek (`core/main.js`) `reconnect: true` ilan eden oyunlarda kopunca oyun ekranını kapatmaz,
+  aynı kimlik ve oda koduyla `join_room`u yeniden dener (1-2-3-5-8 sn…, en çok 3 dk) ve oyuna `_connection`/`_reconnected`
+  mesajı verir. Kimlik **sekme başına** `sessionStorage`'da saklanır (yenileme sonrası aynı kimlikle otomatik katılım; farklı
+  sekmeler farklı kimlik alır, aynı tarayıcıda çoklu sekmeyle test edilebilir). Diğer oyunların davranışı değişmez.
+  Bir oyuncu koptuğunda sırası geldiğinde oyun bekler: "X bağlantısı koptu, kalan süre M:SS"; lider **Bekle / Turu geç / At**
+  seçebilir; 3 dk dolunca tur geçilir ve koltuk boşalır. Dönen oyuncu tam durumu alır (`pt_sync`). Minioyun sırasında kopan
+  en sona yazılır. Oyun sürerken gelen tanınmayan oyuncu izleyici olur.
+- **Botlar** lider tarafından oynanır (zar, rastgele yön, menzilde rakip varken %50 silah, kalkanı kurar); düelloya seçilmez.
+
+**Minioyun sözleşmesi** (`games/parti/minigame.js`) - tur sonunda çağrılır, gerçek minioyunlar bu fonksiyonun yerini alır:
+
+```js
+startMinigame({ type: 'ffa' | 'duel', players: [id, ...], seed }) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
+```
+
+`ranking` en iyiden en kötüye gruplardır; aynı gruptaki kimlikler eşit derecededir (`[[a, b], [c]]` → a=1., b=1., c=3.).
+`duel` yalnızca iki insan oyuncu içerir ve `[[kazanan], [kaybeden]]` döner. Yer tutucu "Şans Çarkı" tohumdan rastgele sıralama
+üretir. Kopmuş insanlar sonuçtan bağımsız olarak en sona yazılır.
+
+**Yeni harita eklemek:** `games/parti/maps/<ad>.js` oluştur (aynı UMD kalıbı, `PartiMaps[<id>]`'ye kaydolur) ve `index.html`'e
+`games/parti/graph.js`'ten sonra, `ui.js`'ten önce ekle. Biçim (1000×700 mantıksal alan):
+
+```js
+{ id, name, palette: { bgTop, bgBottom, path, pathEdge, label, wave, fx: 'waves' | 'stars' },
+  nodes: [{ id, x, y, type: 'normal'|'start'|'treasure'|'weapon'|'event', next: [id, ...] }],   // 35-50 düğüm, ≥8 start
+  decor: [{ e: '🌴', x, y, s: boyutPx, a: 'float'|'bob'|'twinkle'|'none' }] }
+```
+
+`tests/parti-graph.test.js` haritayı doğrular (düğüm sayısı, çıkışsız düğüm, döngüsellik, başlangıçtan erişim, ≥2 dallanma,
+çakışma); yeni haritayı oradaki listeye ekle. **Yeni silah eklemek:** `games/parti/config.js` içindeki `WEAPONS`'a ekle
+(`kind: 'target'` + `range`/`dmg` tablosu, `'area'` + `damage` ya da `'shield'`) ve `WEAPON_IDS`'e yaz; kurallar ve arayüz tabloyu okur.
+Olaylar (`EVENTS`), ödüller (`REWARDS`), süreler ve sandık sayıları da aynı dosyadadır.
+
 ## Testler
 
 Kazanma/beraberlik kuralları ve ortak sıra tabanlı protokol saf fonksiyonlardır; Node'un yerleşik
@@ -211,6 +279,14 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 
 ## Bilinen sınırlamalar
 
+- Parti (backend kaynaklı): sunucu oda son oyuncu çıkınca odayı siler (herkes aynı anda düşerse oyun kaybolur), kopan
+  oturumu hemen siler ve yeniden katılanı listenin sonuna ekler; yarı açık soketlerde (heartbeat yok) aynı kimlikle yeniden
+  katılma, sunucu eski bağlantıyı fark edene kadar `BAD_REQUEST` döner (istemci birkaç kez yeniden dener). Backend için ayrı
+  görev: kısa süre oda tutma / aynı kimlikle soket değiştirme / heartbeat.
+- Parti: gönderen kimliği sunucuca doğrulanmaz (mesajda taşınır); kötü niyetli bir oyuncu başkası adına eylem gönderebilir.
+  Arkadaşlarla oynamak için kabul edilmiştir.
+- Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
+  koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
 - XOX / Dörtlü Bağla / Kedi - Köpek / Kafa Topu: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
