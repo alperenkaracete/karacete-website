@@ -1,18 +1,22 @@
 // Kafa Topu ağ/maç denetleyicisi: DOM'suz, saat ve gönderim enjekte edilir (Node'da test edilir).
 //
 // Mimari: oda kurucusu = otorite. Fizik (rules.step) yalnızca kurucuda, sabit 1/60 sn adımla çalışır;
-// kurucu ~30 Hz `kt_state` anlık görüntüsü yollar. Katılan oyuncu yalnızca `kt_input` yollar (değişince)
-// ve gelen görüntüleri ~100 ms gecikmeyle interpolasyonla çizer.
+// kurucu her adımda (60 Hz) `kt_state` anlık görüntüsü yollar. Katılan oyuncu:
+//   - yalnızca `kt_input` yollar (değişince + kısa aralıklarla tekrar; sıra numaralı),
+//   - kendi karakterini yerel girdilerle HEMEN, kurucuyla aynı saf fonksiyonla ilerletir (tahmin) ve
+//     her anlık görüntüde kurucunun onayladığı durumdan, onaylanmamış girdileri yeniden oynatarak uzlaşır,
+//   - rakibi ve topu ~40 ms gecikmeyle interpolasyonla çizer; görüntü gecikirse ≤100 ms ekstrapole eder.
 //
 // Mesajlar:
-//   kt_profile {id, face}     her iki yön; yüz (emoji ya da küçük JPEG data URL)
-//   kt_ready                  her iki yön; "hazırım"
-//   kt_start {round, swap}    kurucu -> katılan; maç (3-2-1 geri sayımı dahil) başladı
-//   kt_input {left,right,jump,kick}   katılan -> kurucu; yalnızca değişince
-//   kt_state {t,ph,cd,tm,g,sc,p,b}    kurucu -> katılan; ~30 Hz
+//   kt_profile {id, face}             her iki yön; yüz (emoji ya da küçük JPEG data URL)
+//   kt_ready                          her iki yön; "hazırım"
+//   kt_start {round, swap}            kurucu -> katılan; maç (3-2-1 geri sayımı dahil) başladı
+//   kt_input {r, n, left,right,jump,kick}   katılan -> kurucu; r = tur, n = tur içi artan sıra no
+//   kt_state {t,f,d,m,g,s,p,b,a,c}    kurucu -> katılan; 60 Hz (a = uygulanan son girdi no, c = kaç adımdır)
 //   kt_goal {scorer,score,golden}     kurucu -> katılan; güvenilir olay
 //   kt_end {winner,score,reason}      kurucu -> katılan; güvenilir olay
-//   kt_rematch                her yön; rövanş oyu (iki oy => kurucu yeni maçı başlatır, taraflar değişir)
+//   kt_rematch                        her yön; rövanş oyu (iki oy => kurucu yeni maçı başlatır, taraflar değişir)
+//   kt_ping {n, t} / kt_pong {n, t}   her yön, saniyede bir; gidiş-dönüş süresi ölçümü
 //
 // Sunucu gönderen kimliğini eklemediği için, oda 2 kişilik olduğundan gelen mesaj "diğer oyuncudan"
 // sayılır; her taraf yalnızca kendi rolüne uygun mesajları kabul eder.
@@ -22,24 +26,30 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    var INTERP_DELAY = 100;        // ms
-    var SEND_EVERY_STEPS = 2;      // 60 Hz / 2 = 30 Hz
+    var INTERP_DELAY = 40;           // ms (~2 anlık görüntü aralığı)
     var MAX_STEPS_PER_TICK = 5;
     var MAX_FRAME_MS = 100;
-    var BUFFER_SIZE = 40;
+    var BUFFER_SIZE = 90;            // ~1.5 sn
     var STALE_MS = 1000;
-    var OFFSET_WINDOW = 60;        // ~2 sn (30 Hz)
-    var OFFSET_SLEW_MS = 1;
+    var OFFSET_WINDOW = 120;         // ~2 sn (60 Hz)
+    var OFFSET_SLEW_MS = 0.5;
     var OFFSET_SNAP_MS = 100;
+    var INPUT_REPEAT_ACTIVE_MS = 100;  // tuş basılıyken / onaysızken tekrar aralığı
+    var INPUT_REPEAT_IDLE_MS = 1000;   // hepsi bırakılmış ve onaylanmışken güvence aralığı
+    var PING_INTERVAL_MS = 1000;
+    var PING_TIMEOUT_MS = 3000;
+    var RATE_WINDOW_MS = 1000;
 
-    // options: { ctx, rules, onChange(view)?, onEvent(ev)?, now()?, matchOptions? }
+    // options: { ctx, rules, predictor?, onChange(view)?, onEvent(ev)?, now()?, matchOptions?, predict? }
     function create(options) {
         var ctx = options.ctx;
         var rules = options.rules;
+        var Predict = options.predictor;
         var now = options.now || function () { return Date.now(); };
         var onChange = options.onChange || function () {};
         var onEvent = options.onEvent || function () {};
         var matchOptions = options.matchOptions || {};
+        var predictEnabled = options.predict !== false && !!Predict;
         var amHost = ctx.isHost();     // başlangıçta bir kez: kurucu ayrılırsa kalan oyuncu otorite olmaz
 
         var st = {
@@ -54,17 +64,31 @@
             // kurucu
             sim: null,
             inputs: [rules.emptyInput(), rules.emptyInput()],
+            guestSeq: 0,               // kabul edilen son girdi sıra numarası
+            guestC: 0,                 // o girdinin kaç sim adımıdır uygulandığı
             acc: 0,
             lastTick: null,
-            stepsSinceSend: 0,
             // katılan
             buffer: [],
             offset: null,
             ests: [],
             lastRecv: 0,
-            lastSentInput: rules.emptyInput(),
             localInput: rules.emptyInput(),
-            lastSnapshot: null
+            lastSentInput: rules.emptyInput(),
+            inputSeq: 0,               // gönderilen son girdi sıra numarası
+            ackSeq: 0,                 // kurucunun onayladığı son sıra numarası
+            lastInputSendAt: 0,
+            lastSnapshot: null,
+            pred: null,
+            localAcc: 0,
+            localLast: null,
+            lastEx: 0,
+            // ölçüm
+            pingN: 0,
+            pingSentAt: -1e9,
+            ping: null,
+            lastPongAt: -1e9,
+            rate: { state: [], sim: [], input: [], sent: [] }
         };
 
         function opponent() {
@@ -78,17 +102,66 @@
 
         function send(msg) { ctx.send(msg); }
 
+        // ---- Ölçüm ----
+        function mark(list, t) {
+            list.push(t);
+            while (list.length && t - list[0] > RATE_WINDOW_MS) list.shift();
+        }
+
+        function perSecond(list, t) {
+            while (list.length && t - list[0] > RATE_WINDOW_MS) list.shift();
+            return list.length;
+        }
+
         // ---- Görünüm ----
         function frameNow(t) {
             if (amHost) return st.sim ? rules.frame(st.sim) : null;
             if (!st.buffer.length) return null;
             var renderT = st.offset === null ? st.buffer[st.buffer.length - 1].t : (t - st.offset - INTERP_DELAY);
-            return rules.sample(st.buffer, renderT);
+            var f = rules.sample(st.buffer, renderT);
+            st.lastEx = f ? f.ex : 0;
+            if (f && st.pred && predictEnabled && st.mode === 'match') {
+                var own = st.pred.view();
+                if (own) {
+                    // anlık görüntü tamponunu bozmamak için kopya; yalnızca kendi karakter tahminden gelir
+                    f = Object.assign({}, f, { p: f.p.slice() });
+                    f.p[myIndex()] = own;
+                }
+            }
+            return f;
         }
 
         function sessionWins() {
             var opp = opponent();
             return [st.wins[ctx.me.id] || 0, opp ? (st.wins[opp.id] || 0) : 0];
+        }
+
+        function debugInfo(t) {
+            var info = {
+                role: amHost ? 'kurucu' : 'katilan',
+                ping: st.ping,
+                interpDelay: INTERP_DELAY,
+                stateHz: perSecond(st.rate.state, t),
+                extrapolatedMs: st.lastEx,
+                bufferSize: st.buffer.length,
+                predict: !!(st.pred && predictEnabled),
+                simHz: perSecond(st.rate.sim, t),
+                sentHz: perSecond(st.rate.sent, t),
+                inputHz: perSecond(st.rate.input, t),
+                predError: 0,
+                predErrorMax: 0,
+                replay: 0,
+                teleports: 0,
+                unacked: Math.max(0, st.inputSeq - st.ackSeq)
+            };
+            if (st.pred) {
+                var s = st.pred.stats();
+                info.predError = s.error;
+                info.predErrorMax = s.errorMax;
+                info.replay = s.replay;
+                info.teleports = s.teleports;
+            }
+            return info;
         }
 
         function view() {
@@ -107,6 +180,8 @@
                 wins: sessionWins(),                 // [ben, rakip]
                 myVoted: st.votes.me,
                 opponentVoted: st.votes.opp,
+                ping: (t - st.lastPongAt) < PING_TIMEOUT_MS ? st.ping : null,
+                debug: debugInfo(t),
                 stale: !amHost && st.mode === 'match' && st.buffer.length > 0 && (t - st.lastRecv) > STALE_MS
             };
         }
@@ -149,12 +224,13 @@
             st.swap = swap;
             st.sim = rules.createState(Object.assign({}, matchOptions, { swap: swap }));
             st.inputs[1] = rules.emptyInput();      // önceki maçtan kalan tuş durumu taşınmasın
+            st.guestSeq = 0;
+            st.guestC = 0;
             st.mode = 'match';
             st.result = null;
             st.votes = { me: false, opp: false };
             st.acc = 0;
             st.lastTick = null;
-            st.stepsSinceSend = 0;
             send({ type: 'kt_start', round: round, swap: swap });
             sendSnapshot();
         }
@@ -181,13 +257,23 @@
         function sendSnapshot() {
             var snap = rules.snapshot(st.sim);
             snap.type = 'kt_state';
+            snap.a = st.guestSeq;
+            snap.c = st.guestC;
             send(snap);
-            st.stepsSinceSend = 0;
+            mark(st.rate.sent, now());
         }
 
         // ---- Girdi ----
         function sameInput(a, b) {
             return a.left === b.left && a.right === b.right && a.jump === b.jump && a.kick === b.kick;
+        }
+
+        function anyKey(i) { return i.left || i.right || i.jump || i.kick; }
+
+        function sendInput() {
+            var i = st.localInput;
+            send({ type: 'kt_input', r: st.round, n: st.inputSeq, left: i.left, right: i.right, jump: i.jump, kick: i.kick });
+            st.lastInputSendAt = now();
         }
 
         // partial: { left?, right?, jump?, kick? }
@@ -196,12 +282,15 @@
             ['left', 'right', 'jump', 'kick'].forEach(function (k) {
                 if (typeof partial[k] === 'boolean') next[k] = partial[k];
             });
+            var changed = !sameInput(next, st.localInput);
             st.localInput = next;
             if (amHost) {
                 st.inputs[0] = next;
-            } else if (st.mode === 'match' && !sameInput(next, st.lastSentInput)) {
+            } else if (st.mode === 'match' && changed) {
+                st.inputSeq++;
                 st.lastSentInput = next;
-                send({ type: 'kt_input', left: next.left, right: next.right, jump: next.jump, kick: next.kick });
+                if (st.pred) st.pred.pushInput(st.inputSeq, next);
+                sendInput();
             }
         }
 
@@ -235,15 +324,20 @@
             if (winnerId !== null) st.wins[winnerId] = (st.wins[winnerId] || 0) + 1;
         }
 
-        // Her animasyon karesinde çağrılır. Kurucu: sabit adımlı simülasyon; katılan: yalnızca görünüm.
-        function tick(t) {
-            if (t === undefined) t = now();
-            if (!amHost || st.mode !== 'match' || !st.sim) {
-                st.lastTick = null;
-                emit();
-                return;
+        function pingTick(t) {
+            if (!opponent()) return;
+            if (st.mode === 'setup' || st.mode === 'abandoned') return;
+            if (t - st.pingSentAt >= PING_INTERVAL_MS) {
+                st.pingSentAt = t;
+                st.pingN++;
+                send({ type: 'kt_ping', n: st.pingN, t: t });
             }
-            if (st.lastTick === null) { st.lastTick = t; emit(); return; }
+        }
+
+        // Kurucu: sabit adımlı simülasyon (her adımda anlık görüntü)
+        function hostTick(t) {
+            if (st.mode !== 'match' || !st.sim) { st.lastTick = null; return; }
+            if (st.lastTick === null) { st.lastTick = t; return; }
             var frameMs = Math.min(Math.max(t - st.lastTick, 0), MAX_FRAME_MS);
             st.lastTick = t;
             st.acc += frameMs / 1000;
@@ -251,27 +345,52 @@
             while (st.acc >= rules.DT && steps < MAX_STEPS_PER_TICK && st.sim.phase !== 'over') {
                 st.sim = rules.step(st.sim, st.inputs, rules.DT);
                 st.acc -= rules.DT;
+                st.guestC++;
                 steps++;
-                st.stepsSinceSend++;
+                mark(st.rate.sim, t);
                 var events = st.sim.events;
-                if (events.length) {
-                    handleEvents(events);
-                    sendSnapshot();
-                } else if (st.stepsSinceSend >= SEND_EVERY_STEPS) {
-                    sendSnapshot();
-                }
+                if (events.length) handleEvents(events);
+                sendSnapshot();
             }
             if (steps >= MAX_STEPS_PER_TICK) st.acc = 0;       // geride kalındı: birikeni at
             if (st.sim.phase === 'over') {
                 st.lastSnapshot = rules.frame(st.sim);
                 st.acc = 0;
             }
+        }
+
+        // Katılan: yerel sabit adımlı tahmin + girdi tekrarı
+        function guestTick(t) {
+            if (st.mode !== 'match') { st.localLast = null; return; }
+            // girdi tekrarı: tuş basılıyken ya da onaysızken 100 ms'de bir, aksi hâlde 1 sn'de bir
+            var urgent = anyKey(st.localInput) || st.ackSeq < st.inputSeq;
+            if (t - st.lastInputSendAt >= (urgent ? INPUT_REPEAT_ACTIVE_MS : INPUT_REPEAT_IDLE_MS)) sendInput();
+
+            if (!st.pred) return;
+            if (st.localLast === null) { st.localLast = t; return; }
+            var frameMs = Math.min(Math.max(t - st.localLast, 0), MAX_FRAME_MS);
+            st.localLast = t;
+            st.localAcc += frameMs / 1000;
+            var steps = 0;
+            while (st.localAcc >= rules.DT && steps < MAX_STEPS_PER_TICK) {
+                st.pred.step(st.localInput);
+                st.localAcc -= rules.DT;
+                steps++;
+            }
+            if (steps >= MAX_STEPS_PER_TICK) st.localAcc = 0;
+        }
+
+        // Her animasyon karesinde çağrılır.
+        function tick(t) {
+            if (t === undefined) t = now();
+            pingTick(t);
+            if (amHost) hostTick(t); else guestTick(t);
             emit();
         }
 
         // Kurucu saati ile yerel saat arasındaki fark (alınış - t). Son ~2 sn'nin minimumu hedeftir (en az
         // gecikmeli paket gerçek farka en yakın); çizim saatinin sıçramaması için ofset hedefe anlık
-        // görüntü başına en çok 1 ms yaklaşır (≈%3 hız farkı, gözle görülmez). Fark çok büyürse
+        // görüntü başına en çok 0.5 ms yaklaşır (≈%3 hız farkı, gözle görülmez). Fark çok büyürse
         // (ağ koptu / sekme donuk) doğrudan hedefe atlanır.
         function trackOffset(est) {
             st.ests.push(est);
@@ -281,6 +400,11 @@
             var diff = target - st.offset;
             if (Math.abs(diff) > OFFSET_SNAP_MS) st.offset = target;
             else st.offset += diff > OFFSET_SLEW_MS ? OFFSET_SLEW_MS : (diff < -OFFSET_SLEW_MS ? -OFFSET_SLEW_MS : diff);
+        }
+
+        function validPing(msg) {
+            return Number.isInteger(msg.n) && msg.n >= 0 && msg.n <= 1e9 &&
+                typeof msg.t === 'number' && isFinite(msg.t) && msg.t >= -1e12 && msg.t <= 1e12;
         }
 
         // ---- Mesajlar ----
@@ -310,12 +434,27 @@
                 st.face.opp = null;
                 st.votes = { me: false, opp: false };
                 st.inputs[1] = rules.emptyInput();
+                st.ping = null;
                 emit();
                 return;
             }
             if (!opp) return;
 
             switch (data.type) {
+                case 'kt_ping': {
+                    if (!validPing(data)) return;
+                    send({ type: 'kt_pong', n: data.n, t: data.t });
+                    return;
+                }
+                case 'kt_pong': {
+                    if (!validPing(data)) return;
+                    var t0 = now();
+                    var rtt = t0 - data.t;
+                    if (!(rtt >= 0 && rtt < 60000)) return;
+                    st.ping = st.ping === null || (t0 - st.lastPongAt) > PING_TIMEOUT_MS ? rtt : st.ping * 0.7 + rtt * 0.3;
+                    st.lastPongAt = t0;
+                    return;
+                }
                 case 'kt_profile': {
                     if (data.id !== opp.id) return;
                     var face = rules.validateFace(data.face);
@@ -340,7 +479,12 @@
                     if (!amHost) return;
                     var input = rules.validateInput(data);
                     if (input === null) return;
-                    st.inputs[1] = input;
+                    if (st.mode !== 'match' || input.r !== st.round) return;     // eski tur / maç dışı
+                    if (input.n <= st.guestSeq) return;                          // tekrar ya da eski
+                    st.guestSeq = input.n;
+                    st.guestC = 0;
+                    st.inputs[1] = { left: input.left, right: input.right, jump: input.jump, kick: input.kick };
+                    mark(st.rate.input, now());
                     return;
                 }
                 case 'kt_start': {
@@ -359,12 +503,25 @@
                     st.ests = [];
                     st.lastRecv = now();
                     st.lastSnapshot = null;
+                    st.inputSeq = 0;
+                    st.ackSeq = 0;
                     st.lastSentInput = rules.emptyInput();
+                    st.localAcc = 0;
+                    st.localLast = null;
+                    st.lastInputSendAt = now();
+                    if (Predict && predictEnabled) {
+                        // katılan = oyuncu 1; solda oynuyorsa yüzü sağa (dir +1), değilse sola
+                        var guestOnLeft = rules.leftIndex(start.swap) === 1;
+                        st.pred = Predict.create({ rules: rules, index: 1, dir: guestOnLeft ? 1 : -1 });
+                        st.pred.reset(guestOnLeft ? 1 : -1);
+                    }
                     // tuş basılı başlıyorsa kurucuya bildir
                     var li = st.localInput;
-                    if (li.left || li.right || li.jump || li.kick) {
+                    if (anyKey(li)) {
+                        st.inputSeq = 1;
                         st.lastSentInput = li;
-                        send({ type: 'kt_input', left: li.left, right: li.right, jump: li.jump, kick: li.kick });
+                        if (st.pred) st.pred.pushInput(1, li);
+                        sendInput();
                     }
                     emit();
                     return;
@@ -378,9 +535,12 @@
                     var t = now();
                     trackOffset(t - snap.t);
                     st.lastRecv = t;
+                    mark(st.rate.state, t);
                     st.buffer.push(snap);
                     if (st.buffer.length > BUFFER_SIZE) st.buffer.shift();
                     st.lastSnapshot = snap;
+                    if (snap.a > st.ackSeq) st.ackSeq = Math.min(snap.a, st.inputSeq);
+                    if (st.pred) st.pred.reconcile(snap);
                     return;
                 }
                 case 'kt_goal': {
@@ -410,7 +570,8 @@
             tick: tick, onMessage: onMessage, getView: view,
             // Yalnızca testler için: kurucunun simülasyon durumuna erişim
             _getSim: function () { return st.sim; },
-            _setSim: function (sim) { st.sim = sim; }
+            _setSim: function (sim) { st.sim = sim; },
+            _state: function () { return st; }
         };
     }
 
