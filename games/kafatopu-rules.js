@@ -599,25 +599,30 @@
     }
 
     // ---- Anlık görüntü (ağ) ----
-    // { t, ph, cd, tm, g, sc:[a,b], p:[[x,y,k],[x,y,k]], b:[x,y] }; k = vuruş ilerlemesi 0..100
+    // Tel biçimi (kısa alanlar, yuvarlanmış; ~60 Hz):
+    //   { t: sim adımı (1/60 sn), f: faz, d: geri sayım (0.1 sn), m: süre (0.1 sn), g: altın gol, s: [a, b] skor,
+    //     p: [[x, y, k, vx, vy], [..]] oyuncular (k = vuruş ilerlemesi 0..100), b: [x, y, vx, vy] top }
+    // Kurucu ağ katmanı ayrıca `a` (uygulanan son girdi sıra numarası) ve `c` (o girdinin kaç adımdır uygulandığı) ekler.
     function snapshot(state) {
         return {
-            t: Math.round(state.tick * 1000 / 60),
-            ph: PHASES.indexOf(state.phase),
-            cd: round1(state.countdown),
-            tm: round1(state.time),
+            t: state.tick,
+            f: PHASES.indexOf(state.phase),
+            d: Math.round(state.countdown * 10),
+            m: Math.round(state.time * 10),
             g: state.golden ? 1 : 0,
-            sc: [state.score[0], state.score[1]],
+            s: [state.score[0], state.score[1]],
             p: state.players.map(function (p) {
-                return [round1(p.x), round1(p.y), p.kick > 0 ? Math.round(kickProgress(p) * 100) : 0];
+                return [round1(p.x), round1(p.y), p.kick > 0 ? Math.round(kickProgress(p) * 100) : 0, Math.round(p.vx), Math.round(p.vy)];
             }),
-            b: [round1(state.ball.x), round1(state.ball.y)]
+            b: [round1(state.ball.x), round1(state.ball.y), Math.round(state.ball.vx), Math.round(state.ball.vy)]
         };
     }
 
-    // Çizim için anlık görüntüyle aynı biçimde, yuvarlamasız görünüm (kurucunun kendi ekranı)
+    // Çizim için normalize görünüm biçimi (validateState çıktısıyla aynı): t ms, ph, cd/tm saniye, sc, p, b.
+    // Kurucunun kendi ekranı için yuvarlamasız.
     function frame(state) {
         return {
+            tick: state.tick,
             t: state.tick * 1000 / 60,
             ph: PHASES.indexOf(state.phase),
             cd: state.countdown,
@@ -625,9 +630,10 @@
             g: state.golden ? 1 : 0,
             sc: [state.score[0], state.score[1]],
             p: state.players.map(function (p) {
-                return [p.x, p.y, p.kick > 0 ? kickProgress(p) * 100 : 0];
+                return [p.x, p.y, p.kick > 0 ? kickProgress(p) * 100 : 0, p.vx, p.vy];
             }),
-            b: [state.ball.x, state.ball.y]
+            b: [state.ball.x, state.ball.y, state.ball.vx, state.ball.vy],
+            ex: 0
         };
     }
 
@@ -639,11 +645,13 @@
         return Number.isInteger(v) && v >= lo && v <= hi;
     }
 
-    // kt_input -> { left, right, jump, kick } ya da null
+    // kt_input -> { r, n, left, right, jump, kick } ya da null.
+    // r: maç turu (>=1), n: tur içinde artan girdi sıra numarası (>=0).
     function validateInput(msg) {
         if (!msg || typeof msg !== 'object') return null;
+        if (!isInt(msg.r, 1, 1e6) || !isInt(msg.n, 0, 1e9)) return null;
         var keys = ['left', 'right', 'jump', 'kick'];
-        var out = {};
+        var out = { r: msg.r, n: msg.n };
         for (var i = 0; i < keys.length; i++) {
             if (typeof msg[keys[i]] !== 'boolean') return null;
             out[keys[i]] = msg[keys[i]];
@@ -651,26 +659,32 @@
         return out;
     }
 
-    // kt_state -> normalize edilmiş anlık görüntü ya da null
+    // kt_state -> normalize edilmiş görünüm ({tick, t, ph, cd, tm, g, sc, p, b, a, c, ex:0}) ya da null
     function validateState(msg) {
         if (!msg || typeof msg !== 'object') return null;
         if (!isInt(msg.t, 0, 1e9)) return null;
-        if (!isInt(msg.ph, 0, PHASES.length - 1)) return null;
-        if (!isNum(msg.cd, 0, COUNTDOWN_TIME + 1)) return null;
-        if (!isNum(msg.tm, 0, 600)) return null;
+        if (!isInt(msg.f, 0, PHASES.length - 1)) return null;
+        if (!isInt(msg.d, 0, 40)) return null;
+        if (!isInt(msg.m, 0, 6000)) return null;
         if (msg.g !== 0 && msg.g !== 1) return null;
-        if (!Array.isArray(msg.sc) || msg.sc.length !== 2 || !isInt(msg.sc[0], 0, 99) || !isInt(msg.sc[1], 0, 99)) return null;
+        if (!Array.isArray(msg.s) || msg.s.length !== 2 || !isInt(msg.s[0], 0, 99) || !isInt(msg.s[1], 0, 99)) return null;
+        if (!isInt(msg.a, 0, 1e9) || !isInt(msg.c, 0, 1e9)) return null;
         if (!Array.isArray(msg.p) || msg.p.length !== 2) return null;
         var players = [];
         for (var i = 0; i < 2; i++) {
             var p = msg.p[i];
-            if (!Array.isArray(p) || p.length !== 3) return null;
+            if (!Array.isArray(p) || p.length !== 5) return null;
             if (!isNum(p[0], -50, W + 50) || !isNum(p[1], -100, H + 50) || !isNum(p[2], 0, 100)) return null;
-            players.push([p[0], p[1], p[2]]);
+            if (!isNum(p[3], -3000, 3000) || !isNum(p[4], -3000, 3000)) return null;
+            players.push([p[0], p[1], p[2], p[3], p[4]]);
         }
-        if (!Array.isArray(msg.b) || msg.b.length !== 2) return null;
-        if (!isNum(msg.b[0], -100, W + 100) || !isNum(msg.b[1], -200, H + 100)) return null;
-        return { t: msg.t, ph: msg.ph, cd: msg.cd, tm: msg.tm, g: msg.g, sc: [msg.sc[0], msg.sc[1]], p: players, b: [msg.b[0], msg.b[1]] };
+        var b = msg.b;
+        if (!Array.isArray(b) || b.length !== 4) return null;
+        if (!isNum(b[0], -100, W + 100) || !isNum(b[1], -200, H + 100) || !isNum(b[2], -3000, 3000) || !isNum(b[3], -3000, 3000)) return null;
+        return {
+            tick: msg.t, t: msg.t * 1000 / 60, ph: msg.f, cd: msg.d / 10, tm: msg.m / 10, g: msg.g,
+            sc: [msg.s[0], msg.s[1]], p: players, b: [b[0], b[1], b[2], b[3]], a: msg.a, c: msg.c, ex: 0
+        };
     }
 
     function validateScore(sc) {
@@ -729,32 +743,61 @@
         return null;
     }
 
-    // ---- İnterpolasyon (katılan taraf) ----
+    // ---- İnterpolasyon / ekstrapolasyon (katılan taraf) ----
+    var EXTRAPOLATE_MAX_MS = 100;
+
     function lerp(a, b, k) { return a + (b - a) * k; }
+
+    function lerpPlayer(a, b, k) {
+        return [lerp(a[0], b[0], k), lerp(a[1], b[1], k), k < 0.5 ? a[2] : b[2], lerp(a[3], b[3], k), lerp(a[4], b[4], k)];
+    }
 
     function lerpSnapshots(a, b, k) {
         k = clamp(k, 0, 1);
         return {
+            tick: k < 0.5 ? a.tick : b.tick,
             t: lerp(a.t, b.t, k),
             ph: k < 0.5 ? a.ph : b.ph,
             cd: lerp(a.cd, b.cd, k),
             tm: lerp(a.tm, b.tm, k),
             g: b.g,
             sc: b.sc.slice(),
-            p: [
-                [lerp(a.p[0][0], b.p[0][0], k), lerp(a.p[0][1], b.p[0][1], k), k < 0.5 ? a.p[0][2] : b.p[0][2]],
-                [lerp(a.p[1][0], b.p[1][0], k), lerp(a.p[1][1], b.p[1][1], k), k < 0.5 ? a.p[1][2] : b.p[1][2]]
-            ],
-            b: [lerp(a.b[0], b.b[0], k), lerp(a.b[1], b.b[1], k)]
+            p: [lerpPlayer(a.p[0], b.p[0], k), lerpPlayer(a.p[1], b.p[1], k)],
+            b: [lerp(a.b[0], b.b[0], k), lerp(a.b[1], b.b[1], k), lerp(a.b[2], b.b[2], k), lerp(a.b[3], b.b[3], k)],
+            a: b.a, c: b.c, ex: 0
         };
     }
 
-    // Tampondaki (t'ye göre sıralı) anlık görüntülerden renderT anındaki görünümü üretir; boşsa null.
+    // Son anlık görüntüden `ms` kadar ileri tahmin (en çok EXTRAPOLATE_MAX_MS): top balistik (yerçekimi,
+    // sınırlar içinde), oyuncular hız ve yerçekimiyle zemine kadar. Çarpışma hesaplanmaz; sonraki görüntü düzeltir.
+    function extrapolate(last, ms) {
+        var ex = clamp(ms, 0, EXTRAPOLATE_MAX_MS);
+        var dt = ex / 1000;
+        var bx = last.b[0] + last.b[2] * dt;
+        var by = last.b[1] + last.b[3] * dt + 0.5 * BALL_GRAVITY * dt * dt;
+        var bvy = last.b[3] + BALL_GRAVITY * dt;
+        if (by > GROUND - BALL_R) { by = GROUND - BALL_R; bvy = 0; }
+        bx = clamp(bx, BALL_R, W - BALL_R);
+        by = Math.max(by, BALL_R);
+        var players = last.p.map(function (p) {
+            var py = p[1] + p[4] * dt + 0.5 * PLAYER_GRAVITY * dt * dt;
+            var pvy = p[4] + PLAYER_GRAVITY * dt;
+            if (py >= HEAD_STAND_Y) { py = HEAD_STAND_Y; pvy = 0; }
+            return [clamp(p[0] + p[3] * dt, HEAD_R, W - HEAD_R), Math.max(py, HEAD_R), p[2], p[3], pvy];
+        });
+        return {
+            tick: last.tick, t: last.t + ex, ph: last.ph, cd: last.cd, tm: last.tm, g: last.g, sc: last.sc.slice(),
+            p: players, b: [bx, by, last.b[2], bvy], a: last.a, c: last.c, ex: ex
+        };
+    }
+
+    // Tampondaki (t'ye göre sıralı) anlık görüntülerden renderT (ms) anındaki görünümü üretir; boşsa null.
+    // renderT son görüntüden sonraysa en çok 100 ms ekstrapole edilir (görünümde `ex` = ekstrapole ms).
     function sample(buffer, renderT) {
         if (!buffer.length) return null;
         if (renderT <= buffer[0].t) return buffer[0];
         var last = buffer[buffer.length - 1];
-        if (renderT >= last.t) return last;
+        if (renderT >= last.t) return renderT > last.t ? extrapolate(last, renderT - last.t) : last;
         for (var i = buffer.length - 1; i > 0; i--) {
             if (buffer[i - 1].t <= renderT) {
                 var a = buffer[i - 1];
@@ -779,6 +822,6 @@
         validateInput: validateInput, validateState: validateState, validateStart: validateStart,
         validateGoal: validateGoal, validateEnd: validateEnd, validateFace: validateFace,
         isEmojiFace: isEmojiFace, isJpegFace: isJpegFace,
-        lerpSnapshots: lerpSnapshots, sample: sample
+        lerpSnapshots: lerpSnapshots, extrapolate: extrapolate, sample: sample, EXTRAPOLATE_MAX_MS: EXTRAPOLATE_MAX_MS
     };
 });
