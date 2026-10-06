@@ -15,6 +15,9 @@
     var EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
     var PHOTO_SIZES = [[64, 0.7], [56, 0.6], [48, 0.5], [40, 0.4]];   // [kenar px, JPEG kalitesi]
     var MAX_FACE_IMAGE_PX = 128;
+    var QUERY = (typeof location !== 'undefined' && location.search) || '';
+    var DEBUG = /[?&]debug=1(&|$)/.test(QUERY);
+    var NO_PREDICT = DEBUG && /[?&]notahmin=1(&|$)/.test(QUERY);   // A/B karşılaştırması için tahmini kapatır
     var END_OVERLAY_DELAY = 1600;                      // ms: son golün kutlaması görünsün
 
     var KEYS = {
@@ -658,6 +661,33 @@
             if (label.length > 11) label = label.slice(0, 10) + '…';
             c.fillText(label, i === 0 ? x0 + 42 : x0 + w - 42, 27);
         });
+        drawNetInfo(c, v);
+    }
+
+    // Köşede küçük ping göstergesi; ?debug=1 ile ağ ölçümleri (anlık görüntü hızı, gecikme, tahmin hatası).
+    function drawNetInfo(c, v) {
+        var lines = ['Ping: ' + (v.ping === null || v.ping === undefined ? '—' : Math.round(v.ping) + ' ms')];
+        if (DEBUG && v.debug) {
+            var d = v.debug;
+            if (v.isHost) {
+                lines.push('kurucu · sim ' + d.simHz + ' Hz · gönderilen ' + d.sentHz + '/sn · gelen girdi ' + d.inputHz + '/sn');
+            } else {
+                lines.push('katılan · gelen durum ' + d.stateHz + ' Hz · tampon ' + d.bufferSize);
+                lines.push('interp. gecikme ' + d.interpDelay + ' ms · ekstrapole ' + Math.round(d.extrapolatedMs) + ' ms');
+                lines.push(d.predict ? 'tahmin hatası ' + d.predError.toFixed(1) + ' px (maks ' + d.predErrorMax.toFixed(1) +
+                    ') · yeniden oynatma ' + d.replay + ' · ışınlanma ' + d.teleports + ' · onaysız ' + d.unacked : 'tahmin KAPALI');
+            }
+        }
+        c.font = '11px monospace';
+        c.textAlign = 'left';
+        c.textBaseline = 'alphabetic';
+        var w = 0;
+        lines.forEach(function (l) { w = Math.max(w, c.measureText(l).width); });
+        var h = lines.length * 14 + 6;
+        c.fillStyle = 'rgba(10,20,40,0.6)';
+        c.fillRect(4, K.H - h - 4, w + 10, h);
+        c.fillStyle = '#d8f3ff';
+        lines.forEach(function (l, i) { c.fillText(l, 9, K.H - h + 10 + i * 14); });
     }
 
     function drawParticles(c, dt) {
@@ -895,6 +925,10 @@
         rafId = requestAnimationFrame(frameLoop);
         if (!net) return;
         net.tick(t);                       // kurucu: sabit adımlı simülasyon; her iki taraf: görünümü günceller
+        if (DEBUG && view && view.frame) {
+            // e2e/elle ölçüm için: görüntülenen kendi karakter konumu ve ağ metrikleri
+            window.__ktDebug = { x: view.frame.p[view.me.index][0], y: view.frame.p[view.me.index][1], mode: view.mode, ping: view.ping, debug: view.debug };
+        }
         if (view && view.mode === 'over') renderOverlay(view, t);
         draw(t);
     }
@@ -923,7 +957,7 @@
         // Yalnızca testler için: window.KAFATOPU_OPTIONS ile kısa maç gibi seçenekler verilebilir.
         var matchOptions = (typeof window !== 'undefined' && window.KAFATOPU_OPTIONS) || {};
         net = KafaTopuNet.create({
-            ctx: ctx, rules: K, now: nowMs, matchOptions: matchOptions,
+            ctx: ctx, rules: K, predictor: window.KafaTopuPredict, predict: !NO_PREDICT, now: nowMs, matchOptions: matchOptions,
             onChange: onViewChange, onEvent: onNetEvent
         });
 
