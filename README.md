@@ -169,7 +169,7 @@ doğrular. Rastgelelik yalnızca liderde ve durumdaki tohumdan (`rs`) üretilir;
   `ep` (devir sayısı) artar ve saklı son durumdan devam eder. Eski epoch'tan gelen görüntüler yok sayılır; kopup dönen eski lider
   lider olmaz, durumu alır.
 - **Kopma/yeniden bağlanma:** çekirdek (`core/main.js`) `reconnect: true` ilan eden oyunlarda kopunca oyun ekranını kapatmaz,
-  aynı kimlik ve oda koduyla `join_room`u yeniden dener (1-2-3-5-8 sn…, en çok 3 dk) ve oyuna `_connection`/`_reconnected`
+  aynı kimlik ve oda koduyla `join_room`u yeniden dener (1-2-3-5-8 sn…, en çok 3 dk; backend eski oturumu devralır) ve oyuna `_connection`/`_reconnected`
   mesajı verir. Kimlik **sekme başına** `sessionStorage`'da saklanır (yenileme sonrası aynı kimlikle otomatik katılım; farklı
   sekmeler farklı kimlik alır, aynı tarayıcıda çoklu sekmeyle test edilebilir). Diğer oyunların davranışı değişmez.
   Bir oyuncu koptuğunda sırası geldiğinde oyun bekler: "X bağlantısı koptu, kalan süre M:SS"; lider **Bekle / Turu geç / At**
@@ -279,12 +279,12 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 
 ## Bilinen sınırlamalar
 
-- Parti (backend kaynaklı): sunucu oda son oyuncu çıkınca odayı siler (herkes aynı anda düşerse oyun kaybolur), kopan
-  oturumu hemen siler ve yeniden katılanı listenin sonuna ekler; yarı açık soketlerde (heartbeat yok) aynı kimlikle yeniden
-  katılma, sunucu eski bağlantıyı fark edene kadar `BAD_REQUEST` döner (istemci birkaç kez yeniden dener). Backend için ayrı
-  görev: kısa süre oda tutma / aynı kimlikle soket değiştirme / heartbeat.
-- Parti: gönderen kimliği sunucuca doğrulanmaz (mesajda taşınır); kötü niyetli bir oyuncu başkası adına eylem gönderebilir.
-  Arkadaşlarla oynamak için kabul edilmiştir.
+- Parti: backend aynı kimlikle gelen yeni oturumu eskisinin yerine koyar (sıra korunur, `player_disconnect` yayınlanmaz), boş odayı
+  120 sn tutar ve 15 sn'de bir ping atar (45 sn sessizlik = kopma). Bu yüzden yenilenen/yeniden bağlanan lider için durum
+  makinesi `player_joined`'ı "lider düştü" gibi işler (sıradaki oyuncu devralır, dönen oyuncu durumu ondan alır). Herkes aynı
+  anda 2 dk'dan uzun düşerse oda ve oyun kaybolur (durum yalnızca istemcilerdedir).
+- Parti: gönderen kimliği sunucuca doğrulanmaz (mesajda taşınır) ve backend kimlik devralmaya izin verir; kötü niyetli bir oyuncu
+  başkası adına eylem gönderebilir ya da onun oturumunu düşürebilir. Arkadaşlarla oynamak için kabul edilmiştir.
 - Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
   koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.

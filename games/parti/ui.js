@@ -795,7 +795,9 @@
         view = null;
         sig = '';
         shown = {}; anims = {}; particles = []; banner = null; lastFq = -1; targeting = null; logOpen = false;
-        var creator = ctx.isHost();
+        // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
+        // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
+        var creator = ctx.isHost() && ctx.players.length <= 1;
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
             onChange: onView, startMinigame: PartiMinigame.startMinigame
