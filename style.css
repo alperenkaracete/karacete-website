@@ -519,7 +519,8 @@ body {
 
 .cd-canvas {
     display: block;
-    width: 100%;
+    width: min(100%, calc(52vh * 1.6));   /* alçak ekranlarda sahne küçülür, kontroller görünür kalır */
+    margin: 0 auto;
     height: auto;
     aspect-ratio: 8 / 5;
     border-radius: 10px;
@@ -595,6 +596,21 @@ body {
 
 .cd-fire:disabled { background: #7a6a60; opacity: 0.7; cursor: default; }
 .cd-hint { margin: 0; min-height: 18px; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+
+@media (min-width: 700px) {
+    .cd-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 16px;
+        align-items: center;
+    }
+
+    .cd-controls .cd-slider { grid-column: 1; }
+    .cd-controls .cd-powers { grid-column: 2; grid-row: 1 / span 2; }
+    .cd-controls .cd-cancel { grid-column: 2; grid-row: 3; }
+    .cd-controls .cd-fire { grid-column: 1 / -1; }
+    .cd-controls .cd-hint { grid-column: 1 / -1; text-align: center; }
+}
 
 /* --- MOBİL KONTROLLER --- */
 #mobile-controls {

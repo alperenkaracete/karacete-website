@@ -92,11 +92,11 @@
         for (var i = 0; i < 4; i++) {
             var cx = ((i * 190 + 60 + t * 0.004 * windNow) % (W + 120) + (W + 120)) % (W + 120) - 60;
             var cy = 50 + i * 28;
-            c.beginPath();
-            c.arc(cx, cy, 16, 0, Math.PI * 2);
-            c.arc(cx + 18, cy + 4, 20, 0, Math.PI * 2);
-            c.arc(cx + 40, cy, 14, 0, Math.PI * 2);
-            c.fill();
+            [[0, 0, 16], [18, 4, 20], [40, 0, 14]].forEach(function (blob) {
+                c.beginPath();
+                c.arc(cx + blob[0], cy + blob[1], blob[2], 0, Math.PI * 2);
+                c.fill();
+            });
         }
 
         // arazi
