@@ -21,7 +21,7 @@ function room(options) {
             send: (msg) => { sent[id].push(msg); queue.push({ to: other, msg: JSON.parse(JSON.stringify(msg)) }); }
         };
         const duel = Duel.create({
-            prefix: 'xox', rules: X, ctx,
+            prefix: options.prefix || 'xox', rules: options.rules || X, ctx,
             random: options.random || (() => 0.1),   // 0.1 -> host başlar
             onChange: (v) => { views[id] = v; }
         });
@@ -312,4 +312,77 @@ test('bilinmeyen / bozuk mesajlar çökertmez', () => {
     r.a.onMessage({ type: 5 });
     r.a.onMessage({ type: 'baska_oyun_move', cell: 1 });
     assert.equal(r.views.A.phase, 'playing');
+});
+
+// ---- İsteğe bağlı kurallar kancaları: createStart / parseStart / initial(start) / messageTypes ----
+
+const hookRules = {
+    messageTypes: ['hk_add'],
+    initial(start) { return { start: start || null, total: 0, mover: null }; },
+    createStart(info) { return { seed: 4242, host: info.hostId }; },
+    parseStart(data) { return Number.isInteger(data.seed) ? { seed: data.seed, host: data.host } : null; },
+    parse(data) { return Number.isInteger(data.amount) ? { amount: data.amount } : null; },
+    toMessage(move) { return { type: 'hk_add', amount: move.amount }; },
+    validate(board, move) { return move.amount >= 1 && move.amount <= 3; },
+    apply(board, move, index) { return { board: { start: board.start, total: board.total + move.amount, mover: index }, cell: null }; },
+    result(board) { return board.total >= 5 ? { status: 'win', winner: board.mover } : null; }
+};
+
+test('createStart alanları start mesajına eklenir ve iki tarafın initial(start) çağrısına ulaşır', () => {
+    const r = room({ prefix: 'hk', rules: hookRules });
+    r.join();
+    const start = r.sent.A.find((m) => m.type === 'hk_start');
+    assert.equal(start.seed, 4242);
+    assert.equal(start.host, 'A');
+    assert.equal(start.type, 'hk_start');      // eklenen alanlar type/first/round'u ezemez
+    assert.equal(start.round, 1);
+    for (const v of [r.views.A, r.views.B]) {
+        assert.equal(v.board.start.seed, 4242);
+        assert.equal(v.board.start.host, 'A');
+        assert.equal(v.board.start.round, 1);
+        assert.deepEqual(v.board.start.order, ['A', 'B']);
+    }
+});
+
+test('parseStart null dönerse start reddedilir', () => {
+    const r = room({ prefix: 'hk', rules: hookRules });
+    r.join();
+    r.b.onMessage({ type: 'hk_start', first: 'B', round: 2 });          // seed yok -> reddedilir
+    // zaten oynuyor; oyun bitince tekrar dene
+    r.turnOwner().move({ amount: 3 }); r.flush();
+    r.turnOwner().move({ amount: 3 }); r.flush();
+    assert.equal(r.views.B.phase, 'over');
+    r.b.onMessage({ type: 'hk_start', first: 'B', round: 2 });          // seed yok
+    assert.equal(r.views.B.phase, 'over');
+    assert.equal(r.views.B.round, 1);
+    r.b.onMessage({ type: 'hk_start', first: 'B', round: 2, seed: 7 }); // geçerli
+    assert.equal(r.views.B.phase, 'playing');
+    assert.equal(r.views.B.board.start.seed, 7);
+});
+
+test('messageTypes: özel hamle türü kabul edilir, <prefix>_move kabul edilmez; toMessage kendi type\'ını kullanır', () => {
+    const r = room({ prefix: 'hk', rules: hookRules });
+    r.join();
+    const mover = r.turnOwner();
+    assert.equal(mover.move({ amount: 2 }), true);
+    const sent = r.sent.A.concat(r.sent.B).filter((m) => m.type === 'hk_add');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].round, 1);
+    r.flush();
+    assert.equal(r.views.A.board.total, 2);
+    assert.equal(r.views.B.board.total, 2);
+    // eski varsayılan tür artık hamle sayılmaz
+    const other = r.turnOwner();
+    other.onMessage({ type: 'hk_move', round: 1, amount: 1 });
+    assert.equal(r.views.A.board.total, 2);
+    // geçersiz hamle (kural ihlali) reddedilir
+    assert.equal(r.turnOwner().move({ amount: 9 }), false);
+});
+
+test('kancası olmayan kurallar eskisi gibi çalışır (initial argümansız da olur)', () => {
+    const r = room();
+    r.join();
+    assert.equal(r.views.A.phase, 'playing');
+    const start = r.sent.A.find((m) => m.type === 'xox_start');
+    assert.deepEqual(Object.keys(start).sort(), ['first', 'round', 'type']);
 });

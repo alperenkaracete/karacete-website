@@ -12,12 +12,18 @@
 // tur numarası, sıra, ve kuralların geçerlilik kontrolü.
 //
 // rules arayüzü (saf fonksiyonlar):
-//   initial()                       -> boş tahta
+//   initial(start)                  -> başlangıç tahtası; start = { order, round, ...createStart alanları }
 //   parse(data)                     -> mesajdan hamle ya da null
 //   toMessage(move)                 -> mesaja eklenecek alanlar
 //   validate(board, move, index)    -> bool
 //   apply(board, move, index)       -> { board, cell }   (board yeni nesne)
 //   result(board)                   -> null | { status:'win', winner:index, line:[...] } | { status:'draw' }
+// İsteğe bağlı kancalar (yoksa eski davranış):
+//   createStart(info)               -> start mesajına eklenecek alanlar (yalnızca host çağırır).
+//                                      info = { random, round, order, hostId, guestId }
+//   parseStart(data, info)          -> alınan start mesajından alanları doğrulayıp döndürür; null = reddet
+//   messageTypes                    -> hamle mesaj türleri dizisi (varsayılan: [<prefix>_move]);
+//                                      toMessage() kendi `type` alanını verebilir
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
     else root.Duel = factory();
@@ -33,13 +39,14 @@
         var T_START = options.prefix + '_start';
         var T_MOVE = options.prefix + '_move';
         var T_REMATCH = options.prefix + '_rematch';
+        var MOVE_TYPES = rules.messageTypes || [T_MOVE];
 
         var state = {
             phase: 'waiting',   // waiting | playing | over | abandoned
             round: 0,
             order: [null, null], // order[0] ilk başlayan, order[1] diğeri (oyuncu id'leri)
             turn: 0,
-            board: rules.initial(),
+            board: rules.initial({ order: [null, null], round: 0 }),
             result: null,
             lastCell: null,
             votes: {},
@@ -97,12 +104,13 @@
 
         function emit() { onChange(view()); }
 
-        function startRound(first, round) {
+        function startRound(first, round, extras) {
             var opp = opponent();
+            var order = [first, first === ctx.me.id ? opp.id : ctx.me.id];
             state.round = round;
-            state.order = [first, first === ctx.me.id ? opp.id : ctx.me.id];
+            state.order = order;
             state.turn = 0;
-            state.board = rules.initial();
+            state.board = rules.initial(Object.assign({}, extras, { order: order.slice(), round: round }));
             state.result = null;
             state.lastCell = null;
             state.votes = {};
@@ -119,8 +127,12 @@
             else if (previous === opp.id) first = ctx.me.id;
             else first = random() < 0.5 ? ctx.me.id : opp.id;     // ilk tur / yeni rakip
             var round = state.round + 1;
-            startRound(first, round);
-            ctx.send({ type: T_START, first: first, round: round });
+            var order = [first, first === ctx.me.id ? opp.id : ctx.me.id];
+            var extras = rules.createStart
+                ? rules.createStart({ random: random, round: round, order: order, hostId: ctx.me.id, guestId: opp.id })
+                : {};
+            startRound(first, round, extras);
+            ctx.send(Object.assign({}, extras, { type: T_START, first: first, round: round }));
             emit();
         }
 
@@ -170,9 +182,15 @@
                 if (state.phase === 'playing') return;
                 if (!Number.isInteger(data.round) || data.round <= state.round) return;
                 if (data.first !== ctx.me.id && data.first !== opp.id) return;
-                startRound(data.first, data.round);
+                var extras = {};
+                if (rules.parseStart) {
+                    var order = [data.first, data.first === ctx.me.id ? opp.id : ctx.me.id];
+                    extras = rules.parseStart(data, { order: order, hostId: opp.id, guestId: ctx.me.id });
+                    if (extras === null || typeof extras !== 'object') return;
+                }
+                startRound(data.first, data.round, extras);
                 emit();
-            } else if (data.type === T_MOVE) {
+            } else if (MOVE_TYPES.indexOf(data.type) !== -1) {
                 if (state.phase !== 'playing' || !opp) return;
                 if (data.round !== state.round) return;
                 var oppIndex = indexOf(opp.id);
@@ -197,7 +215,7 @@
             if (!rules.validate(state.board, m, myIndex)) return false;
             applyMove(myIndex, m);
             var msg = rules.toMessage(m);
-            msg.type = T_MOVE;
+            if (!msg.type) msg.type = T_MOVE;
             msg.round = state.round;
             ctx.send(msg);
             emit();
