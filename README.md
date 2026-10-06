@@ -48,6 +48,7 @@ games/connect4.js    Dörtlü Bağla tahtası (çizim) games/connect4-rules.js  
 games/catdog.js      Kedi - Köpek sahnesi (çizim) games/catdog-rules.js    Kedi - Köpek kuralları ve atış hesabı (saf)
 games/kafatopu.js    Kafa Topu arayüzü (canvas, yüz seçimi, girdi)
 games/kafatopu-rules.js  fizik adımı, anlık görüntü, interpolasyon, doğrulayıcılar (saf)
+games/kafatopu-predict.js  katılanda tahmin + uzlaştırma (saf)
 games/kafatopu-net.js    kurucu-otorite ağ/maç denetleyicisi (DOM'suz)
 tests/               node:test ile birim testleri
 assets/              sprite'lar
@@ -109,13 +110,24 @@ canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa
 **Ağ mimarisi (kurucu = otorite):**
 - Fizik yalnızca **oda kurucusunun** tarayıcısında çalışır: `requestAnimationFrame` üstünde biriktirmeli sabit zaman adımı
   (1/60 sn; kare başına en çok 5 adım, gerisi atılır). `step(state, inputs, dt)` saf bir fonksiyondur (`games/kafatopu-rules.js`).
-- Kurucu ~30 Hz `kt_state` anlık görüntüsü yollar (≈120–150 bayt: tur zamanı, faz, süre, skor, iki oyuncu `[x, y, vuruş%]`, top `[x, y]`).
-- Katılan oyuncu yalnızca `kt_input {left,right,jump,kick}` yollar ve **sadece değişince** (basma/bırakma; pencere odağı kaybında
-  hepsi bırakılır). Kurucu kendi girdisini doğrudan simülasyona verir.
-- Katılan taraf görüntüleri kurucunun zaman damgasıyla tamponlar ve **~100 ms gecikmeli** olarak iki görüntü arasında doğrusal
-  interpolasyonla çizer (kurucu saati farkı yavaşça ayarlanır, çizim sıçramaz). Ön-tahmin (client-side prediction) yoktur: topla
-  etkileşimde yanlış tahmin görsel sıçrama yaratır, doğru yapmak girdi numaralı uzlaştırma gerektirir.
-- Olaylar anlık görüntüden ayrı, güvenilir mesajlardır: `kt_start {round, swap}`, `kt_goal {scorer, score, golden}`,
+- Kurucu her fizik adımında (**60 Hz**) küçük bir `kt_state` yollar (≈190 bayt ≈ 11 KB/sn): `{t, f, d, m, g, s, p:[[x,y,k,vx,vy],…], b:[x,y,vx,vy], a, c}`
+  (kısa alan adları, yuvarlanmış sayılar; hızlar kısa ekstrapolasyon içindir).
+- Katılan oyuncu `kt_input {r, n, left,right,jump,kick}` yollar: `r` maç turu, `n` her tuş değişiminde artan **sıra numarası**.
+  Girdi yalnızca değişince gider, ayrıca mevcut durum **~100 ms'de bir tekrarlanır** (tuş basılıyken ya da henüz onaylanmamışken;
+  boştayken 1 sn'de bir) — kaybolan/geç gelen paket bir sonrakiyle telafi olur. Kurucu eski/yinelenen `n` ve eski turu yok sayar,
+  uyguladığı son `n`'yi (`a`) ve o girdinin kaç adımdır uygulandığını (`c`) anlık görüntüye koyar.
+- **Tahmin (client-side prediction):** katılan, kendi karakterini kurucuyla **aynı saf fonksiyonla** (`stepOwn`) yerelde hemen
+  ilerletir. Her anlık görüntüde kurucunun onayladığı durumdan başlayıp onaylanmamış girdileri yeniden oynatır
+  (`games/kafatopu-predict.js`); küçük sapma her adımda %20 azalarak yumuşatılır, 40 px'ten büyük sapma ışınlanır.
+- Rakip ve top kurucudan gelir; görüntüler kurucunun zaman damgasıyla tamponlanır ve **~40 ms (≈2 aralık)** gecikmeyle iki
+  görüntü arasında interpolasyonla çizilir, tampon biterse hızla **≤100 ms ekstrapole** edilir (kurucu saati farkı yavaşça ayarlanır).
+- **Top çarpışmaları:** her adım topun hızına göre 2–8 alt adıma bölünür (hiçbir alt adımda top yarıçapın yarısından fazla gitmez),
+  top hız sınırı 1200 px/sn, çarpışma sonrası top oyuncu/direk/duvardan dışarı itilir; gol yalnızca top çizgiyi tamamen
+  geçince ve çözüm sonrası sayılır.
+- **Ölçüm:** köşede `Ping: N ms` görünür (`kt_ping`/`kt_pong`, saniyede bir). `?debug=1` ek olarak gelen anlık görüntü hızını (Hz),
+  interpolasyon gecikmesini, ekstrapole süreyi, tahmin hatasını (px), yeniden oynatılan adımı ve ışınlanma sayısını gösterir;
+  `?debug=1&notahmin=1` tahmini kapatır (A/B karşılaştırması). `window.__ktDebug` aynı değerleri açar.
+- Olaylar anlık görüntüden ayrı, güvenilir mesajlardır: `kt_start {round, swap}`, `kt_ping/kt_pong`, `kt_goal {scorer, score, golden}`,
   `kt_end {winner, score, reason}`; ayrıca `kt_ready`, `kt_rematch`, `kt_profile`. Gelen her mesaj (tip, sayı aralıkları, dizi
   uzunlukları) doğrulanır, geçersizler yok sayılır; kurucu yalnızca `kt_input/kt_ready/kt_rematch`, katılan yalnızca
   `kt_state/kt_start/kt_goal/kt_end` kabul eder. Kurucu ayrılırsa kalan oyuncu otorite olmaz, oyun biter.
@@ -202,9 +214,12 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
 - XOX / Dörtlü Bağla / Kedi - Köpek / Kafa Topu: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
-- Kafa Topu: katılan oyuncuda tepki gecikmesi ağ gecikmesi (RTT/2) + ~33 ms (kurucu adımı) + ~100 ms çizim gecikmesi kadardır;
-  iyi bir bağlantıda hissedilir ama oynanabilir. Kurucunun sekmesi arka plana alınırsa (`requestAnimationFrame` durur) oyun
-  donar ve katılanda "Rakipten veri gelmiyor" uyarısı çıkar; kurucu çok yavaş bir cihazdaysa oyun yavaşlar (adım sınırı).
+- Kafa Topu: katılanın **kendi** karakteri tahminle anında tepki verir, ama kurucunun ekranında katılanın karakteri girdi
+  ulaşana kadar (≈ tek yön gecikme) geç görünür; rakip/top her zaman ağ gecikmesi + ~40 ms geriden gelir. Ağ gecikmesini
+  kapatmak mümkün değildir: yalnızca gizlenir. Katılanın tahmini, topa/rakibe çarpmayı kurucuyla aynı bilmez (rakip duruyor
+  varsayılır); bu durumda kısa bir düzeltme (≤ 40 px yumuşak, fazlası ışınlanma) görülebilir. Kurucunun sekmesi arka plana
+  alınırsa (`requestAnimationFrame` durur) oyun donar ve katılanda "Rakipten veri gelmiyor" uyarısı çıkar; kurucu çok yavaş
+  bir cihazdaysa oyun yavaşlar (adım sınırı). Eski önbellekli JS ile açılan sekme yeni protokolü anlamaz (sert yenile).
 - Kafa Topu: fotoğraf rakibe WebSocket üzerinden gider (sunucu saklamaz ama aktarır); kamera yalnızca HTTPS ya da localhost'ta çalışır.
 - Kafa Topu: dokunmatik düğmeler küçük telefonlarda sahnenin alt köşelerini kısmen örter.
 - Kedi - Köpek: atış hesabı tam sayı açı/güç ve yuvarlanmış trigonometri kullanır; çok farklı tarayıcı motorlarında
