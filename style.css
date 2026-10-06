@@ -464,6 +464,154 @@ body {
     to { transform: translateY(0); }
 }
 
+/* Kedi - Köpek */
+.duel.duel-wide { width: min(calc(100vw - 56px), 720px); }
+
+.cd-board {
+    padding: 8px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    transition: opacity 0.2s;
+}
+
+.cd-hud {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 8px;
+}
+
+.cd-hud-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    text-align: left;
+}
+
+.cd-hud-box.active { border-color: #4CAF50; background: rgba(76, 175, 80, 0.25); }
+.cd-hud-box.dog { text-align: right; }
+.cd-hud-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-hud-hp { font-size: 18px; line-height: 1; }
+.cd-hp { height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
+.cd-hp-fill { height: 100%; width: 100%; background: #4caf50; transition: width 0.2s; }
+.cd-hp-fill.mid { background: #f0ad4e; }
+.cd-hp-fill.low { background: #e74c3c; }
+
+.cd-wind {
+    min-width: 84px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    text-align: center;
+}
+
+.cd-wind small { color: rgba(255, 255, 255, 0.75); font-size: 11px; }
+.cd-wind-main { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 22px; line-height: 1.2; }
+.cd-wind-value { font-size: 20px; }
+.cd-wind-track { position: relative; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
+.cd-wind-bar { position: absolute; top: 0; bottom: 0; background: #7fd4ff; }
+
+.cd-canvas {
+    display: block;
+    width: min(100%, calc(52vh * 1.6));   /* alçak ekranlarda sahne küçülür, kontroller görünür kalır */
+    margin: 0 auto;
+    height: auto;
+    aspect-ratio: 8 / 5;
+    border-radius: 10px;
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+}
+
+.cd-controls { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+
+.cd-slider {
+    display: grid;
+    grid-template-columns: 38px 1fr 48px;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+}
+
+.cd-slider input[type=range] { width: 100%; height: 44px; margin: 0; accent-color: #4CAF50; touch-action: pan-y; }
+.cd-slider input[type=range]::-webkit-slider-thumb { width: 28px; height: 28px; }
+.cd-slider input[type=range]::-moz-range-thumb { width: 28px; height: 28px; }
+.cd-slider-out { text-align: right; font-weight: 700; font-size: 18px; }
+
+.cd-powers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+.cd-power {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 54px;
+    padding: 6px 8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.cd-power-label { font-size: 15px; font-weight: 600; }
+.cd-power-note { font-size: 11px; color: rgba(255, 255, 255, 0.75); }
+.cd-power.selected { border-color: #ffd400; background: rgba(255, 212, 0, 0.28); }
+.cd-power.cooling { background: rgba(120, 120, 120, 0.35); color: rgba(255, 255, 255, 0.55); }
+.cd-power:disabled { cursor: default; }
+.cd-power:not(:disabled):hover { background: rgba(255, 255, 255, 0.22); }
+
+.cd-cancel {
+    align-self: center;
+    padding: 6px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cd-fire {
+    min-height: 58px;
+    border: none;
+    border-radius: 12px;
+    background: #e8590c;
+    color: white;
+    font: inherit;
+    font-size: 22px;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.cd-fire:disabled { background: #7a6a60; opacity: 0.7; cursor: default; }
+.cd-hint { margin: 0; min-height: 18px; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+
+@media (min-width: 700px) {
+    .cd-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 16px;
+        align-items: center;
+    }
+
+    .cd-controls .cd-slider { grid-column: 1; }
+    .cd-controls .cd-powers { grid-column: 2; grid-row: 1 / span 2; }
+    .cd-controls .cd-cancel { grid-column: 2; grid-row: 3; }
+    .cd-controls .cd-fire { grid-column: 1 / -1; }
+    .cd-controls .cd-hint { grid-column: 1 / -1; text-align: center; }
+}
+
 /* --- MOBİL KONTROLLER --- */
 #mobile-controls {
     display: none; /* Oyun başlayana kadar gizli */

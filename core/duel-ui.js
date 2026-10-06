@@ -9,10 +9,10 @@ window.DuelUI = (function () {
         return node;
     }
 
-    // opts: { title, onRematch(), onLeave() }
+    // opts: { title, onRematch(), onLeave(), className? }
     function mount(root, opts) {
         root.textContent = '';
-        var wrap = el('div', 'duel');
+        var wrap = el('div', 'duel' + (opts.className ? ' ' + opts.className : ''));
 
         var scores = el('div', 'duel-scores');
         var status = el('div', 'duel-status');

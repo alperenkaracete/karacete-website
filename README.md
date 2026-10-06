@@ -12,9 +12,10 @@ Oyunlar:
 | 💣 **Bomberman** | 2–4 | gerçek zamanlı |
 | ⭕ **XOX** | 2 | sıra tabanlı |
 | 🔴 **Dörtlü Bağla** | 2 | sıra tabanlı |
+| 🐱 **Kedi - Köpek** | 2 | sıra tabanlı atış düellosu |
 
 Oyun lobide kartlardan seçilir; oda kurulurken seçilen oyun sunucuya `game` alanı olarak gider
-(`bomberman`, `xox`, `connect4`).
+(`bomberman`, `xox`, `connect4`, `catdog`).
 
 ## Yerelde çalıştırma
 
@@ -43,6 +44,7 @@ core/duel-ui.js      aynı oyunlar için ortak arayüz kabuğu (skor, sıra, bek
 games/bomberman.js   Bomberman
 games/xox.js         XOX tahtası (çizim)          games/xox-rules.js       XOX kuralları (saf)
 games/connect4.js    Dörtlü Bağla tahtası (çizim) games/connect4-rules.js  Dörtlü Bağla kuralları (saf)
+games/catdog.js      Kedi - Köpek sahnesi (çizim) games/catdog-rules.js    Kedi - Köpek kuralları ve atış hesabı (saf)
 tests/               node:test ile birim testleri
 assets/              sprite'lar
 ```
@@ -60,6 +62,29 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 
 İstemci–sunucu mesaj protokolü backend reposunun README'sinde anlatılır
 (`create_room`, `join_room`, `room_created`, `room_joined`, `player_joined`, `player_disconnect`, `error`).
+
+## Kedi - Köpek (atış düellosu)
+
+İki oyuncu sırayla, rüzgârı hesaba katarak açı ve güç seçip atış yapar (Gorillas / Worms tarzı).
+**Oda kurucusu 🐱 Kedi (🐟 atar, solda), katılan 🐶 Köpek (🦴 atar, sağda)**; ikisi de 100 canla başlar.
+
+- **Sahne:** iki yanda düz platform, ortada rastgele tepeler; oda kurucusunun gönderdiği tohumdan (seed) her iki
+  tarafta da aynı üretilir. **Rüzgâr** her tur değişir (−10…+10, ekranda ok + sayı), tohum ve tur numarasından üretilir.
+- **Atış:** açı 0–180° (0 = sağ, 90 = yukarı), güç 0–100. Mermi araziye çarparsa ya da sahne dışına çıkarsa pas geçer.
+  Rakibe doğrudan isabet **30** hasar; yakına düşerse mesafeyle doğrusal azalan alan hasarı (yarıçap 40 px).
+  Kendine hasar yoktur. Can 0 olunca oyun biter, rövanşta başlayan taraf değişir ve yeni sahne gelir.
+- **Nişan:** kaydırıcılarla ya da sahnede sürükleyerek (sürüklediğin yön = açı, uzaklık = güç).
+- **Özel güçler** (kullanımdan sonra o oyuncunun sonraki **3 turunda** kapalı, buton gri ve kalan tur yazar):
+  - 🧪 **Can iksiri:** +25 can (en fazla 100). Atış yapılmaz, sıra otomatik rakibe geçer.
+  - 🎯 **Rüzgârsız atış:** o atışta rüzgâr 0.
+  - ✌️ **Çift atış:** aynı açı ve güçle iki kez art arda atılır (ilk atış öldürürse ikincisi yapılmaz).
+  - 💥 **Büyük patlama:** hasar alanı yarıçapı 2 katı.
+  Atışla kullanılan güçlerden turda en fazla biri seçilir; seçim iptal edilebilir.
+
+**Senkronizasyon:** ağda yalnızca `cd_start` (host: tohum + kedi + ilk sıra), `cd_shot { turn, angle, power, powerUp }`
+ve `cd_heal { turn }` gider. Atış sonucu iki tarafta da `simulateShot` ile (sabit 1/60 sn adım, tam sayı açı/güç,
+yuvarlanmış trigonometri) aynı bulunur. Gelen her hamle doğrulanır: sıra, tur numarası, açı/güç sınırları, güç
+bekleme süresi; geçersizler yok sayılır.
 
 ## Testler
 
@@ -129,6 +154,11 @@ yalnızca kurallarını ve tahtasını yazar:
    `onMessage` içinde `duel.onMessage(data)` çağır. `games/xox.js` en kısa örnektir.
 3. Script etiketlerini `index.html`'e ekle (kurallar, sonra oyun).
 
+Başlangıçta oyuna özel veri (tohum, karakter dağılımı gibi) gerekiyorsa kurallara isteğe bağlı kancalar eklenebilir:
+`createStart(info)` (host'un start mesajına alan ekler), `parseStart(data, info)` (gelen start'ı doğrular, `null` = reddet),
+`initial(start)` (başlangıç tahtası start verisini alır) ve `messageTypes` (hamle mesajı türleri, varsayılan
+`<prefix>_move`). Bu kancaları `games/catdog-rules.js` kullanır.
+
 Mesajlar `<prefix>_start`, `<prefix>_move`, `<prefix>_rematch` biçimindedir. Gelen hamleler her iki
 tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler yok sayılır.
 
@@ -136,7 +166,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
-- XOX / Dörtlü Bağla: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
+- XOX / Dörtlü Bağla / Kedi - Köpek: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
+- Kedi - Köpek: atış hesabı tam sayı açı/güç ve yuvarlanmış trigonometri kullanır; çok farklı tarayıcı motorlarında
+  1 ulp'lik farklar teoride sınırda atışlarda ayrışma yaratabilir, pratikte beklenmez.
+- Alçak ekranlarda (laptop) Kedi - Köpek kontrolleri sahnenin altındadır; sayfayı kaydırmak gerekebilir.
 - Sunucu yalnızca `https://karacete.com` ve yerel adreslerden gelen bağlantılara izin verir. Farklı bir
   adresten (örn. `www.karacete.com`) yayın yapılacaksa backend'in `ALLOWED_ORIGINS` ortam değişkenine eklenmelidir.
 
