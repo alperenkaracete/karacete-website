@@ -13,9 +13,10 @@ Oyunlar:
 | ⭕ **XOX** | 2 | sıra tabanlı |
 | 🔴 **Dörtlü Bağla** | 2 | sıra tabanlı |
 | 🐱 **Kedi - Köpek** | 2 | sıra tabanlı atış düellosu |
+| ⚽ **Kafa Topu** | 2 | gerçek zamanlı, yandan görünüşlü futbol (kendi yüzünle) |
 
 Oyun lobide kartlardan seçilir; oda kurulurken seçilen oyun sunucuya `game` alanı olarak gider
-(`bomberman`, `xox`, `connect4`, `catdog`).
+(`bomberman`, `xox`, `connect4`, `catdog`, `kafatopu`).
 
 ## Yerelde çalıştırma
 
@@ -45,6 +46,9 @@ games/bomberman.js   Bomberman
 games/xox.js         XOX tahtası (çizim)          games/xox-rules.js       XOX kuralları (saf)
 games/connect4.js    Dörtlü Bağla tahtası (çizim) games/connect4-rules.js  Dörtlü Bağla kuralları (saf)
 games/catdog.js      Kedi - Köpek sahnesi (çizim) games/catdog-rules.js    Kedi - Köpek kuralları ve atış hesabı (saf)
+games/kafatopu.js    Kafa Topu arayüzü (canvas, yüz seçimi, girdi)
+games/kafatopu-rules.js  fizik adımı, anlık görüntü, interpolasyon, doğrulayıcılar (saf)
+games/kafatopu-net.js    kurucu-otorite ağ/maç denetleyicisi (DOM'suz)
 tests/               node:test ile birim testleri
 assets/              sprite'lar
 ```
@@ -85,6 +89,37 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 ve `cd_heal { turn }` gider. Atış sonucu iki tarafta da `simulateShot` ile (sabit 1/60 sn adım, tam sayı açı/güç,
 yuvarlanmış trigonometri) aynı bulunur. Gelen her hamle doğrulanır: sıra, tur numarası, açı/güç sınırları, güç
 bekleme süresi; geçersizler yok sayılır.
+
+## Kafa Topu (gerçek zamanlı futbol)
+
+İki oyuncu yandan görünüşlü sahada kafa-top oynar; kafa olarak **kendi yüzünü** (fotoğraf/kamera) ya da bir emoji kullanır.
+Maç **90 sn ya da ilk 5 gol** (hangisi önce olursa); süre dolunca skor eşitse **altın gol**. Oda kurucusu ile katılan hazır olunca
+3-2-1 geri sayımla başlar; maç sonunda **Rövanş** (taraflar yer değiştirir) ve oturum skoru vardır. Rakip ayrılırsa oyun durur,
+"Rakip ayrıldı" ve **Lobiye Dön** çıkar. Tek ekrana sığar (kaydırma yok); dikey telefonda "Telefonu yatay çevir" uyarısı çıkar.
+
+**Kontroller:** ← / → veya A / D hareket, ↑ veya W zıpla, Boşluk veya Z vur. Dokunmatik ekranda sol/sağ/zıpla/vur butonları
+(çoklu dokunma çalışır). Vuruş: ayak öne doğru kısa bir yay çizer, topa değerse top güçlü hızlanır; kafayla da top sektirilir.
+
+**Yüz (gizlilik):** başta "Fotoğraf yükle", "Kamera ile çek" ya da emoji seçilir. Fotoğraf tarayıcıda ortadan kare kırpılıp
+64×64'e (gerekirse 48/40 px, düşük kalite) küçültülür, yuvarlak maskelenir ve JPEG data URL'ye çevrilir (~2–3 KB; üst sınır 8 KB,
+sunucu mesaj sınırı 64 KB). Repoya ya da sunucuya **kaydedilmez**; yalnızca `kt_profile` mesajıyla rakibe gider ve sayfa
+yenilenince gider. Gelen yüz doğrulanır (tek emoji ya da `data:image/jpeg;base64,/9j/…` ve ≤ 8192 karakter), yalnızca `Image` +
+canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa emoji seçimine dönülür.
+
+**Ağ mimarisi (kurucu = otorite):**
+- Fizik yalnızca **oda kurucusunun** tarayıcısında çalışır: `requestAnimationFrame` üstünde biriktirmeli sabit zaman adımı
+  (1/60 sn; kare başına en çok 5 adım, gerisi atılır). `step(state, inputs, dt)` saf bir fonksiyondur (`games/kafatopu-rules.js`).
+- Kurucu ~30 Hz `kt_state` anlık görüntüsü yollar (≈120–150 bayt: tur zamanı, faz, süre, skor, iki oyuncu `[x, y, vuruş%]`, top `[x, y]`).
+- Katılan oyuncu yalnızca `kt_input {left,right,jump,kick}` yollar ve **sadece değişince** (basma/bırakma; pencere odağı kaybında
+  hepsi bırakılır). Kurucu kendi girdisini doğrudan simülasyona verir.
+- Katılan taraf görüntüleri kurucunun zaman damgasıyla tamponlar ve **~100 ms gecikmeli** olarak iki görüntü arasında doğrusal
+  interpolasyonla çizer (kurucu saati farkı yavaşça ayarlanır, çizim sıçramaz). Ön-tahmin (client-side prediction) yoktur: topla
+  etkileşimde yanlış tahmin görsel sıçrama yaratır, doğru yapmak girdi numaralı uzlaştırma gerektirir.
+- Olaylar anlık görüntüden ayrı, güvenilir mesajlardır: `kt_start {round, swap}`, `kt_goal {scorer, score, golden}`,
+  `kt_end {winner, score, reason}`; ayrıca `kt_ready`, `kt_rematch`, `kt_profile`. Gelen her mesaj (tip, sayı aralıkları, dizi
+  uzunlukları) doğrulanır, geçersizler yok sayılır; kurucu yalnızca `kt_input/kt_ready/kt_rematch`, katılan yalnızca
+  `kt_state/kt_start/kt_goal/kt_end` kabul eder. Kurucu ayrılırsa kalan oyuncu otorite olmaz, oyun biter.
+- Yalnızca testler için: `window.KAFATOPU_OPTIONS = { countdown, matchTime, goalLimit, ball }` kısa maç / başlangıç topu verir.
 
 ## Testler
 
@@ -166,7 +201,12 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
-- XOX / Dörtlü Bağla / Kedi - Köpek: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
+- XOX / Dörtlü Bağla / Kedi - Köpek / Kafa Topu: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).
+- Kafa Topu: katılan oyuncuda tepki gecikmesi ağ gecikmesi (RTT/2) + ~33 ms (kurucu adımı) + ~100 ms çizim gecikmesi kadardır;
+  iyi bir bağlantıda hissedilir ama oynanabilir. Kurucunun sekmesi arka plana alınırsa (`requestAnimationFrame` durur) oyun
+  donar ve katılanda "Rakipten veri gelmiyor" uyarısı çıkar; kurucu çok yavaş bir cihazdaysa oyun yavaşlar (adım sınırı).
+- Kafa Topu: fotoğraf rakibe WebSocket üzerinden gider (sunucu saklamaz ama aktarır); kamera yalnızca HTTPS ya da localhost'ta çalışır.
+- Kafa Topu: dokunmatik düğmeler küçük telefonlarda sahnenin alt köşelerini kısmen örter.
 - Kedi - Köpek: atış hesabı tam sayı açı/güç ve yuvarlanmış trigonometri kullanır; çok farklı tarayıcı motorlarında
   1 ulp'lik farklar teoride sınırda atışlarda ayrışma yaratabilir, pratikte beklenmez.
 - Alçak ekranlarda (laptop) Kedi - Köpek kontrolleri sahnenin altındadır; sayfayı kaydırmak gerekebilir.
