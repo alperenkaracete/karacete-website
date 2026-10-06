@@ -28,7 +28,7 @@
     var GROUND_BOUNCE = 0.72;
     var WALL_BOUNCE = 0.75;
     var BAR_BOUNCE = 0.6;
-    var BALL_MAX_SPEED = 1300;
+    var BALL_MAX_SPEED = 1200;
 
     // ---- Oyuncu ----
     var HEAD_R = 27;
@@ -51,7 +51,10 @@
     var GOAL_LIMIT = 5;
     var COUNTDOWN_TIME = 3;
     var GOAL_PAUSE = 2;
-    var SUBSTEPS = 2;
+    var SUBSTEPS = 2;                 // oyuncu hareketi için sabit alt adım (kurucu ve tahmin aynı)
+    var MIN_BALL_SUBSTEPS = 2;
+    var MAX_BALL_SUBSTEPS = 8;
+    var RESOLVE_PASSES = 3;
     var DEFAULT_DT = 1 / 60;
 
     var PHASES = ['countdown', 'play', 'goal', 'over'];
@@ -102,6 +105,7 @@
             tick: 0,
             players: startPlayers(swap),
             ball: options.ball ? { x: options.ball.x, y: options.ball.y, vx: options.ball.vx || 0, vy: options.ball.vy || 0 } : startBall(),
+            sub: MIN_BALL_SUBSTEPS,
             events: []
         };
     }
@@ -117,6 +121,7 @@
             score: s.score.slice(), winner: s.winner, goalTimer: s.goalTimer, lastScorer: s.lastScorer, tick: s.tick,
             players: [clonePlayer(s.players[0]), clonePlayer(s.players[1])],
             ball: { x: s.ball.x, y: s.ball.y, vx: s.ball.vx, vy: s.ball.vy },
+            sub: s.sub,
             events: []
         };
     }
@@ -127,25 +132,34 @@
         return p.kick > 0 ? 1 - p.kick / KICK_TIME : 0;
     }
 
-    function footPos(p) {
+    // Kafa konumu (x, y), yön ve kalan vuruş süresi verilince ayak konumu
+    function footPosAt(x, y, dir, kick) {
         var angle;
-        if (p.kick > 0) {
-            var t = kickProgress(p);
+        if (kick > 0) {
+            var t = 1 - kick / KICK_TIME;
             angle = KICK_START_ANGLE + (KICK_END_ANGLE - KICK_START_ANGLE) * t;
         } else {
             angle = 8;
         }
         var a = deg(angle);
         return {
-            x: p.x + p.dir * Math.sin(a) * LEG_LENGTH,
-            y: p.y + 8 + Math.cos(a) * LEG_LENGTH
+            x: x + dir * Math.sin(a) * LEG_LENGTH,
+            y: y + 8 + Math.cos(a) * LEG_LENGTH
         };
     }
 
-    function kickActive(p) {
-        if (p.kick <= 0 || p.hit) return false;
-        var t = kickProgress(p);
+    function footPos(p) {
+        return footPosAt(p.x, p.y, p.dir, p.kick);
+    }
+
+    function kickActiveAt(kick, hit) {
+        if (kick <= 0 || hit) return false;
+        var t = 1 - kick / KICK_TIME;
         return t >= 0.2 && t <= 0.9;
+    }
+
+    function kickActive(p) {
+        return kickActiveAt(p.kick, p.hit);
     }
 
     // ---- Girdi ----
@@ -159,22 +173,50 @@
     }
 
     // Topun hareketli bir daireyle (kafa/ayak) çarpışması; çözülürse true.
+    // Top dışarı itilir (penetrasyon çözümü), göreli hızın normal bileşeni yansıtılır. Zemine ya da
+    // duvara sıkışmış top, sıkıştığı yönde değil kayarak (yana/yukarı) itilir; merkezler çakışıksa
+    // göreli hızın tersine (yoksa yukarı) itilir. Böylece top kafanın öbür yanına geçmez.
     function collideBallCircle(ball, cx, cy, cr, cvx, cvy, restitution) {
         var dx = ball.x - cx;
         var dy = ball.y - cy;
         var minDist = BALL_R + cr;
-        if (dx * dx + dy * dy >= minDist * minDist) return false;
-        var n = normalize(dx, dy, 0, -1);
-        // konumu dışarı it
-        ball.x = cx + n.x * minDist;
-        ball.y = cy + n.y * minDist;
-        // göreli hız
+        var d2 = dx * dx + dy * dy;
+        if (d2 >= minDist * minDist) return false;
         var rvx = ball.vx - cvx;
         var rvy = ball.vy - cvy;
-        var vn = rvx * n.x + rvy * n.y;
+        var d = Math.sqrt(d2);
+        var nx;
+        var ny;
+        if (d < 1e-4) {
+            var rl = Math.sqrt(rvx * rvx + rvy * rvy);
+            if (rl > 1e-3) { nx = -rvx / rl; ny = -rvy / rl; } else { nx = 0; ny = -1; }
+        } else {
+            nx = dx / d;
+            ny = dy / d;
+        }
+        var onGround = ball.y + BALL_R >= GROUND - 0.01;
+        var onLeftWall = ball.x - BALL_R <= 0.01;
+        var onRightWall = ball.x + BALL_R >= W - 0.01;
+        if (onGround && ny > 0) {
+            // zemine sıkışık: yatay olarak dışarı kay
+            var h = minDist * minDist - dy * dy;
+            var hx = h > 0 ? Math.sqrt(h) : 0;
+            var side = Math.abs(dx) > 0.5 ? (dx > 0 ? 1 : -1) : (rvx < 0 ? 1 : -1);
+            nx = side * hx / minDist;
+            ny = dy / minDist;
+        } else if ((onLeftWall && nx < 0) || (onRightWall && nx > 0)) {
+            // duvara sıkışık: dikey olarak dışarı kay (yukarı tercih)
+            var h2 = minDist * minDist - dx * dx;
+            var hy = h2 > 0 ? Math.sqrt(h2) : 0;
+            nx = dx / minDist;
+            ny = -hy / minDist;
+        }
+        ball.x = cx + nx * minDist;
+        ball.y = cy + ny * minDist;
+        var vn = rvx * nx + rvy * ny;
         if (vn < 0) {
-            ball.vx -= (1 + restitution) * vn * n.x;
-            ball.vy -= (1 + restitution) * vn * n.y;
+            ball.vx -= (1 + restitution) * vn * nx;
+            ball.vy -= (1 + restitution) * vn * ny;
         }
         return true;
     }
@@ -321,38 +363,43 @@
         limitBallSpeed(ball);
     }
 
-    function ballVsPlayer(ball, p, prevFootX, prevFootY, dt) {
-        // kafa
-        collideBallCircle(ball, p.x, p.y, HEAD_R, p.vx, p.vy, HEAD_BOUNCE);
-        // ayak
-        var foot = footPos(p);
-        var fvx = (foot.x - prevFootX) / dt;
-        var fvy = (foot.y - prevFootY) / dt;
-        if (kickActive(p)) {
+    // Bir oyuncunun (adım içi konumundaki) kafa ve ayağıyla top çarpışması. g: oyuncunun adım geometrisi.
+    function resolveBallPlayer(ball, p, g, f) {
+        var hx = g.hx0 + (g.hx1 - g.hx0) * f;
+        var hy = g.hy0 + (g.hy1 - g.hy0) * f;
+        var kick = g.kb + (g.ke - g.kb) * f;
+        if (kick < 0) kick = 0;
+        var changed = collideBallCircle(ball, hx, hy, HEAD_R, g.hvx, g.hvy, HEAD_BOUNCE);
+        var foot = footPosAt(hx, hy, p.dir, kick);
+        if (kickActiveAt(kick, p.hit)) {
             var dx = ball.x - foot.x;
             var dy = ball.y - foot.y;
             var reach = BALL_R + FOOT_R + 4;
             if (dx * dx + dy * dy <= reach * reach) {
                 applyKick(ball, p, foot);
                 p.hit = true;
-                return;
+                return true;
             }
         }
-        collideBallCircle(ball, foot.x, foot.y, FOOT_R, fvx, fvy, FOOT_BOUNCE);
+        if (collideBallCircle(ball, foot.x, foot.y, FOOT_R, g.fvx, g.fvy, FOOT_BOUNCE)) changed = true;
+        return changed;
     }
 
     // ---- Top ----
     function moveBall(ball, dt) {
+        limitBallSpeed(ball);
         ball.vy += BALL_GRAVITY * dt;
         var drag = 1 - BALL_DRAG * dt;
         ball.vx *= drag;
         ball.vy *= drag;
+        limitBallSpeed(ball);
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
-        limitBallSpeed(ball);
     }
 
+    // Sınırlar: zemin, tavan, duvarlar, üst çizgiler. Bir şey düzeltildiyse true.
     function ballBounds(ball, dt) {
+        var changed = false;
         if (ball.y + BALL_R > GROUND) {
             ball.y = GROUND - BALL_R;
             if (ball.vy > 0) ball.vy = -ball.vy * GROUND_BOUNCE;
@@ -360,21 +407,34 @@
                 ball.vy = 0;
                 ball.vx *= Math.max(0, 1 - BALL_ROLL_FRICTION * dt);
             }
+            changed = true;
         }
         if (ball.y - BALL_R < 0) {
             ball.y = BALL_R;
             if (ball.vy < 0) ball.vy = -ball.vy * WALL_BOUNCE;
+            changed = true;
         }
         if (ball.x - BALL_R < 0) {
             ball.x = BALL_R;
             if (ball.vx < 0) ball.vx = -ball.vx * WALL_BOUNCE;
+            changed = true;
         }
         if (ball.x + BALL_R > W) {
             ball.x = W - BALL_R;
             if (ball.vx > 0) ball.vx = -ball.vx * WALL_BOUNCE;
+            changed = true;
         }
-        collideBallBar(ball, true);
-        collideBallBar(ball, false);
+        if (collideBallBar(ball, true)) changed = true;
+        if (collideBallBar(ball, false)) changed = true;
+        return changed;
+    }
+
+    // Top için alt adım sayısı: top (ve oyuncu/ayak) hiçbir alt adımda yarıçapın yarısından fazla
+    // göreli yer değiştirmesin (üst sınır MAX_BALL_SUBSTEPS).
+    function substepsFor(ballSpeed, playerSpeed, dt) {
+        var rel = (ballSpeed || 0) + (playerSpeed || 0);
+        var n = Math.ceil(rel * dt / (BALL_R / 2) - 1e-9);
+        return clamp(n, MIN_BALL_SUBSTEPS, MAX_BALL_SUBSTEPS);
     }
 
     // Gol: top çizgiyi tamamen aşmış ve üst çizginin altında. Dönen değer: golü yiyen taraf ('left'/'right') ya da null.
@@ -426,23 +486,64 @@
         state.events.push({ type: 'end', winner: winner, score: state.score.slice(), reason: 'time' });
     }
 
-    function subStep(state, inputs, dt) {
-        var frozen = state.phase === 'countdown' || state.phase === 'over';
-        var ps = state.players;
-        var prevFoot = [footPos(ps[0]), footPos(ps[1])];
-        movePlayer(ps[0], inputs[0], dt, frozen);
-        movePlayer(ps[1], inputs[1], dt, frozen);
-        separatePlayers(ps[0], ps[1], dt);
+    // Oyuncuları sabit alt adımlarla ilerletir. Top bundan bağımsızdır (tahmin için önemli).
+    // Her oyuncu için adım içi geometriyi (kafa başı/sonu, vuruş süresi başı/sonu, ayak) döndürür.
+    function advancePlayers(ps, inputs, dt, frozen) {
+        var before = [clonePlayer(ps[0]), clonePlayer(ps[1])];
+        var sub = dt / SUBSTEPS;
+        for (var i = 0; i < SUBSTEPS; i++) {
+            movePlayer(ps[0], inputs[0], sub, frozen);
+            movePlayer(ps[1], inputs[1], sub, frozen);
+            separatePlayers(ps[0], ps[1], sub);
+        }
+        var geo = [];
+        for (var k = 0; k < 2; k++) {
+            var b = before[k];
+            var a = ps[k];
+            var kb = b.kick > 0 ? b.kick : (a.kick > 0 ? KICK_TIME : 0);
+            var f0 = footPosAt(b.x, b.y, b.dir, kb);
+            var f1 = footPosAt(a.x, a.y, a.dir, a.kick);
+            geo.push({
+                hx0: b.x, hy0: b.y, hx1: a.x, hy1: a.y,
+                hvx: (a.x - b.x) / dt, hvy: (a.y - b.y) / dt,
+                kb: kb, ke: a.kick,
+                fvx: (f1.x - f0.x) / dt, fvy: (f1.y - f0.y) / dt
+            });
+        }
+        return geo;
+    }
 
-        if (state.phase !== 'countdown') {
-            moveBall(state.ball, dt);
-            ballBounds(state.ball, dt);
-            ballVsPlayer(state.ball, ps[0], prevFoot[0].x, prevFoot[0].y, dt);
-            ballVsPlayer(state.ball, ps[1], prevFoot[1].x, prevFoot[1].y, dt);
-            ballBounds(state.ball, dt);
+    // Katılan taraftaki tahmin: yalnızca kendi oyuncusunu, kurucuyla aynı fonksiyonlarla ilerletir.
+    // Rakip hareketsiz (son bilinen durum) kabul edilir, yalnızca kafa-kafa ayrışması için kullanılır.
+    function stepOwn(own, opp, index, input, dt, frozen) {
+        var p = clonePlayer(own);
+        var o = clonePlayer(opp);
+        var sub = dt / SUBSTEPS;
+        for (var i = 0; i < SUBSTEPS; i++) {
+            movePlayer(p, input, sub, frozen);
+            if (index === 0) separatePlayers(p, o, sub);
+            else separatePlayers(o, p, sub);
+        }
+        return p;
+    }
+
+    function stepBall(state, geo, n, dt) {
+        var ball = state.ball;
+        var ps = state.players;
+        var sub = dt / n;
+        for (var k = 1; k <= n; k++) {
+            var f = k / n;
+            moveBall(ball, sub);
+            for (var pass = 0; pass < RESOLVE_PASSES; pass++) {
+                var changed = false;
+                if (resolveBallPlayer(ball, ps[0], geo[0], f)) changed = true;
+                if (resolveBallPlayer(ball, ps[1], geo[1], f)) changed = true;
+                if (ballBounds(ball, sub)) changed = true;
+                if (!changed) break;
+            }
             if (state.phase === 'play') {
-                var side = goalSide(state.ball);
-                if (side) registerGoal(state, side);
+                var side = goalSide(ball);     // çarpışmalar çözüldükten sonra
+                if (side) { registerGoal(state, side); break; }
             }
         }
     }
@@ -452,8 +553,26 @@
         if (dt === undefined) dt = DEFAULT_DT;
         var next = cloneState(state);
         var ins = [inputs && inputs[0] ? inputs[0] : emptyInput(), inputs && inputs[1] ? inputs[1] : emptyInput()];
-        var sub = dt / SUBSTEPS;
-        for (var i = 0; i < SUBSTEPS; i++) subStep(next, ins, sub);
+        var frozen = next.phase === 'countdown' || next.phase === 'over';
+
+        var geo = advancePlayers(next.players, ins, dt, frozen);
+
+        if (next.phase !== 'countdown') {
+            var ball = next.ball;
+            limitBallSpeed(ball);
+            var ballSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            var playerSpeed = 0;
+            var anyKick = false;
+            for (var i = 0; i < 2; i++) {
+                playerSpeed = Math.max(playerSpeed, Math.sqrt(geo[i].hvx * geo[i].hvx + geo[i].hvy * geo[i].hvy),
+                    Math.sqrt(geo[i].fvx * geo[i].fvx + geo[i].fvy * geo[i].fvy));
+                if (geo[i].ke > 0 || geo[i].kb > 0) anyKick = true;
+            }
+            // vuruş topa ~KICK_SPEED hız verebilir: alt adım sayısını buna göre öngör
+            var n = substepsFor(anyKick ? Math.max(ballSpeed, KICK_SPEED) : ballSpeed, playerSpeed, dt);
+            next.sub = n;
+            stepBall(next, geo, n, dt);
+        }
         next.tick = state.tick + 1;
 
         if (next.phase === 'countdown') {
@@ -650,8 +769,9 @@
         MATCH_TIME: MATCH_TIME, GOAL_LIMIT: GOAL_LIMIT, COUNTDOWN_TIME: COUNTDOWN_TIME, GOAL_PAUSE: GOAL_PAUSE,
         DT: DEFAULT_DT, FACE_MAX_LENGTH: FACE_MAX_LENGTH, PHASES: PHASES,
         leftIndex: leftIndex, emptyInput: emptyInput, createState: createState,
-        footPos: footPos, kickProgress: kickProgress, goalSide: goalSide,
-        step: step, snapshot: snapshot, frame: frame,
+        footPos: footPos, footPosAt: footPosAt, kickProgress: kickProgress, goalSide: goalSide,
+        BALL_MAX_SPEED: BALL_MAX_SPEED,
+        step: step, stepOwn: stepOwn, substepsFor: substepsFor, snapshot: snapshot, frame: frame,
         validateInput: validateInput, validateState: validateState, validateStart: validateStart,
         validateGoal: validateGoal, validateEnd: validateEnd, validateFace: validateFace,
         isEmojiFace: isEmojiFace, isJpegFace: isJpegFace,
