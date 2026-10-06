@@ -513,18 +513,22 @@
         return geo;
     }
 
-    // Katılan taraftaki tahmin: yalnızca kendi oyuncusunu, kurucuyla aynı fonksiyonlarla ilerletir.
-    // Rakip hareketsiz (son bilinen durum) kabul edilir, yalnızca kafa-kafa ayrışması için kullanılır.
+    // Katılan taraftaki tahmin: yalnızca kendi oyuncusunu, kurucuyla aynı fonksiyonlarla (movePlayer,
+    // separatePlayers, aynı sabit alt adımlar) ilerletir. Rakip kendi girdisiyle hareket etmez (son bilinen
+    // durum, girdisiz) varsayılır; kafa-kafa ayrışmasından etkilenir. { own, opp } döndürür; opp'u çağıran
+    // adımlar arasında taşır. Rakip gerçekten boştayken sonuç, tam step'teki oyuncu yörüngesiyle birebir aynıdır.
     function stepOwn(own, opp, index, input, dt, frozen) {
         var p = clonePlayer(own);
         var o = clonePlayer(opp);
         var sub = dt / SUBSTEPS;
+        var idle = emptyInput();
         for (var i = 0; i < SUBSTEPS; i++) {
             movePlayer(p, input, sub, frozen);
+            movePlayer(o, idle, sub, frozen);              // rakip: girdisiz (tuşlara basmıyor) varsayımı
             if (index === 0) separatePlayers(p, o, sub);
             else separatePlayers(o, p, sub);
         }
-        return p;
+        return { own: p, opp: o };
     }
 
     function stepBall(state, geo, n, dt) {
