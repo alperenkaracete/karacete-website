@@ -380,50 +380,86 @@ test('süre dolunca skor eşitse altın gol: süre durur, ilk gol kazandırır',
     assert.equal(events[1].reason, 'golden');
 });
 
-test('anlık görüntü: doğrulanır, küçüktür ve değerleri korur', () => {
-    let s = run(play(), 30, held({ right: true }, { kick: true })).state;
+// Ağdaki biçim: yalnızca kurucu ağ katmanının eklediği a/c alanlarıyla birlikte
+const wire = (state, extra) => Object.assign({ type: 'kt_state' }, K.snapshot(state), { a: 0, c: 0 }, extra || {});
+
+test('anlık görüntü: doğrulanır, küçüktür, hızları içerir ve değerleri korur', () => {
+    let s = run(play(), 5, held({ right: true }, { kick: true })).state;
     const snap = K.snapshot(s);
-    const msg = Object.assign({ type: 'kt_state' }, snap);
+    const msg = wire(s, { a: 7, c: 12 });
     const ok = K.validateState(msg);
     assert.ok(ok);
-    assert.equal(ok.t, snap.t);
-    assert.ok(JSON.stringify(msg).length < 200, 'boyut ' + JSON.stringify(msg).length);
-    assert.equal(snap.ph, 1);
-    assert.equal(K.snapshot(K.createState()).ph, 0);
+    assert.equal(ok.tick, snap.t);
+    assert.ok(Math.abs(ok.t - snap.t * 1000 / 60) < 1e-9);
+    assert.equal(ok.a, 7);
+    assert.equal(ok.c, 12);
+    assert.ok(JSON.stringify(msg).length < 230, 'boyut ' + JSON.stringify(msg).length);
+    assert.equal(snap.f, 1);
+    assert.equal(K.snapshot(K.createState()).f, 0);
+    assert.equal(snap.t, 5);
     assert.ok(snap.p[0][0] > 200);                               // sağa gitti
+    assert.equal(snap.p[0][3], 340);                             // yatay hız
+    assert.equal(snap.p[0].length, 5);
+    assert.equal(snap.b.length, 4);
+    assert.ok(ok.p[1][2] > 0, 'vuruş ilerlemesi');
+});
+
+test('anlık görüntü: geri sayım ve süre onda birlik tamsayıdır', () => {
+    const s = K.createState();
+    const snap = K.snapshot(s);
+    assert.equal(snap.d, 30);
+    assert.equal(snap.m, 900);
+    const ok = K.validateState(wire(s));
+    assert.equal(ok.cd, 3);
+    assert.equal(ok.tm, 90);
 });
 
 test('kt_state doğrulaması geçersizleri reddeder', () => {
-    const good = Object.assign({ type: 'kt_state' }, K.snapshot(play()));
+    const good = wire(play());
     assert.ok(K.validateState(good));
     const bad = (patch) => K.validateState(Object.assign({}, good, patch));
     assert.equal(bad({ t: -1 }), null);
     assert.equal(bad({ t: 1.5 }), null);
     assert.equal(bad({ t: '5' }), null);
-    assert.equal(bad({ ph: 9 }), null);
-    assert.equal(bad({ cd: 99 }), null);
-    assert.equal(bad({ tm: -1 }), null);
+    assert.equal(bad({ f: 9 }), null);
+    assert.equal(bad({ d: 99 }), null);
+    assert.equal(bad({ d: 1.5 }), null);
+    assert.equal(bad({ m: -1 }), null);
+    assert.equal(bad({ m: 99999 }), null);
     assert.equal(bad({ g: 2 }), null);
-    assert.equal(bad({ sc: [0] }), null);
-    assert.equal(bad({ sc: [0, 1.5] }), null);
-    assert.equal(bad({ sc: [0, 500] }), null);
-    assert.equal(bad({ p: [[1, 2, 3]] }), null);
-    assert.equal(bad({ p: [[1, 2, 3], [1, 2]] }), null);
-    assert.equal(bad({ p: [[1e9, 2, 3], [1, 2, 3]] }), null);
-    assert.equal(bad({ p: [[NaN, 2, 3], [1, 2, 3]] }), null);
-    assert.equal(bad({ p: [[1, 2, 500], [1, 2, 3]] }), null);
-    assert.equal(bad({ b: [1] }), null);
-    assert.equal(bad({ b: [Infinity, 1] }), null);
-    assert.equal(bad({ b: ['1', 2] }), null);
+    assert.equal(bad({ s: [0] }), null);
+    assert.equal(bad({ s: [0, 1.5] }), null);
+    assert.equal(bad({ s: [0, 500] }), null);
+    assert.equal(bad({ a: -1 }), null);
+    assert.equal(bad({ a: 'x' }), null);
+    assert.equal(bad({ c: 1.5 }), null);
+    assert.equal(bad({ a: undefined }), null);
+    assert.equal(bad({ p: [[1, 2, 3, 0, 0]] }), null);
+    assert.equal(bad({ p: [[1, 2, 3, 0, 0], [1, 2, 3, 0]] }), null);
+    assert.equal(bad({ p: [[1, 2, 3], [1, 2, 3]] }), null);                 // eski biçim
+    assert.equal(bad({ p: [[1e9, 2, 3, 0, 0], [1, 2, 3, 0, 0]] }), null);
+    assert.equal(bad({ p: [[NaN, 2, 3, 0, 0], [1, 2, 3, 0, 0]] }), null);
+    assert.equal(bad({ p: [[1, 2, 500, 0, 0], [1, 2, 3, 0, 0]] }), null);
+    assert.equal(bad({ p: [[1, 2, 3, 99999, 0], [1, 2, 3, 0, 0]] }), null);  // hız sınırı
+    assert.equal(bad({ p: [[1, 2, 3, 0, Infinity], [1, 2, 3, 0, 0]] }), null);
+    assert.equal(bad({ b: [1, 2] }), null);
+    assert.equal(bad({ b: [Infinity, 1, 0, 0] }), null);
+    assert.equal(bad({ b: ['1', 2, 0, 0] }), null);
+    assert.equal(bad({ b: [1, 2, 9999, 0] }), null);
     assert.equal(K.validateState(null), null);
     assert.equal(K.validateState('x'), null);
 });
 
 test('kt_input / kt_start / kt_goal / kt_end doğrulaması', () => {
-    assert.deepEqual(K.validateInput({ type: 'kt_input', left: true, right: false, jump: false, kick: true }), { left: true, right: false, jump: false, kick: true });
-    assert.equal(K.validateInput({ left: true, right: false, jump: false }), null);
-    assert.equal(K.validateInput({ left: 1, right: 0, jump: 0, kick: 0 }), null);
-    assert.equal(K.validateInput({ left: 'true', right: false, jump: false, kick: false }), null);
+    assert.deepEqual(K.validateInput({ type: 'kt_input', r: 2, n: 5, left: true, right: false, jump: false, kick: true }), { r: 2, n: 5, left: true, right: false, jump: false, kick: true });
+    assert.equal(K.validateInput({ r: 1, n: 0, left: true, right: false, jump: false }), null);
+    assert.equal(K.validateInput({ r: 1, n: 0, left: 1, right: 0, jump: 0, kick: 0 }), null);
+    assert.equal(K.validateInput({ r: 1, n: 0, left: 'true', right: false, jump: false, kick: false }), null);
+    assert.equal(K.validateInput({ left: true, right: false, jump: false, kick: false }), null);          // r/n yok
+    assert.equal(K.validateInput({ r: 0, n: 0, left: true, right: false, jump: false, kick: false }), null);
+    assert.equal(K.validateInput({ r: 1, n: -1, left: true, right: false, jump: false, kick: false }), null);
+    assert.equal(K.validateInput({ r: 1, n: 1.5, left: true, right: false, jump: false, kick: false }), null);
+    assert.equal(K.validateInput({ r: '1', n: 0, left: true, right: false, jump: false, kick: false }), null);
     assert.equal(K.validateInput(null), null);
     assert.deepEqual(K.validateStart({ round: 2, swap: true }), { round: 2, swap: true });
     assert.equal(K.validateStart({ round: 0, swap: true }), null);
@@ -465,18 +501,48 @@ test('yüz doğrulaması: yalnızca JPEG data URL, base64 ve boyut sınırı', (
     assert.equal(K.validateFace('DATA:image/jpeg;base64,' + body), null);
 });
 
-test('interpolasyon: iki görüntü arasında doğrusal, uçlarda sabit', () => {
-    const mk = (t, bx, px) => ({ t, ph: 1, cd: 0, tm: 80, g: 0, sc: [0, 0], p: [[px, 342, 0], [600, 342, 0]], b: [bx, 200] });
-    const buf = [mk(0, 100, 200), mk(100, 200, 220), mk(200, 400, 260)];
+const mkSnap = (t, bx, px, extra) => Object.assign({
+    tick: Math.round(t * 60 / 1000), t, ph: 1, cd: 0, tm: 80, g: 0, sc: [0, 0], a: 0, c: 0, ex: 0,
+    p: [[px, 342, 0, 340, 0], [600, 342, 0, 0, 0]], b: [bx, 200, 600, 0]
+}, extra || {});
+
+test('interpolasyon: iki görüntü arasında doğrusal (konum ve hız), uçlarda sabit', () => {
+    const buf = [mkSnap(0, 100, 200), mkSnap(100, 200, 220), mkSnap(200, 400, 260)];
     assert.equal(K.sample([], 5), null);
     assert.equal(K.sample(buf, -50).b[0], 100);
-    assert.equal(K.sample(buf, 999).b[0], 400);
     const mid = K.sample(buf, 50);
     assert.equal(mid.b[0], 150);
     assert.equal(mid.p[0][0], 210);
+    assert.equal(mid.ex, 0);
     const second = K.sample(buf, 150);
     assert.equal(second.b[0], 300);
     assert.equal(K.sample(buf, 100).b[0], 200);
+    const vel = K.sample([mkSnap(0, 100, 200, { b: [100, 200, 0, 0] }), mkSnap(100, 200, 200, { b: [200, 200, 1000, 0] })], 50);
+    assert.equal(vel.b[2], 500);
+});
+
+test('ekstrapolasyon: görüntü gecikirse hızla en çok 100 ms ileri tahmin edilir', () => {
+    const last = mkSnap(100, 300, 200, { b: [300, 300, 600, -200], p: [[200, 342, 0, 340, 0], [600, 300, 0, 0, -100]] });
+    const buf = [mkSnap(0, 100, 200), last];
+    const at = (ms) => K.sample(buf, 100 + ms);
+    assert.equal(at(0).ex, 0);
+    const e50 = at(50);
+    assert.equal(e50.ex, 50);
+    assert.ok(Math.abs(e50.b[0] - (300 + 600 * 0.05)) < 1e-9);                       // top x = x + vx dt
+    assert.ok(Math.abs(e50.b[1] - (300 - 200 * 0.05 + 0.5 * 900 * 0.05 * 0.05)) < 1e-9);   // yerçekimi dahil
+    assert.ok(Math.abs(e50.p[0][0] - (200 + 340 * 0.05)) < 1e-9);                     // oyuncu x
+    // 100 ms'nin ötesi: tahmin 100 ms'de kalır (sonsuza uçmaz)
+    const e100 = at(100);
+    const e500 = at(500);
+    assert.equal(e100.ex, 100);
+    assert.equal(e500.ex, 100);
+    assert.deepEqual(e500.b, e100.b);
+    assert.deepEqual(e500.p, e100.p);
+    assert.equal(K.EXTRAPOLATE_MAX_MS, 100);
+    // sınırlar içinde kalır
+    const wall = K.sample([mkSnap(0, 100, 200), mkSnap(100, 770, 200, { b: [770, 380, 1200, 800] })], 200);
+    assert.ok(wall.b[0] <= K.W - K.BALL_R);
+    assert.ok(wall.b[1] <= K.GROUND - K.BALL_R);
 });
 
 test('maç sonu ve olaylar: gol olayı skorla birlikte gelir', () => {

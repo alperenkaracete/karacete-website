@@ -40,6 +40,7 @@ function game(options) {
         ctxs[key] = ctx;
         nets[key] = Net.create({
             ctx, rules: K, now: () => clock,
+            predictor: options.predictor, predict: options.predict,
             matchOptions: options.matchOptions,
             onChange: (v) => { views[key] = v; },
             onEvent: (e) => events[key].push(e)
@@ -202,13 +203,13 @@ test('yalnızca biri hazırsa başlamaz', () => {
     assert.equal(g.views.H.mode, 'match');
 });
 
-test('kurucu ~30 Hz anlık görüntü yollar, mesajlar küçüktür', () => {
+test('kurucu 60 Hz anlık görüntü yollar, mesajlar küçüktür', () => {
     const g = startedGame();
     g.advance(500);
     const before = g.sent.H.filter((m) => m.type === 'kt_state').length;
     g.advance(2000);
     const count = g.sent.H.filter((m) => m.type === 'kt_state').length - before;
-    assert.ok(count >= 58 && count <= 62, '2 sn içinde ' + count + ' görüntü');
+    assert.ok(count >= 118 && count <= 122, '2 sn içinde ' + count + ' görüntü');
     const sizes = g.sent.H.filter((m) => m.type === 'kt_state').map((m) => JSON.stringify(m).length);
     assert.ok(Math.max(...sizes) < 200, 'en büyük ' + Math.max(...sizes));
 });
@@ -234,8 +235,12 @@ test('katılan yalnızca değişince kt_input yollar; kurucu uygular', () => {
     g.G.setInput({ left: false });
     g.advance(100);
     const inputs = g.sent.G.filter((m) => m.type === 'kt_input');
-    assert.deepEqual(inputs.map((m) => m.left), [true, false]);
-    assert.deepEqual(inputs[0], { type: 'kt_input', left: true, right: false, jump: false, kick: false });
+    const firsts = [];
+    inputs.forEach((m) => { if (!firsts.some((f) => f.n === m.n)) firsts.push(m); });
+    const changes = firsts.filter((m) => m.n > 0);     // n=0: boşta güvence tekrarı
+    assert.deepEqual(changes.map((m) => m.left), [true, false]);
+    assert.deepEqual(changes.map((m) => m.n), [1, 2]);
+    assert.deepEqual(changes[0], { type: 'kt_input', r: 1, n: 1, left: true, right: false, jump: false, kick: false });
     assert.ok(g.H.getView().frame.p[1][0] < x0 - 100, 'kurucu katılanı hareket ettirdi');
 });
 
@@ -245,7 +250,7 @@ test('tuş bırakma ve odak kaybı (releaseAll) tek kt_input ile iletilir', () =
     g.G.setInput({ right: true, jump: true });
     g.G.releaseAll();
     g.G.releaseAll();
-    const inputs = g.sent.G.filter((m) => m.type === 'kt_input');
+    const inputs = g.sent.G.filter((m) => m.type === 'kt_input' && m.n > 0);
     assert.equal(inputs.length, 2);
     assert.deepEqual([inputs[1].left, inputs[1].right, inputs[1].jump, inputs[1].kick], [false, false, false, false]);
 });
@@ -272,7 +277,7 @@ test('roller: kurucu kt_state, katılan kt_input/kt_ready/kt_rematch kabul etmez
     assert.equal(g.H.getView().round, 1);
     assert.notEqual(g.H.getView().frame, null);
     // katılan: kt_input yok sayılır
-    g.G.onMessage({ type: 'kt_input', left: true, right: false, jump: false, kick: false });
+    g.G.onMessage({ type: 'kt_input', r: 1, n: 1, left: true, right: false, jump: false, kick: false });
     g.advance(300);
     assert.equal(g.sent.G.filter((m) => m.type === 'kt_state').length, 0);
 });
@@ -282,9 +287,10 @@ test('geçersiz mesajlar yok sayılır (kurucu girdisi, durum, olaylar)', () => 
     g.advance(3300);
     const x1 = g.H.getView().frame.p[1][0];
     for (const bad of [
-        { type: 'kt_input', left: 1, right: 0, jump: 0, kick: 0 },
-        { type: 'kt_input', left: true },
-        { type: 'kt_input', left: 'true', right: false, jump: false, kick: false },
+        { type: 'kt_input', r: 1, n: 1, left: 1, right: 0, jump: 0, kick: 0 },
+        { type: 'kt_input', r: 1, n: 1, left: true },
+        { type: 'kt_input', r: 1, n: 1, left: 'true', right: false, jump: false, kick: false },
+        { type: 'kt_input', left: true, right: false, jump: false, kick: false },
         { type: 'kt_input' }
     ]) g.H.onMessage(bad);
     g.advance(500);
@@ -314,7 +320,7 @@ test('eski veya tekrarlanan anlık görüntüler yok sayılır', () => {
     assert.ok(g.G.getView().frame.t >= t - 1, 'eski görüntü kabul edilmedi');
 });
 
-test('katılan, anlık görüntüleri yumuşak interpolasyonla ve ~100 ms gecikmeyle çizer', () => {
+test('katılan, anlık görüntüleri yumuşak interpolasyonla ve ~40 ms gecikmeyle çizer', () => {
     const g = startedGame({ latency: 30 });
     g.advance(3300);
     g.H.setInput({ right: true });
@@ -331,7 +337,7 @@ test('katılan, anlık görüntüleri yumuşak interpolasyonla ve ~100 ms gecikm
         assert.ok(d > 0 && d < 9, `kare ${i}: adım ${d}`);        // 340 px/s ≈ 5.7 px/kare; sıçrama yok
     }
     const avgLag = lag.reduce((a, b) => a + b, 0) / lag.length;
-    assert.ok(avgLag > 25 && avgLag < 80, 'ortalama gecikme (px) ' + avgLag);   // ≈ 100-130 ms * 340 px/s
+    assert.ok(avgLag > 10 && avgLag < 50, 'ortalama gecikme (px) ' + avgLag);   // ≈ (30 + 40) ms * 340 px/s
 });
 
 test('ağ gecikmesi dalgalansa da (jitter) katılanın çizimi sıçramaz', () => {
@@ -396,9 +402,10 @@ test('maç sonu: kt_end gelir, iki taraf "over" olur, oturum skoru güncellenir'
     assert.equal(g.events.G.filter((e) => e.type === 'end').length, 1);
     assert.equal(g.sent.H.filter((m) => m.type === 'kt_end').length, 1);
     // bittikten sonra simülasyon durur
-    const sentBefore = g.sent.H.length;
+    const gameMsgs = () => g.sent.H.filter((m) => m.type !== 'kt_ping' && m.type !== 'kt_pong').length;
+    const sentBefore = gameMsgs();
     g.advance(500);
-    assert.equal(g.sent.H.length, sentBefore);
+    assert.equal(gameMsgs(), sentBefore);
 });
 
 test('süre dolunca eşitlikte altın gol: maç sürer, ilk gol bitirir', () => {
@@ -521,4 +528,121 @@ test('sabit adım: kare hızından bağımsız aynı simülasyon süresi', () =>
     const b = simTime(33.333);
     const c = simTime(8);
     for (const v of [a, b, c]) assert.ok(Math.abs(v - 2) < 0.1, 'simüle edilen süre ' + v);
+});
+
+// ---- v2: ping, girdi tekrarı, sıra numarası, tahmin ----
+const Predict = require('../games/kafatopu-predict.js');
+
+function startedGameP(options) {
+    const g = game(Object.assign({ predictor: Predict }, options || {}));
+    g.join();
+    g.readyBoth();
+    return g;
+}
+
+test('ping: RTT ≈ 2 x tek yön gecikme; pong gelmezse null', () => {
+    const g = startedGame({ latency: 40 });
+    g.advance(3000);
+    const ping = g.views.G.ping;
+    assert.ok(ping > 70 && ping < 100, 'ping ' + ping);
+    assert.ok(g.views.H.ping > 70 && g.views.H.ping < 100);
+    g.advanceGuestOnly(4000);                           // kurucu sessiz: pong yok
+    assert.equal(g.G.getView().ping, null);
+});
+
+test('geçersiz ping/pong yok sayılır; ping aynen yansıtılır', () => {
+    const g = startedGame();
+    const before = g.sent.H.length;
+    g.H.onMessage({ type: 'kt_ping', n: 'x', t: 1 });
+    g.H.onMessage({ type: 'kt_ping', n: 1, t: 'a' });
+    g.H.onMessage({ type: 'kt_pong', n: 1, t: 1e15 });
+    g.H.onMessage({ type: 'kt_pong', n: -1, t: 5 });
+    assert.equal(g.sent.H.length, before);
+    g.H.onMessage({ type: 'kt_ping', n: 7, t: 123 });
+    assert.deepEqual(g.sent.H[g.sent.H.length - 1], { type: 'kt_pong', n: 7, t: 123 });
+});
+
+test('girdi tekrarı: basılıyken ~100 ms, boştayken ~1 sn; n yalnızca değişimde artar', () => {
+    const g = startedGame({ latency: 20 });
+    g.advance(3300);
+    const count = () => g.sent.G.filter((m) => m.type === 'kt_input').length;
+    g.G.setInput({ right: true });
+    const c0 = count();
+    g.advance(1000);
+    const held = count() - c0;
+    assert.ok(held >= 9 && held <= 11, 'basılıyken 1 sn: ' + held);
+    const ns = new Set(g.sent.G.filter((m) => m.type === 'kt_input' && m.n > 0).map((m) => m.n));
+    assert.equal(ns.size, 1);
+    g.G.setInput({ right: false });
+    g.advance(300);                                     // onaylanana kadar tekrar edebilir
+    const c1 = count();
+    g.advance(3000);
+    const idle = count() - c1;
+    assert.ok(idle >= 2 && idle <= 4, 'boştayken 3 sn: ' + idle);
+});
+
+test('kurucu: eski/yinelenen n ve eski tur yok sayılır; ack a/c anlık görüntüde', () => {
+    const g = startedGame();
+    g.advance(3300);
+    const base = { type: 'kt_input', r: 1, jump: false, kick: false, left: false, right: true };
+    g.H.onMessage(Object.assign({}, base, { n: 5 }));
+    g.advance(100);
+    let snap = g.sent.H.filter((m) => m.type === 'kt_state').pop();
+    assert.equal(snap.a, 5);
+    assert.ok(snap.c >= 4 && snap.c <= 8, 'c=' + snap.c);
+    g.H.onMessage(Object.assign({}, base, { n: 3, right: false, left: true }));   // eski
+    g.H.onMessage(Object.assign({}, base, { n: 5, right: false, left: true }));   // yinelenen
+    g.H.onMessage(Object.assign({}, base, { n: 9, r: 7, right: false, left: true })); // eski/yanlış tur
+    g.advance(100);
+    snap = g.sent.H.filter((m) => m.type === 'kt_state').pop();
+    assert.equal(snap.a, 5);
+    assert.ok(g.H._state().inputs[1].right && !g.H._state().inputs[1].left);
+    g.H.onMessage(Object.assign({}, base, { n: 6, right: false, left: true }));
+    assert.ok(g.H._state().inputs[1].left);
+});
+
+test('tahmin: katılan kendi karakterini RTT beklemeden hemen oynatır; tahminsiz geç kalır', () => {
+    const run = (predict) => {
+        const g = game({ latency: 60, predictor: Predict, predict });
+        g.join(); g.readyBoth();
+        g.advance(3500);
+        const x0 = g.G.getView().frame.p[1][0];
+        g.G.setInput({ left: true });
+        let steps = 0;
+        while (steps < 60 && g.G.getView().frame.p[1][0] > x0 - 3) { g.advance(FRAME); steps++; }
+        return steps;
+    };
+    const withP = run(true);
+    const without = run(false);
+    assert.ok(withP <= 3, 'tahminli ' + withP + ' kare');
+    assert.ok(without > withP + 6, 'tahminsiz ' + without + ' kare');
+});
+
+test('tahmin: durunca katılanın tahmini ile kurucudaki konum aynı; hata küçük kalır', () => {
+    const g = game({ latency: 50, jitter: 20, predictor: Predict });
+    g.join(); g.readyBoth();
+    g.advance(3500);
+    let maxErr = 0;
+    const script = [['left', 400], ['left', 0], ['jump', 300], ['jump', 0], ['right', 500], ['right', 0], ['kick', 200], ['kick', 0]];
+    for (const [key, ms] of script) {
+        g.G.setInput({ [key]: ms > 0 });
+        g.advance(ms || 300);
+        maxErr = Math.max(maxErr, g.G.getView().debug.predErrorMax);
+    }
+    g.advance(1200);
+    const gx = g.G.getView().frame.p[1][0];
+    const hx = g.H.getView().frame.p[1][0];
+    assert.ok(Math.abs(gx - hx) < 1, 'katılan ' + gx + ' kurucu ' + hx);
+    assert.ok(maxErr < 40, 'hata ' + maxErr);
+});
+
+test('debug: anlık görüntü hızı ~60 Hz, tampon ve ekstrapolasyon bilgisi', () => {
+    const g = startedGame({ latency: 30 });
+    g.advance(4000);
+    const d = g.G.getView().debug;
+    assert.ok(d.stateHz >= 55 && d.stateHz <= 62, 'Hz ' + d.stateHz);
+    assert.equal(d.interpDelay, 40);
+    assert.ok(d.bufferSize > 5);
+    assert.equal(d.role, 'katilan');
+    assert.ok(g.H.getView().debug.simHz >= 55);
 });
