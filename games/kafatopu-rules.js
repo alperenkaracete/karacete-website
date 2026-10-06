@@ -80,7 +80,7 @@
         return { x: 400, y: 200, vx: 0, vy: 0 };
     }
 
-    // options: { swap, matchTime, goalLimit, countdown, score }
+    // options: { swap, matchTime, goalLimit, countdown, score, ball } (ball: ilk vuruş için başlangıç topu; testler içindir)
     function createState(options) {
         options = options || {};
         var swap = !!options.swap;
@@ -101,7 +101,7 @@
             lastScorer: null,
             tick: 0,
             players: startPlayers(swap),
-            ball: startBall(),
+            ball: options.ball ? { x: options.ball.x, y: options.ball.y, vx: options.ball.vx || 0, vy: options.ball.vy || 0 } : startBall(),
             events: []
         };
     }

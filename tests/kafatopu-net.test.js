@@ -142,6 +142,22 @@ test('katılınca iki taraf yüzlerini değiş tokuş eder; geç gelen de görü
     assert.equal(g.views.H.opponent.face, '🐱');
 });
 
+test('kurucu rakip gelmeden hazır olduysa, katılınca hazır olduğunu görür', () => {
+    const g = game();
+    g.H.setFace('⚽');
+    g.H.ready();
+    assert.equal(g.sent.H.filter((m) => m.type === 'kt_ready' || m.type === 'kt_profile').length, 0);   // gönderilecek kimse yok
+    g.join();
+    g.G.setFace('🐱');
+    g.advance(1);
+    assert.equal(g.views.G.opponent.ready, true);
+    assert.equal(g.views.G.opponent.face, '⚽');
+    g.G.ready();
+    g.advance(100);
+    assert.equal(g.views.H.mode, 'match');
+    assert.equal(g.views.G.mode, 'match');
+});
+
 test('rakipten gelen geçersiz yüz, yanlış kimlik ve HTML yok sayılır', () => {
     const g = game();
     g.join();

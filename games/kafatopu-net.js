@@ -132,8 +132,10 @@
             if (st.mode !== 'setup') return false;
             st.ready.me = true;
             st.mode = 'wait';
-            sendProfile();
-            send({ type: 'kt_ready' });
+            if (opponent()) {                    // rakip yokken gönderilecek kimse yok; katılınca yeniden yollanır
+                sendProfile();
+                send({ type: 'kt_ready' });
+            }
             maybeStart();
             emit();
             return true;
@@ -287,15 +289,16 @@
             var opp = opponent();
 
             if (data.type === 'player_joined') {
-                if (st.face.me !== null) sendProfile();
                 if (st.mode === 'abandoned' && amHost) {
                     st.mode = st.ready.me ? 'wait' : 'setup';
                     st.ready.opp = false;
                     st.result = null;
                     st.sim = null;
                     st.buffer = [];
-                    if (st.mode === 'wait') send({ type: 'kt_ready' });
                 }
+                // Yeni gelen yüzümüzü ve hazır olduğumuzu görsün.
+                if (st.face.me !== null) sendProfile();
+                if (st.mode === 'wait' && st.ready.me) send({ type: 'kt_ready' });
                 emit();
                 return;
             }

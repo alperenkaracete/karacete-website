@@ -612,6 +612,279 @@ body {
     .cd-controls .cd-hint { grid-column: 1 / -1; text-align: center; }
 }
 
+/* --- Kafa Topu (gerçek zamanlı, tek ekran) --- */
+body.kt-active {
+    background-attachment: fixed;      /* sabit konumlu gövdede degrade tüm pencereyi kaplasın */
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+body.kt-active #game-container {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 0;
+}
+
+body.kt-active #game-container h1 { display: none; }
+
+body.kt-active #room-bar {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 13px;
+}
+
+body.kt-active #room-code { font-size: 15px; }
+body.kt-active .bar-btn { padding: 4px 8px; font-size: 12px; }
+
+body.kt-active #game-root {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+}
+
+.kt-root {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    color: white;
+}
+
+.kt-setup {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    position: relative;
+}
+
+.kt-setup.hidden,
+.kt-stage.hidden { display: none; }
+
+.kt-setup-panel {
+    margin: auto;
+    max-width: 560px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.kt-title { margin: 0 0 8px; }
+
+.kt-setup-cols { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.kt-setup-left { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.kt-setup-right { display: flex; flex-direction: column; align-items: center; }
+.kt-preview { width: 104px; height: 104px; }
+.kt-file { display: none; }
+.kt-hint { display: block; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+
+.kt-emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+
+.kt-emoji {
+    width: 44px;
+    height: 44px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.kt-emoji.selected { border-color: #4CAF50; background: rgba(76, 175, 80, 0.3); }
+
+.kt-privacy { margin: 10px 0 4px; font-size: 13px; color: #ffe08a; }
+.kt-face-msg { margin: 0 0 6px; min-height: 18px; font-size: 13px; }
+.kt-face-msg.error { color: #ffb4b4; }
+
+.kt-btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.14);
+    color: white;
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.kt-btn.primary { background: #4CAF50; border-color: #4CAF50; }
+.kt-btn:disabled { opacity: 0.6; cursor: default; }
+.kt-ready { min-width: 160px; font-size: 18px; font-weight: 700; }
+
+.kt-camera {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.88);
+}
+
+.kt-camera.show { display: flex; }
+.kt-video { max-width: 90%; max-height: 62%; border-radius: 14px; transform: scaleX(-1); background: #000; }
+.kt-camera-actions { display: flex; gap: 10px; }
+
+.kt-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.kt-canvas-wrap { position: relative; }
+.kt-canvas { display: block; border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); touch-action: none; }
+
+.kt-controls { display: none; position: absolute; inset: 0; pointer-events: none; }
+
+@media (pointer: coarse), (hover: none) {
+    .kt-controls { display: block; }
+}
+
+.kt-ctl {
+    position: absolute;
+    bottom: 6px;
+    width: var(--kt-unit, 64px);
+    height: var(--kt-unit, 64px);
+    padding: 0;
+    border: 2px solid rgba(255, 255, 255, 0.65);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.38);
+    color: white;
+    font-size: calc(var(--kt-unit, 64px) * 0.42);
+    line-height: 1;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.kt-ctl.down { background: rgba(255, 255, 255, 0.5); }
+.kt-ctl-left { left: 6px; }
+.kt-ctl-right { left: calc(6px + var(--kt-unit, 64px) + 10px); }
+.kt-ctl-kick { right: 6px; }
+.kt-ctl-jump { right: calc(6px + var(--kt-unit, 64px) + 10px); }
+
+.kt-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(10, 16, 36, 0.7);
+}
+
+.kt-overlay.show { display: flex; }
+
+.kt-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 92%;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    text-align: center;
+}
+
+.kt-card-title { font-size: 24px; }
+.kt-score-line { font-size: 20px; font-weight: 700; }
+.kt-session { font-size: 14px; color: rgba(255, 255, 255, 0.85); }
+
+.kt-room-code {
+    padding: 4px 14px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    user-select: all;
+}
+
+.kt-toast {
+    display: none;
+    position: absolute;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: rgba(229, 72, 77, 0.9);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.kt-toast.show { display: block; }
+
+.kt-rotate {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 20, 45, 0.97);
+    text-align: center;
+    font-size: 20px;
+}
+
+.kt-rotate-icon { font-size: 64px; animation: kt-turn 1.8s ease-in-out infinite; }
+
+@keyframes kt-turn {
+    0%, 30% { transform: rotate(0deg); }
+    70%, 100% { transform: rotate(90deg); }
+}
+
+@media (orientation: portrait) and (max-width: 700px) {
+    .kt-root.in-stage .kt-rotate { display: flex; }
+}
+
+@media (max-height: 520px) {
+    .kt-title { display: none; }
+    .kt-setup-panel { padding: 8px 12px; }
+    .kt-preview { width: 72px; height: 72px; }
+    .kt-emoji { width: 38px; height: 38px; font-size: 20px; }
+    .kt-btn { min-height: 40px; padding: 6px 10px; font-size: 14px; }
+    .kt-privacy { margin: 6px 0 2px; }
+    .kt-card-title { font-size: 20px; }
+    .kt-room-code { font-size: 26px; }
+}
+
 /* --- MOBİL KONTROLLER --- */
 #mobile-controls {
     display: none; /* Oyun başlayana kadar gizli */
