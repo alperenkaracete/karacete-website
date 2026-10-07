@@ -55,7 +55,9 @@ games/parti/config.js    Parti ayarları: silahlar, olaylar, ödüller, süreler
 games/parti/graph.js     tahta grafı: yürüme, en kısa adım mesafesi, harita doğrulayıcı (saf)
 games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dekor
 games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
-games/parti/minigame.js  startMinigame sözleşmesi + yer tutucu "Şans Çarkı"
+games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
+games/parti/mini/duel-adapter.js  XOX/Dörtlü Bağla'yı iki oyunculu sahte ctx ile Parti düellosu olarak çalıştırır
+games/parti/mini/duel-referee.js  düello mesajlarını kurallarla yeniden oynayıp sonucu bulur (saf)
 games/parti/machine.js   lider/takipçi ağ durum makinesi: pt_state, lider devri, kopma bekleme (DOM'suz)
 games/parti/ui.js        Parti arayüzü (canvas tahta, lobi/ayarlar, paneller)
 tests/               node:test ile birim testleri
@@ -165,7 +167,8 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
 - **Ölüm:** can 0 olunca `min(3, yıldız/2 aşağı)` yıldız saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
   can dolar, envanter korunur; tur atlatılmaz.
 - **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
-- **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.).
+- **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.;
+  düelloda olmayanlar sıralamada yer almaz, ödül almaz; beraberlikte ikisi de 1.).
   Envanter doluysa silah ödülü kaybolur.
 - **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
   ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
@@ -202,15 +205,45 @@ doğrular. Rastgelelik yalnızca liderde ve durumdaki tohumdan (`rs`) üretilir;
   `requestAnimationFrame` durur ve `setInterval` kısılır, worker zamanlayıcıları kısılmaz. Worker kurulamazsa, hata verirse ya da 2 sn
   sessiz kalırsa `setInterval`'a düşülür; sekme görünür olunca ve gelen her mesajda da ayrıca tick atılır.
 
-**Minioyun sözleşmesi** (`games/parti/minigame.js`) - tur sonunda çağrılır, gerçek minioyunlar bu fonksiyonun yerini alır:
+**Minioyun sözleşmesi** (`games/parti/minigame.js`) - tur sonunda her istemcide çağrılır (düello); gerçek minioyunlar çarkın yerini alır:
 
 ```js
-startMinigame({ type: 'ffa' | 'duel', players: [id, ...], seed }) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
+startMinigame({
+  type: 'ffa' | 'duel', players: [id, ...], seed,          // zorunlu (eski çağrı biçimi aynen çalışır)
+  game, me: {id, name}, isLeader, leader, root,            // düello: oyun, bu istemci, lider mi / kimliği, çizim düğümü
+  net: { send(m), on(fn(from, m)) -> off }, names,         // ağ: makine pt_mg zarfına sarar, gönderen kimliğini ekler
+  deadlineMs, signal                                        // toplam süre (düello 90 sn); AbortSignal
+}) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
 ```
 
-`ranking` en iyiden en kötüye gruplardır; aynı gruptaki kimlikler eşit derecededir (`[[a, b], [c]]` → a=1., b=1., c=3.).
-`duel` yalnızca iki insan oyuncu içerir ve `[[kazanan], [kaybeden]]` döner. Yer tutucu "Şans Çarkı" tohumdan rastgele sıralama
-üretir. Kopmuş insanlar sonuçtan bağımsız olarak en sona yazılır.
+- `ranking` en iyiden en kötüye gruplardır; aynı gruptaki kimlikler eşit derecededir (`[[a, b], [c]]` → a=1., b=1., c=3.).
+  Düello `[[kazanan], [kaybeden]]`, beraberlikte `[[a, b]]` döner. Eksik alan ya da bilinmeyen oyun → seed'den çark sonucu (asla takılmaz).
+- **normalizeRanking** (`machine.js`): `players` dışı kimlikler ve tekrarlar atılır; sıralamada olmayan oyuncular **son gruba** (eşit derece)
+  eklenir; boş/geçersiz sonuç = hepsi tek grup (eşit). Sonuç `MINI_HOLD_MS` (5 sn) gösterilir, sonra `REWARDS` dereceye göre uygulanır.
+  Kopmuş insanlar en sona yazılır.
+- **Ağ:** `{ type:'pt_mg', mg: <ep:tohum:oyun>, from, m }`. `pt_mg` durum **değildir** (`pt_state`'e girmez, `rv` artmaz). Makine yalnızca
+  güncel oturumun `mg` jetonunu taşıyan ve gönderen `players` içinde olan (ya da lider olan: `reset`/`catchup`) mesajları iletir.
+  Gönderen kimliği mesajın içindedir (backend eklemez); arkadaş grubu için güvenilir kabul edilir.
+- **Düello (XOX, Dörtlü Bağla):** `mini/duel-adapter.js` oyunun kendi `init/onMessage/destroy`'unu iki oyunculu sahte `ctx` ile çalıştırır
+  (`players` = ikili, `isHost()` = ilk oyuncu, `send` = pt_mg, `leave` boş); `core/duel*.js` ve `*-rules.js` değişmez. Rövanş kapalıdır
+  (düğmeler gizli, `*_rematch` mesajları gitmez/iletilmez). Gelen oyun mesajı yalnız düellodaki rakipten iletilir. Düelloda olmayanlar
+  "A ve B XOX oynuyor" + kalan süre kartını görür. Sonucu **lider** `mini/duel-referee.js` ile hesaplar (oyuncular da olsa izleyici de olsa).
+- **Süre/takılma:** 90 sn dolunca bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
+  Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer
+  (lider kaçan rakip hamlelerini `catchup` ile yeniden gönderir). Sayfası yenilenen oyuncu için durum kurtarılamaz: düello iki tarafta
+  `reset` ile baştan başlar (süre dolmadan).
+- **Lider devri:** `ep` değişir → tüm istemciler oturumu **aynı tohumla** yeniden başlatır (düello baştan; süre 90 sn'den yeniden); yeni lider
+  sonucu o oturumdan alır.
+- **İptal/temizlik:** `signal.abort()` oyunu yıkar (`destroy`), kökü temizler, Promise `{ ranking: null, aborted: true }` ile biter.
+
+**Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı):
+
+1. Oyun `Games.register` ile kayıtlı olsun ve kural modülü (`*-rules.js`) `initial/parse/toMessage/validate/apply/result` arayüzünü sağlasın.
+2. `games/parti/mini/duel-adapter.js` içindeki `GAMES`'a satır ekle: `{ prefix: <Duel öneki>, title: <Türkçe ad>, rules: ... }`.
+3. `games/parti/ui.js` içindeki `DUEL_TITLES`'a ad ekle ve `games/parti/config.js` `DUEL_GAMES` listesine oyun kimliğini yaz
+   (`rules.minigameSpec` buradan, tohumla deterministik seçer; botlar düelloya seçilmez).
+4. Süre sınırı gerekiyorsa (ör. atış sayısı) kural modülüne isteğe bağlı `partial(board, order) -> ranking | null` ekle: süre dolunca hakem bunu kullanır.
+5. `tests/parti-duel-flow.test.js` içindeki `RULES`'a ekleyip akış testlerini çalıştır; Tarayıcıda: 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
 **Yeni harita eklemek:** `games/parti/maps/<ad>.js` oluştur (aynı UMD kalıbı, `PartiMaps[<id>]`'ye kaydolur) ve `index.html`'e
 `games/parti/graph.js`'ten sonra, `ui.js`'ten önce ekle. Biçim (1000×700 mantıksal alan):
@@ -319,8 +352,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   uzun süre arka planda kalınca sayfayı tamamen dondurabilir; bu durumda lider olan oyuncunun cihazı oyunu durdurur (diğerlerinde
   "lider sessiz" gibi görünür, kopma/lider devri süreci devreye girmez çünkü bağlantı hâlâ açıktır). Test ortamında yalnızca
   `requestAnimationFrame` durdurma + `document.hidden` taklidi doğrulanabildi.
-- Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
-  koltuğu 3 dk sonra düşer.
+- Parti: düello minioyunu şimdilik XOX ve Dörtlü Bağla (Kedi - Köpek ayrı çalışmada); düelloda olmayanlar ödül almaz; düello sırasında
+  lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
+  (oyun dosyaları modül düzeyinde tek örnek tutar): iki oyuncu için iki ayrı sekme gerekir. Sürerken gelen yeni oyuncu yalnızca izleyici
+  olur; kopmuş oyuncunun koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
 - XOX / Dörtlü Bağla / Kedi - Köpek / Kafa Topu: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).

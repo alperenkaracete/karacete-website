@@ -1117,6 +1117,20 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-wheel.spinning { animation: pt-spin 0.9s linear infinite; }
 @keyframes pt-spin { to { transform: rotate(360deg); } }
 
+/* Düello minioyunu: oyun kartın içinde; rövanş/lobiye dön düğmeleri yok (sonucu Parti uygular) */
+.pt-duel-card { width: min(96%, 480px); max-width: 480px; max-height: 100%; overflow-y: auto; padding: 8px; }
+.pt-duel-root { width: 100%; }
+.pt-duel-root .duel { width: 100%; }
+.pt-duel-root .duel-actions,
+.pt-duel-root .duel-actions.show { display: none; }
+.pt-duel-root .duel-title { font-size: 18px; margin: 0 0 4px; }
+.pt-duel-spectator { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 14px 18px; }
+.pt-duel-spectator strong { font-size: 20px; }
+@media (max-width: 480px) {
+    .pt-duel-card { padding: 4px; }
+    .pt-duel-root .duel-scores { gap: 4px; }
+}
+
 @media (orientation: landscape) and (min-width: 760px) {
     .pt-main { flex-direction: row; }
     .pt-boardcol { flex: 1 1 auto; max-height: none; height: 100%; min-width: 0; }

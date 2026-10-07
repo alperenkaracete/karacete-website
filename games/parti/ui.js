@@ -36,6 +36,8 @@
     var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
     var ticker = null;
     var TICK_MS = 250;
+    var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
+    var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla' };
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -224,13 +226,24 @@
         return c;
     }
 
+    // Gerçek düello (hazır oyun): sonuç gelene kadar oyun (oyuncuya) ya da izleyici kartı (diğerlerine) kalıcı köke çizilir.
+    function duelPlaying(mn) {
+        return mn.type === 'duel' && !!mn.game && mn.left < 0 && !!DUEL_TITLES[mn.game];
+    }
+
     function miniCard(v) {
         var mn = v.mini;
         var c = el('div', 'pt-card pt-mini');
+        if (duelPlaying(mn)) {
+            c.classList.add('pt-duel-card');
+            c.appendChild(miniRoot);
+            return c;
+        }
         var spinning = mn.left < 0 || mn.left > 1500;
-        c.appendChild(el('strong', 'pt-card-title', mn.type === 'duel' ? '🎡 Şans Çarkı — Düello' : '🎡 Şans Çarkı'));
-        c.appendChild(el('span', 'pt-hint', 'Yer tutucu minioyun: sıralama rastgele belirlenir.'));
-        var wheel = el('div', 'pt-wheel' + (spinning ? ' spinning' : ''), '🎡');
+        var isDuel = mn.type === 'duel' && !!mn.game && !!DUEL_TITLES[mn.game];
+        c.appendChild(el('strong', 'pt-card-title', isDuel ? '⚔️ Düello — ' + DUEL_TITLES[mn.game] : (mn.type === 'duel' ? '🎡 Şans Çarkı — Düello' : '🎡 Şans Çarkı')));
+        if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Yer tutucu minioyun: sıralama rastgele belirlenir.'));
+        var wheel = el('div', 'pt-wheel' + (spinning ? ' spinning' : ''), isDuel ? '⚔️' : '🎡');
         c.appendChild(wheel);
         if (spinning) {
             c.appendChild(el('span', 'pt-hint', mn.type === 'duel' ? 'Düello: ' + mn.players.map(function (id) { return nameOf(v, id); }).join(' ⚔️ ') : 'Çark dönüyor…'));
@@ -1057,6 +1070,7 @@
         gctx = ctx;
         document.body.classList.add('parti-active');
         els = buildDom();
+        miniRoot = el('div', 'pt-duel-root');
         view = null;
         sig = '';
         shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; openCard = null; lastFq = -1; targeting = null; logOpen = false;
@@ -1065,7 +1079,7 @@
         var creator = ctx.isHost() && ctx.players.length <= 1;
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
-            onChange: onView, startMinigame: PartiMinigame.startMinigame,
+            onChange: onView, startMinigame: PartiMinigame.startMinigame, miniRoot: function () { return miniRoot; },
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         buildLegend(els.legend);
@@ -1099,6 +1113,8 @@
         raf = null;
         if (ticker) ticker.stop();
         ticker = null;
+        if (machine) machine.destroy();         // düello oturumu: oyunu yık, dinleyicileri/zamanlayıcıları bırak
+        miniRoot = null;
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');

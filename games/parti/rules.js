@@ -502,14 +502,16 @@
     }
 
     // ---- Minioyun ----
-    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed }
+    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game? }
+    // Düello: yalnızca insanlar arasında (botlar seçilmez); oyun tohumdan seçilir (rng'ye ek çekiliş yok, eski
+    // tohumlu oyunlar aynı kalır): game = C.DUEL_GAMES[seed % n]. players[0] oyunun ev sahibi (isHost) olur.
     function minigameSpec(state, ctx) {
         var rng = Rng(state, ctx);
         var humans = state.order.filter(function (id) { return !state.P[id].bot; });
         var seed = Math.floor(rng.f() * 4294967296) >>> 0;
         if (humans.length >= 2 && rng.f() < 0.3) {
             var pair = rng.shuffle(humans).slice(0, 2);
-            return { type: 'duel', players: pair, seed: seed };
+            return { type: 'duel', game: C.DUEL_GAMES[seed % C.DUEL_GAMES.length], players: pair, seed: seed };
         }
         return { type: 'ffa', players: state.order.slice(), seed: seed };
     }
