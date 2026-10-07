@@ -9,7 +9,7 @@
 //   outcome()        -> null | { ranking, reason:'win'|'draw' }
 //   timeout()        -> ranking (bitmemiş oyun: rules.partial(board, order) varsa o, null/yoksa beraberlik)
 //   forfeit(id)      -> ranking ([[kalan],[id]])
-//   log() / reset()
+//   log() / reset() / board() (son tahta; Parti son hamlenin animasyon süresini buradan okur)
 //
 // ranking: [[kazanan],[kaybeden]] ya da beraberlikte [[a,b]]. Oyuncu 0 = `players[0]` = oyunun isHost() tarafı.
 (function (root, factory) {
@@ -104,6 +104,7 @@
             feed: feed, outcome: outcome, timeout: timeout, forfeit: forfeit, reset: reset,
             log: function () { return st.log.slice(); },
             shots: function () { return st.shots.slice(); },
+            board: function () { return st.board; },
             phase: function () { return st.phase; }
         };
     }

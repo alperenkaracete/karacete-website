@@ -40,7 +40,7 @@ for (const game of ['xox', 'connect4']) {
     });
 }
 
-test('düello: beraberlikte [[a,b]] ikisi de 1., şerit 🤝', async () => {
+test('düello: beraberlikte [[a,b]] ikisi de 2. ödül (REWARDS[2]), şerit 🤝', async () => {
     const r = await reachDuel('xox');
     const { first, second } = mover(r, 0);
     const d1 = r.lastDefs(first); const d2 = r.lastDefs(second);
@@ -49,7 +49,7 @@ test('düello: beraberlikte [[a,b]] ikisi de 1., şerit 🤝', async () => {
     assert.deepEqual(r.state('A').mn.rk, [pairOf(r, 0).slice()]);
     assert.ok(strip(r, 'A').textContent.includes('🤝'));
     r.advance(MAXHOLD + C.MINI_HOLD_MS + 200, 50);
-    assert.deepEqual(rewardsFromFx(r), { [first]: 1, [second]: 1 });
+    assert.deepEqual(rewardsFromFx(r), { [first]: 2, [second]: 2 });
 });
 
 test('düello: zaman aşımı (90 sn) — bitmemiş oyun beraberlik, oyun takılmaz', async () => {
@@ -186,7 +186,7 @@ test('?mini bayrağı: lider makinede her tur belirtilen düello oyunu seçilir 
 
 // ---- Kedi - Köpek ----
 for (const _ of [1]) {
-    test('düello (catdog): N atış sonunda kalan cana göre sonuç, kilit ve şerit; 2,5 sn gecikme', async () => {
+    test('düello (catdog): N atış sonunda kalan cana göre sonuç, kilit ve şerit; son atış animasyonu + 500 ms gecikme', async () => {
         const r = await reachDuel('catdog');
         const pl = pairOf(r, 0);
         const { first, second } = mover(r, 0);
@@ -201,7 +201,9 @@ for (const _ of [1]) {
         assert.deepEqual(mn.rk, [[first], [second]]);
         assert.ok(mn.applyAt, 'sonuç hakemden hemen kaydedildi');
         pl.forEach((id) => { assert.ok(locked(r, id), id + ' tahtası kilitli'); assert.equal(strip(r, id), undefined, 'şerit henüz yok'); });
-        r.advance(C.DUEL_LIMIT_STRIP_MS - 200, 50);
+        const D = mn.pm[0].bAt - r.clock;                     // son atış animasyonu + ağ payı
+        assert.ok(D >= 500 + 700 + C.ANIM_NET_PAD_MS && D <= 2600 + 700 + C.ANIM_NET_PAD_MS, 'tek atış: 1700-3800 ms');
+        r.advance(D - 200, 50);
         pl.forEach((id) => assert.equal(strip(r, id), undefined));
         r.advance(400, 50);
         pl.forEach((id) => {
@@ -218,7 +220,10 @@ for (const _ of [1]) {
         for (let i = 0; i < 2 * N; i++) cdShoot(r, false, 0);
         await r.settle();
         assert.deepEqual(r.state('A').mn.rk, [pairOf(r, 0).slice()]);
-        r.advance(C.DUEL_LIMIT_STRIP_MS + 100, 50);
+        const D = r.state('A').mn.pm[0].bAt - r.clock;
+        r.advance(D - 200, 50);
+        pairOf(r, 0).forEach((id) => assert.equal(strip(r, id), undefined));
+        r.advance(400, 50);
         pairOf(r, 0).forEach((id) => assert.ok(strip(r, id).textContent.includes('Beraberlik')));
     });
 

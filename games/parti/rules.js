@@ -581,12 +581,12 @@
             if (reward.shield) giveItem(state, id, 'shield', evts);
         }
         if (result && result.duelOutcome) {
-            // Çoklu düello: sıralama/derece hesabı yok. Kazananlar ve beraberlikteler REWARDS[1], kaybedenler REWARDS[2],
+            // Çoklu düello: sıralama/derece hesabı yok. Kazananlar REWARDS[1], kaybedenler ve beraberlikteler REWARDS[2],
             // düelloda olmayan (bot, kopan, düello dışı) herkes MINI_CONSOLATION. 3 kazanan + 3 kaybeden "4. derece" üretmez.
             var oc = result.duelOutcome;
             var inList = function (list, id) { return Array.isArray(list) && list.indexOf(id) >= 0; };
             state.order.forEach(function (id) {
-                giveMini(id, inList(oc.win, id) || inList(oc.draw, id) ? 1 : (inList(oc.lose, id) ? 2 : 0));
+                giveMini(id, inList(oc.win, id) ? 1 : (inList(oc.lose, id) || inList(oc.draw, id) ? 2 : 0));
             });
         } else {
             var ranks = ranksOf(result && result.ranking ? result.ranking : []);

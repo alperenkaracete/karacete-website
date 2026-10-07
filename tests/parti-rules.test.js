@@ -422,12 +422,12 @@ test('duelOutcome: 3 kazanan + 3 kaybeden — kazananlar REWARDS[1], kaybedenler
     ['p6', 'p7'].forEach((id) => { assert.equal(r.state.P[id].hp, 65, id + ' düello dışı: teselli'); assert.equal(count(r.state.P[id]), 0); });
 });
 
-test('duelOutcome: beraberlik ikisi de REWARDS[1]; ikinci şans zinciri (son maç belirler)', () => {
+test('duelOutcome: beraberlik ikisi de REWARDS[2]; ikinci şans zinciri (son maç belirler)', () => {
     const s = miniState(5);
     const r = R.applyMinigame(s, { duelOutcome: { win: ['p4'], lose: ['p1'], draw: ['p0', 'p2'] } }, ctx());
     const rewards = {};
     r.events.filter((e) => e.t === 'reward').forEach((e) => { rewards[e.id] = e.rank; });
-    assert.deepEqual(rewards, { p0: 1, p2: 1, p4: 1, p1: 2 });
+    assert.deepEqual(rewards, { p0: 2, p2: 2, p4: 1, p1: 2 });
     assert.equal(r.state.P.p3.hp, 100, 'tam canlı düello dışına heal olayı yok');
     // ranking yolu ve çark değişmedi: duelOutcome yoksa derece hesabı
     const r2 = R.applyMinigame(miniState(3), { ranking: [['p0'], ['p1'], ['p2']] }, ctx());
