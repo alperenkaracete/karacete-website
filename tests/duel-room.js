@@ -17,7 +17,9 @@ const RULES = {
 };
 const gp = G.index(maps.pirate);
 const N = C.DUEL_CATDOG_SHOTS;
-const MAXHOLD = C.duelHold('catdog', 'limit');   // en uzun sonuç tutma
+// en uzun sonuç tutma: en kötü banner gecikmesi (×2 atış: 2600+650+2600+700 ms + ağ payı) + sonuç tutma
+const MAXBM = 2600 + 650 + 2600 + 700 + C.ANIM_NET_PAD_MS;
+const MAXHOLD = C.duelHold('catdog', 'limit') + MAXBM;
 
 function room(seed, extra) {
     let clock = 1000;

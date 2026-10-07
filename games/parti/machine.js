@@ -105,7 +105,7 @@
             return {
                 ty: m.ty, pl: m.pl, sd: m.sd, rk: m.rk, ms: m.applyAt ? Math.max(0, Math.round(m.applyAt - t)) : -1, gm: m.gm || null,
                 pm: (m.pm || []).map(function (x) {
-                    return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt),
+                    return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt), bd: ms(x.bAt),
                         o: x.out ? { w: x.out.w || '', l: x.out.l || '', d: x.out.d ? 1 : 0, r: x.out.r || '' } : null };
                 }),
                 ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null
@@ -208,12 +208,14 @@
                         var xm = msg.mn.pm[pi];
                         if (!xm || !Array.isArray(xm.p) || xm.p.length !== 2 || typeof xm.p[0] !== 'string' || typeof xm.p[1] !== 'string') return null;
                         if (!isInt(xm.st, 0, 600000) || !isInt(xm.dl, -1, 600000) || !isInt(xm.hd, -1, 600000)) return null;
+                        var xbd = xm.bd === undefined ? -1 : xm.bd;   // eski görüntüde yok: banner gecikmesiz
+                        if (!isInt(xbd, -1, 600000)) return null;
                         var om = null;
                         if (xm.o) {
                             if (typeof xm.o !== 'object') return null;
                             om = { w: typeof xm.o.w === 'string' ? xm.o.w : '', l: typeof xm.o.l === 'string' ? xm.o.l : '', d: xm.o.d ? 1 : 0, r: typeof xm.o.r === 'string' ? xm.o.r.slice(0, 12) : '' };
                         }
-                        mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, out: om, off: {} });
+                        mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, bAt: xbd >= 0 ? t + xbd : 0, out: om, off: {} });
                     }
                 } else if (gm && msg.mn.pl.length === 2) {
                     // Eski tek çiftli görüntü (pm yok): tek maç olarak oku
@@ -222,7 +224,7 @@
                     else if (msg.mn.ms >= 0 && msg.mn.rk.length >= 2 && msg.mn.rk[0] && msg.mn.rk[1]) lo = { w: String(msg.mn.rk[0][0]), l: String(msg.mn.rk[1][0]), d: 0, r: '' };
                     var ldl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
                     var lhd = isInt(msg.mn.hd, -1, 600000) ? msg.mn.hd : -1;
-                    mpm.push({ p: msg.mn.pl.slice(), stAt: 0, dlAt: ldl >= 0 ? t + ldl : 0, hAt: lhd >= 0 ? t + lhd : 0, out: lo, off: {} });
+                    mpm.push({ p: msg.mn.pl.slice(), stAt: 0, dlAt: ldl >= 0 ? t + ldl : 0, hAt: lhd >= 0 ? t + lhd : 0, bAt: 0, out: lo, off: {} });
                 }
                 var moc = null;
                 if (msg.mn.oc && typeof msg.mn.oc === 'object' && Array.isArray(msg.mn.oc.win) && Array.isArray(msg.mn.oc.lose) && Array.isArray(msg.mn.oc.draw)) {
@@ -333,7 +335,7 @@
         }
 
         function newPair(gm, p, stAt) {
-            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, out: null, off: {} };
+            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, bAt: 0, out: null, off: {} };
         }
 
         function beginMini() {
@@ -377,8 +379,11 @@
             var x = token.pm[i];
             if (!x || x.out) return;
             x.out = { w: o.w || '', l: o.l || '', d: o.d ? 1 : 0, r: o.r || '' };
+            // Sonuç ve ödül hemen yazılır; yalnız banner (bAt) ve oyun alanının kapanışı (hAt) son atışın animasyonu kadar gecikir.
             var hold = C.duelHold(token.gm, o.r);
-            x.hAt = hold ? now() + hold : 0;
+            var bm = o.bm > 0 ? Math.min(Math.round(o.bm), 15000) : 0;
+            x.bAt = bm ? now() + bm : 0;
+            x.hAt = hold ? now() + bm + hold : 0;
             if (token.ex && token.pm.length === token.nFirst && i < token.nFirst) spawnSecondChance(token, x);
             finalizeDuel(token);
             publish();
@@ -409,6 +414,8 @@
             if (token.pm.length === 1) {
                 var o = token.pm[0].out;
                 token.rk = normalizeRanking(o.d ? [token.pl.slice()] : [[o.w], [o.l]], token.pl);
+                // Beraberlik: ikisi de 2. ödül (derece sıralaması beraberliği 1. sayardı) -> duelOutcome yolu
+                if (o.d) token.oc = { win: [], lose: [], draw: token.pl.slice() };
             } else {
                 var last = {};
                 token.pm.forEach(function (x) {
@@ -417,7 +424,7 @@
                 var oc = { win: [], lose: [], draw: [] };
                 Object.keys(last).forEach(function (id) { (last[id] === 'w' ? oc.win : last[id] === 'l' ? oc.lose : oc.draw).push(id); });
                 token.oc = oc;
-                token.rk = [oc.win.concat(oc.draw), oc.lose].filter(function (g) { return g.length; });
+                token.rk = [oc.win, oc.draw.concat(oc.lose)].filter(function (g) { return g.length; });
             }
             token.applyAt = Math.max(now(), maxHold) + C.MINI_HOLD_MS;
         }
@@ -426,8 +433,9 @@
         function toOutcome(res, pair) {
             var rk = res && res.ranking;
             var r = res && res.reason || '';
-            if (rk && rk.length >= 2 && rk[0].length === 1 && rk[1].length === 1) return { w: rk[0][0], l: rk[1][0], d: 0, r: r };
-            return { w: '', l: '', d: 1, r: r || 'fuse', p: pair };
+            var bm = res && res.bm > 0 ? res.bm : 0;
+            if (rk && rk.length >= 2 && rk[0].length === 1 && rk[1].length === 1) return { w: rk[0][0], l: rk[1][0], d: 0, r: r, bm: bm };
+            return { w: '', l: '', d: 1, r: r || 'fuse', p: pair, bm: bm };
         }
 
         function normalizeRanking(ranking, players) {
@@ -1041,16 +1049,21 @@
 
         function miniView(t) {
             var m = M.mn;
+            // Banner verisi (done/winner/draw/reason) son atışın animasyonu bitene (bAt) dek gizli; kayıt ve ödül çoktan yazılmıştır.
+            var shownAt = 0;
             var pairs = (m.pm || []).map(function (x) {
-                return { players: x.p, done: !!x.out, winner: x.out && !x.out.d ? x.out.w : null, draw: !!(x.out && x.out.d), reason: x.out ? x.out.r : '',
+                var shown = !!x.out && !(x.bAt && t < x.bAt);
+                if (x.out && x.bAt > shownAt) shownAt = x.bAt;
+                return { players: x.p, done: shown, winner: shown && !x.out.d ? x.out.w : null, draw: !!(shown && x.out.d), reason: shown ? x.out.r : '',
                     start: Math.max(0, x.stAt - t), left: x.dlAt ? Math.max(0, x.dlAt - t) : -1 };
             });
+            var hidden = t < shownAt;
             var mine = -1;
             pairs.forEach(function (x, i) { if (x.players.indexOf(me.id) >= 0 && !x.done && mine < 0) mine = i; });
             var p0 = pairs[0];
-            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: m.rk, pairs: pairs, extra: m.ex || null, myPair: mine,
+            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, pairs: pairs, extra: m.ex || null, myPair: mine,
                 live: sessions.some(function (s) { return !s.observer; }),
-                left: m.applyAt ? Math.max(0, m.applyAt - t) : -1, duelLeft: p0 && p0.left >= 0 ? p0.left : -1 };
+                left: m.applyAt && !hidden ? Math.max(0, m.applyAt - t) : -1, duelLeft: p0 && p0.left >= 0 ? p0.left : -1 };
         }
 
         function getView() {

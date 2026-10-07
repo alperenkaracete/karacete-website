@@ -190,7 +190,7 @@ test('çoklu düello: çift başına zaman aşımı — biten çift sonucu kalı
     r.advance(MAXHOLD + C.MINI_HOLD_MS + 500, 50);
     const rewards = rewardsFromFx(r);
     assert.equal(rewards[win], 1);
-    mn.pm[1].p.forEach((id) => assert.equal(rewards[id], 1, 'beraberlik REWARDS[1]'));
+    mn.pm[1].p.forEach((id) => assert.equal(rewards[id], 2, 'beraberlik REWARDS[2]'));
 });
 
 test('çoklu düello: bir çiftteki oyuncu 25 sn içinde dönmezse o maçı kaybeder; diğer maç sürer', async () => {

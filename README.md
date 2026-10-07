@@ -169,7 +169,7 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
   can dolar, envanter korunur; tur atlatılmaz.
 - **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
 - **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.;
-  beraberlikte ikisi de 1.). **Düelloda olmayanlar** (sıralamada yer almayanlar) ödül değil **teselli** alır: +25 ❤️ (üst sınır 100,
+  beraberlikte ikisi de 2.). **Düelloda olmayanlar** (sıralamada yer almayanlar) ödül değil **teselli** alır: +25 ❤️ (üst sınır 100,
   `MINI_CONSOLATION`); sıralamadakiler teselli almaz, 3. derece ödülüyle çakışmaz (düello sıralamasında 3. derece yoktur).
   Envanter doluysa silah ödülü kaybolur.
 - **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
@@ -239,24 +239,32 @@ startMinigame({
   `oc` sonuç; `pm` olmayan eski tek çiftli görüntü okunur). Her çift kendi süresinde biter (süre dolunca beraberlik/kısmi), kopan oyuncu 25 sn
   sonra o maçı kaybeder, sigorta: çift süresi + 5 sn. Lider devrinde biten çiftlerin sonucu korunur, bitmeyenler aynı tohumla yeniden başlar.
 - **İkinci şans (tek sayıda insan):** sondaki `extra` oyuncu ilk biten maçın kaybedeniyle (beraberlikse tohumlu rastgele biriyle) yeni bir çiftte
-  oynar; kaybeden önceki maçın sonuç tutmasını bitirince başlar. Rakip bağlantısızsa maç hükmen: bağlı olan kazanır (ikisi de yoksa beraberlik).
+  oynar; yeni maç, önceki maçın banner gecikmesi + sonuç tutması (`hAt`) bitince başlar, böylece kaybeden kendi son atışını ve bannerı görür. Rakip bağlantısızsa maç hükmen: bağlı olan kazanır (ikisi de yoksa beraberlik).
 - **Çoklu düello ödülü:** sıralama/derece hesabı yoktur (`applyMinigame({ duelOutcome: {win, lose, draw} })`): kazananlar `REWARDS[1]`, kaybedenler
-  `REWARDS[2]`, beraberlikte ikisi de `REWARDS[1]`; her oyuncunun **son maçı** belirler (ilk maçı kaybeden ikinci şansı kazanırsa `REWARDS[1]` alır).
-  Düello dışındakiler (bot, kopan) `MINI_CONSOLATION` alır; 3 kazanan + 3 kaybeden "4. derece" üretmez. Tek çiftli akış (2 insan) ve çark
-  eskisi gibi `ranking` yoluyla uygulanır.
+  `REWARDS[2]`, beraberlikte ikisi de `REWARDS[2]` (kazanan yok); her oyuncunun **son maçı** belirler (ilk maçı kaybeden ikinci şansı kazanırsa `REWARDS[1]` alır).
+  Düello dışındakiler (bot, kopan) `MINI_CONSOLATION` alır; 3 kazanan + 3 kaybeden "4. derece" üretmez. Tek çiftli akışta kazanan/kaybeden ve çark
+  eskisi gibi `ranking` yoluyla uygulanır; tek çiftte beraberlik de `duelOutcome` yoluyla (ikisi 2.) uygulanır.
 - **Kedi - Köpek atış kuralı:** oyuncu başına en çok **5 atış** (`DUEL_CATDOG_SHOTS`). Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
   gibi güçlendirmeli atışlar dahil — hasar verirler); `cd_heal` (can iksiri) atış **sayılmaz** (kural modülünde başka eylem türü yoktur).
   Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 5 atışı bitince ya da 120 sn dolunca **kalan cana**
   göre sıralanır; can eşitse beraberlik `[[a, b]]`. Sınır hakemdedir (`catdog-rules.js` değişmez; `duel-adapter.js` `GAMES.catdog` +
   `partial`): kural modülü sınırı bilmediği için oyunun kendi arayüzü bitmez. Sınır dolunca tahta **kilitlenir** (görünür kalır, fazladan atış
-  girmez) ve oyunu kapatmayan **ince üst şerit** "Atışlar bitti, sonuç hesaplanıyor…" en az 2,5 sn sonra belirir (son atış animasyonu bitsin;
-  oyun dosyası gözlenemediği için sabit gecikme) — sonuç hakemden anında kaydedilir, yalnız gösterim gecikmelidir. Animasyon (rAF) arka plan
+  girmez) ve oyunu kapatmayan **ince üst şerit** "Atışlar bitti, sonuç hesaplanıyor…" son atışın animasyonu bitince belirir (gecikme `bm`, aşağıda;
+  süre bilinmezse yedek olarak `DUEL_LIMIT_STRIP_MS` = 2,5 sn). Şerit ve sonuç bannerı **tek eleman**dır: sonuç şeritten önce gelirse
+  "hesaplanıyor" hiç görünmez, sonra gelirse aynı eleman "Atışlar bitti · 🏆 …" olur — sonuç hakemden anında kaydedilir, yalnız gösterim gecikmelidir. Animasyon (rAF) arka plan
   sekmesinde dursa da sonuç etkilenmez. Kenar durum: heal sırayı tüketir; 5 atışını bitiren oyuncunun sırası rakip bitirmeden gelebilir, bu
   fazladan atışlar uygulanır ama sayılmaz.
 - **Sonuç tutma (hold):** sonuç belli olunca (kazanma/beraberlik/süre/atış sınırı) lider sonucu **hemen** kaydeder (lider devri/zaman aşımı
   sonucu kaybettirmez) ve oyuncular şeritte "🏆 A kazandı" / "🤝 Beraberlik"i, oyunun kendi kazanan çizgisini ve son hamleyi görür. Oyun ekranı
-  `DUEL_RESULT_HOLD_MS` kadar açık kalır (XOX 2,5 sn, Dörtlü 3 sn, Kedi-Köpek 4 sn; atış sınırında +2,5 sn şerit gecikmesi), ardından
-  sıralama kartı `MINI_HOLD_MS` (5 sn) görünür. Kopma (forfeit) ve sigorta sonuçlarında hold yoktur. Hold sırasında lider devri oturumu yeniden
+  banner göründükten sonra `DUEL_RESULT_HOLD_MS` kadar açık kalır (XOX 2,5 sn, Dörtlü 3 sn, Kedi-Köpek 4 sn), ardından
+  sıralama kartı `MINI_HOLD_MS` (5 sn) görünür. Kopma (forfeit) ve sigorta sonuçlarında hold yoktur.
+- **Banner gecikmesi (Kedi-Köpek):** sonuç kaydı ve ödül hemen yazılır; banner (🏆/🤝) ve oyun alanının kapanışı son atışın **gerçek animasyon
+  süresi** kadar gecikir: `bm = animMs + ANIM_NET_PAD_MS` (500 ms ağ payı). `animMs` (`duel-adapter.js`, saf) hakemdeki son `board.last.shots`
+  üzerinden `catdog.js` ile aynı sayıları kullanır: mermi başına `clamp(frames·DT·1000, 500, 2600)`, mermiler arası 650 ms, son mermiden sonra
+  700 ms (×2 atışta iki mermi; ilk mermi öldürürse tek). En kötü durum ×2 ≈ 6,55 sn (+ pad). `hAt = bAt + sonuç tutma`; ödül zamanı `applyAt ≥ hAt`.
+  Makine `bd` (bağıl ms) alanını eşler; eski görüntüde yoksa gecikmesizdir. XOX/Dörtlü, süre dolumu, forfeit ve sigorta `bm = 0` (pad eklenmez).
+  Sonuç bannerı gelene kadar `getView().mini.pairs[i].done/winner/draw` ve sıralama gizlidir. Testler: `tests/parti-duel-banner.test.js`
+  (`catdog.js` sayılarıyla ayrışmayı da yakalar). Hold sırasında lider devri oturumu yeniden
   başlatmaz. Lider sonucu `{k:'result'}` yüküyle oyunculara bildirir (yalnız lider kabul edilir).
 - **Süre/takılma:** süre dolunca (XOX/Dörtlü 90 sn, Kedi-Köpek 120 sn: `DUEL_MS_BY_GAME`) bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
   Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer

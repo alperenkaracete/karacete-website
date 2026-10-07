@@ -124,11 +124,12 @@
         DUEL_MS_BY_GAME: DUEL_MS_BY_GAME,
         duelMs: function (game) { return DUEL_MS_BY_GAME[game] || 90000; },
         DUEL_CATDOG_SHOTS: 5,        // Kedi - Köpek: oyuncu başına atış sınırı
-        DUEL_LIMIT_STRIP_MS: DUEL_LIMIT_STRIP_MS, // atış sınırı şeridi: en az bu kadar sonra belirir (son atış animasyonu bitsin)
-        DUEL_RESULT_HOLD_MS: DUEL_HOLD_BY_GAME,   // sonuç belli olunca oyun ekranda kalma
+        DUEL_LIMIT_STRIP_MS: DUEL_LIMIT_STRIP_MS, // atış sınırı şeridi gecikmesi: yalnız son atışın süresi bilinmiyorsa yedek
+        ANIM_NET_PAD_MS: 500,        // banner gecikmesine (son atış animasyonu) eklenen ağ payı; animasyonsuz oyunda eklenmez
+        DUEL_RESULT_HOLD_MS: DUEL_HOLD_BY_GAME,   // banner göründükten sonra oyun ekranda kalma (hAt = bAt + bu)
         duelHold: function (game, reason) {
             if (reason === 'forfeit' || reason === 'fuse') return 0;
-            return (DUEL_HOLD_BY_GAME[game] || 0) + (reason === 'limit' ? DUEL_LIMIT_STRIP_MS : 0);
+            return DUEL_HOLD_BY_GAME[game] || 0;
         },
         DUEL_GRACE_MS: 5000,        // lider sigortası: süre + bu kadar içinde sonuç yoksa çark sonucu
         DUEL_RECONNECT_MS: 25000,    // düello oyuncusu koparsa dönmesi için bekleme; dönmezse kopan kaybeder

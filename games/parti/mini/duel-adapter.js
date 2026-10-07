@@ -31,6 +31,27 @@
         return [[order[w]], [order[1 - w]]];
     }
 
+    // Kedi - Köpek son atış animasyonu (games/catdog.js beginShot/tick ile AYNI sayılar; catdog.js değişmez, test ayrışmayı yakalar):
+    // her mermi clamp(frames*DT*1000, 500, 2600); mermiler arası 650 ms bekleme, son mermiden sonra 700 ms.
+    var CD_ANIM = { flightMin: 500, flightMax: 2600, between: 650, tail: 700 };
+
+    // Saf: board.last (catdog-rules apply çıktısı) -> animasyon ms. Atış değilse (iyileşme, last yok) 0. Ağ payı İÇERMEZ.
+    function animMs(last, dt) {
+        if (!last || last.kind !== 'shot' || !last.shots || !last.shots.length) return 0;
+        var step = dt || 1 / 60;
+        var total = 0;
+        last.shots.forEach(function (shot, i) {
+            total += Math.max(CD_ANIM.flightMin, Math.min(CD_ANIM.flightMax, shot.frames * step * 1000));
+            total += i + 1 < last.shots.length ? CD_ANIM.between : CD_ANIM.tail;
+        });
+        return total;
+    }
+
+    // Banner gecikmesi: animasyon süresi + ağ payı; animasyonu olmayan oyunda (0) pad eklenmez.
+    function bannerMs(anim) {
+        return anim > 0 ? Math.round(anim) + Config.ANIM_NET_PAD_MS : 0;
+    }
+
     // Hazır düello oyunları. Yeni oyun: buraya satır ekle (README).
     var GAMES = {
         xox: {
@@ -46,6 +67,8 @@
     GAMES.catdog = {
         prefix: 'cd', title: 'Kedi - Köpek',
         limit: { shots: Config.DUEL_CATDOG_SHOTS, counts: function (move) { return move.kind === 'shot'; } },
+        // Son hamlenin animasyon süresi (bannerı geciktirir); yalnız atışla biten sonuçlarda anlamlı
+        anim: function (board, rules) { return animMs(board && board.last, rules && rules.DT); },
         rules: function () {
             var r = isNode ? require('../../catdog-rules.js') : GLOBAL.CatDogRules;
             return Object.assign({}, r, { partial: catdogPartial });
@@ -130,14 +153,27 @@
             var oppKeys = {};                // iletilmiş rakip mesajları (aynı mesaj hem doğrudan hem catchup ile gelebilir)
             var seenInst = {};               // lider: oyuncu -> bu sıfırlamadaki örnek kimliği
 
+            // Bu sonucun banner gecikmesi (ms): son atışın animasyonu + ağ payı. Süre dolumu/hükmen/sigorta taze animasyon
+            // içermez; atışsız oyunlarda 0.
+            function bannerFor(why) {
+                if (!referee || !info.anim) return 0;
+                if (why !== 'win' && why !== 'draw' && why !== 'limit') return 0;
+                return bannerMs(info.anim(referee.board(), rules));
+            }
+
             function finish(ranking, reason) {
                 if (resolved) return;
                 resolved = true;
                 if (deadlineTimer !== null) { timers.clear(deadlineTimer); deadlineTimer = null; }
-                resolve({ ranking: ranking, reason: reason });
+                var bm = bannerFor(reason);
+                // bm yalnız gecikme varsa taşınır (yoksa eski biçim: { ranking, reason })
+                var res = { ranking: ranking, reason: reason };
+                var msg = { k: 'result', r: ranking, why: reason };
+                if (bm > 0) { res.bm = bm; msg.bm = bm; }
+                resolve(res);
                 // Sonucu oyunculara bildir (şerit); lider oyuncuysa kendisi de gösterir
-                net.send({ k: 'result', r: ranking, why: reason });
-                presentResult(ranking, reason);
+                net.send(msg);
+                presentResult(ranking, reason, bm);
             }
 
             // Üst şerit: oyun alanını kapatmaz (üstte ince bir bant); oyun alanı kilitlenir (pointer-events) ki sınırdan sonra
@@ -167,19 +203,27 @@
                 if (!isPlayer || torn) return;
                 limitAt = now();
                 lockBoard();
-                if (!presented) scheduleStrip(limitInfo().text, Config.DUEL_LIMIT_STRIP_MS);
+                if (!presented) scheduleStrip(limitInfo().text, limitDelay());
             }
 
-            function presentResult(ranking, why) {
+            // Sınır şeridi gecikmesi: son atışın animasyonu bitince (sabit değer yalnız süre bilinmiyorsa yedek)
+            function limitDelay() {
+                var b = bannerFor('limit');
+                return b > 0 ? b : Config.DUEL_LIMIT_STRIP_MS;
+            }
+
+            // Tek şerit elemanı: "hesaplanıyor" şeridi ile sonuç bannerı aynı elemanı paylaşır, üst üste binmez.
+            // Sonuç şeritten önce gelirse "hesaplanıyor" hiç görünmez (scheduleStrip önceki zamanlayıcıyı iptal eder).
+            function presentResult(ranking, why, bm) {
                 if (presented || !isPlayer || !spec.root || torn) return;
                 presented = true;
                 lockBoard();
                 var text = resultText(ranking, nameOf);
                 if (why === 'limit') {
                     var since = limitAt === null ? 0 : now() - limitAt;
-                    scheduleStrip(limitInfo().title + ' · ' + text, Math.max(0, Config.DUEL_LIMIT_STRIP_MS - since));
+                    scheduleStrip(limitInfo().title + ' · ' + text, Math.max(0, (bm > 0 ? bm : Config.DUEL_LIMIT_STRIP_MS) - since));
                 } else {
-                    scheduleStrip(text, 0);
+                    scheduleStrip(text, bm > 0 ? bm : 0);
                 }
             }
 
@@ -285,7 +329,8 @@
                 }
                 if (m.k === 'result') {
                     if (from !== spec.leader || !Array.isArray(m.r) || !isPlayer) return;
-                    presentResult(m.r, typeof m.why === 'string' ? m.why : '');
+                    var why = typeof m.why === 'string' ? m.why : '';
+                    presentResult(m.r, why, typeof m.bm === 'number' && m.bm >= 0 ? Math.min(m.bm, 15000) : bannerFor(why));
                     return;
                 }
                 if (m.k === 'reset') {
@@ -350,5 +395,5 @@
         });
     }
 
-    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, resultText: resultText, GAMES: GAMES, fmtTime: fmtTime };
+    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, resultText: resultText, animMs: animMs, bannerMs: bannerMs, GAMES: GAMES, fmtTime: fmtTime };
 });
