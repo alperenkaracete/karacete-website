@@ -502,9 +502,11 @@
     }
 
     // ---- Minioyun ----
-    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game? }
-    // Düello: yalnızca insanlar arasında (botlar seçilmez); oyun tohumdan seçilir (rng'ye ek çekiliş yok, eski
-    // tohumlu oyunlar aynı kalır): game = C.DUEL_GAMES[seed % n]. players[0] oyunun ev sahibi (isHost) olur.
+    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game?, pairs?, extra? }
+    // Düello: yalnızca insanlar (botlar seçilmez) tohumlu karıştırılıp ardışık ÇİFTLERE bölünür; hepsi aynı oyunu aynı anda
+    // oynar (game = C.DUEL_GAMES[seed % n]). Tek sayıda insanda sondaki kişi `extra`dır (ilk biten maçın kaybedeniyle ikinci
+    // şans maçı oynar). pairs[k][0] o maçın ev sahibi (isHost). `players` = ilk çift (geri uyum). rng çekimi eskisiyle aynı
+    // (2 insanda spec birebir aynı), eski tohumlu oyunlar değişmez. 1 insan -> çark (ffa).
     function minigameSpec(state, ctx) {
         var rng = Rng(state, ctx);
         var humans = state.order.filter(function (id) { return !state.P[id].bot; });
@@ -514,9 +516,11 @@
             // aynı sırada kalır, bayrak yokken davranış (%30) değişmez.
             var roll = rng.f();
             if (ctx.mini || roll < 0.3) {
-                var pair = rng.shuffle(humans).slice(0, 2);
+                var shuffled = rng.shuffle(humans);
+                var pairs = [];
+                for (var i = 0; i + 1 < shuffled.length; i += 2) pairs.push([shuffled[i], shuffled[i + 1]]);
                 var game = ctx.mini && ctx.mini.game ? ctx.mini.game : C.DUEL_GAMES[seed % C.DUEL_GAMES.length];
-                return { type: 'duel', game: game, players: pair, seed: seed };
+                return { type: 'duel', game: game, players: pairs[0].slice(), pairs: pairs, extra: shuffled.length % 2 ? shuffled[shuffled.length - 1] : null, seed: seed };
             }
         }
         return { type: 'ffa', players: state.order.slice(), seed: seed };
@@ -553,9 +557,8 @@
         var rng = Rng(state, ctx);
         var evts = [];
         if (state.stage !== 'mini') return { ok: false, state: prev, events: [], error: 'minioyun zamanı değil' };
-        var ranks = ranksOf(result && result.ranking ? result.ranking : []);
-        state.order.forEach(function (id) {
-            var rank = ranks[id];
+        // Derece 1/2/3 ödülü; derece yoksa (düello dışı) teselli. rank: 1 = kazanç, 2 = kayıp, ...
+        function giveMini(id, rank) {
             if (!rank) {
                 // Sıralamada yok (düelloda olmayan): teselli iyileşmesi
                 var comfort = Math.min(C.MAX_HP, state.P[id].hp + C.MINI_CONSOLATION.heal) - state.P[id].hp;
@@ -576,7 +579,19 @@
                 evts.push({ t: 'heal', id: id, n: healed });
             }
             if (reward.shield) giveItem(state, id, 'shield', evts);
-        });
+        }
+        if (result && result.duelOutcome) {
+            // Çoklu düello: sıralama/derece hesabı yok. Kazananlar ve beraberlikteler REWARDS[1], kaybedenler REWARDS[2],
+            // düelloda olmayan (bot, kopan, düello dışı) herkes MINI_CONSOLATION. 3 kazanan + 3 kaybeden "4. derece" üretmez.
+            var oc = result.duelOutcome;
+            var inList = function (list, id) { return Array.isArray(list) && list.indexOf(id) >= 0; };
+            state.order.forEach(function (id) {
+                giveMini(id, inList(oc.win, id) || inList(oc.draw, id) ? 1 : (inList(oc.lose, id) ? 2 : 0));
+            });
+        } else {
+            var ranks = ranksOf(result && result.ranking ? result.ranking : []);
+            state.order.forEach(function (id) { giveMini(id, ranks[id]); });
+        }
         state.rev = (state.rev || 0) + 1;
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };
         state.rd++;

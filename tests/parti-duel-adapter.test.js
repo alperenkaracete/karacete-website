@@ -21,7 +21,7 @@ function room(game, options) {
     function join(id, joinOptions) {
         joinOptions = joinOptions || {};
         const ac = new AbortController();
-        const root = fakeRoot();
+        const root = joinOptions.headless ? null : fakeRoot();
         const defs = makeDefs(prefix, rules, joinOptions.recv);
         const handler = { fn: null };
         const net = {
@@ -242,4 +242,28 @@ test('adaptör: lider sonucu oyunculara bildirir; yalnız liderden gelen sonuç 
     assert.deepEqual(strips()[1], ['🏆 Ayşe kazandı']);
     assert.deepEqual(strips()[2], [], 'izleyici şerit görmez');
     assert.ok(r.members.A.root.classList.set.has('pt-duel-locked'));
+});
+
+test('adaptör: başsız gözlemci lider (root yok) hakemlik yapar, sonucu bildirir; kart/oyun kurmaz', async () => {
+    const r = room('xox', { leader: 'L' });
+    r.join('L', { headless: true });
+    r.join('A'); r.join('B');
+    assert.equal(r.members.L.root, null);
+    assert.equal(r.members.L.defs.inits, 0, 'gözlemci oyun kurmaz');
+    // oyuncular başlamış: A, B'nin start'ını/hamlelerini lider görür
+    r.move('A', { cell: 0 }); r.move('B', { cell: 3 }); r.move('A', { cell: 1 }); r.move('B', { cell: 4 }); r.move('A', { cell: 2 });
+    await r.tick();
+    assert.deepEqual(r.results.L, { ranking: [['A'], ['B']], reason: 'win' });
+    assert.equal(r.members.A.root.children.filter((c) => c.className === 'pt-duel-strip').length, 1, 'oyuncular sonucu liderden alır');
+});
+
+test('adaptör: başsız lider geç kalan oyuncuya catchup yollar ve süre dolunca beraberlik verir', async () => {
+    const r = room('xox', { leader: 'L' });
+    r.join('L', { headless: true });
+    r.join('A');                       // A start'ı yollar, B yok
+    r.join('B');
+    assert.equal(r.members.B.defs.view.phase, 'playing', 'catchup başsız liderden geldi');
+    r.clk.advance(90000);
+    await r.tick();
+    assert.deepEqual(r.results.L, { ranking: [['A', 'B']], reason: 'timeout' });
 });

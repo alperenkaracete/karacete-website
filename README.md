@@ -222,13 +222,27 @@ startMinigame({
 - **normalizeRanking** (`machine.js`): `players` dışı kimlikler ve tekrarlar atılır; sıralamada olmayan oyuncular **son gruba** (eşit derece)
   eklenir; boş/geçersiz sonuç = hepsi tek grup (eşit). Sonuç `MINI_HOLD_MS` (5 sn) gösterilir, sonra `REWARDS` dereceye göre uygulanır.
   Kopmuş insanlar en sona yazılır.
-- **Ağ:** `{ type:'pt_mg', mg: <ep:tohum:oyun>, from, m }`. `pt_mg` durum **değildir** (`pt_state`'e girmez, `rv` artmaz). Makine yalnızca
-  güncel oturumun `mg` jetonunu taşıyan ve gönderen `players` içinde olan (ya da lider olan: `reset`/`catchup`) mesajları iletir.
+- **Ağ:** `{ type:'pt_mg', mg: <ep:tohum:oyun:çiftNo>, from, m }`. `pt_mg` durum **değildir** (`pt_state`'e girmez, `rv` artmaz). Makine yalnızca
+  bir oturumun `mg` jetonunu taşıyan ve gönderen o maçın oyuncusu olan (ya da lider olan: `reset`/`catchup`/`result`) mesajları iletir.
   Gönderen kimliği mesajın içindedir (backend eklemez); arkadaş grubu için güvenilir kabul edilir.
 - **Düello (XOX, Dörtlü Bağla, Kedi - Köpek):** `mini/duel-adapter.js` oyunun kendi `init/onMessage/destroy`'unu iki oyunculu sahte `ctx` ile çalıştırır
   (`players` = ikili, `isHost()` = ilk oyuncu, `send` = pt_mg, `leave` boş); `core/duel*.js` ve `*-rules.js` değişmez. Rövanş kapalıdır
-  (düğmeler gizli, `*_rematch` mesajları gitmez/iletilmez). Gelen oyun mesajı yalnız düellodaki rakipten iletilir. Düelloda olmayanlar
-  "A ve B XOX oynuyor" + kalan süre kartını görür. Sonucu **lider** `mini/duel-referee.js` ile hesaplar (oyuncular da olsa izleyici de olsa).
+  (düğmeler gizli, `*_rematch` mesajları gitmez/iletilmez). Gelen oyun mesajı yalnız maçtaki rakipten iletilir; gönderen her mesaja artan `ps` ekler
+  (aynı mesaj hem doğrudan hem `catchup` ile gelirse yinelenen atılır). Sonucu **lider** `mini/duel-referee.js` ile hesaplar (oyuncu da olsa,
+  izleyici de olsa); kendi maçında oynamayan lider başsız (`observer: true`, kök yok) oturum açar.
+- **Çoklu düello (herkes herkesle):** düello turunda `minigameSpec` botlar hariç TÜM insanları tohumlu karıştırıp ardışık çiftlere böler
+  (`pairs`); hepsi aynı oyunu (tohumdan; `?mini=duel:<oyun>` ile sabitlenir) AYNI ANDA oynar. Spec: `{type:'duel', game, pairs, extra, players: <ilk çift>, seed}`;
+  1 insan → çark; 2 insanda eski tek çift akışı. Her çiftin ayrı oturumu/jetonu (`ep:tohum:oyun:çiftNo`) vardır; istemci yalnız KENDİ maçını oynar
+  (oyun dosyaları tek örnek tutar), oynamayanlar tüm maçların durumunu "A ⚔️ B · kalan 1:12 / 🏆 A kazandı" kartında görür.
+  Lider tüm çiftlerin hakemini çalıştırır, sonuçları `mn.pm[i].out` içinde birleştirir (`pt_state.mn`: `pm` çiftler+sonuçlar, `ex` extra, `nf` ilk tur çift sayısı,
+  `oc` sonuç; `pm` olmayan eski tek çiftli görüntü okunur). Her çift kendi süresinde biter (süre dolunca beraberlik/kısmi), kopan oyuncu 25 sn
+  sonra o maçı kaybeder, sigorta: çift süresi + 5 sn. Lider devrinde biten çiftlerin sonucu korunur, bitmeyenler aynı tohumla yeniden başlar.
+- **İkinci şans (tek sayıda insan):** sondaki `extra` oyuncu ilk biten maçın kaybedeniyle (beraberlikse tohumlu rastgele biriyle) yeni bir çiftte
+  oynar; kaybeden önceki maçın sonuç tutmasını bitirince başlar. Rakip bağlantısızsa maç hükmen: bağlı olan kazanır (ikisi de yoksa beraberlik).
+- **Çoklu düello ödülü:** sıralama/derece hesabı yoktur (`applyMinigame({ duelOutcome: {win, lose, draw} })`): kazananlar `REWARDS[1]`, kaybedenler
+  `REWARDS[2]`, beraberlikte ikisi de `REWARDS[1]`; her oyuncunun **son maçı** belirler (ilk maçı kaybeden ikinci şansı kazanırsa `REWARDS[1]` alır).
+  Düello dışındakiler (bot, kopan) `MINI_CONSOLATION` alır; 3 kazanan + 3 kaybeden "4. derece" üretmez. Tek çiftli akış (2 insan) ve çark
+  eskisi gibi `ranking` yoluyla uygulanır.
 - **Kedi - Köpek atış kuralı:** oyuncu başına en çok **5 atış** (`DUEL_CATDOG_SHOTS`). Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
   gibi güçlendirmeli atışlar dahil — hasar verirler); `cd_heal` (can iksiri) atış **sayılmaz** (kural modülünde başka eylem türü yoktur).
   Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 5 atışı bitince ya da 120 sn dolunca **kalan cana**
@@ -256,7 +270,7 @@ odada en az 2 insan varsa her tur sonunda düello seçilir (geçersiz değer yok
 tarayıcısında** okunur (diğer sekmelerde etkisizdir); `PartiRules.parseMiniFlag` / `minigameSpec(state, { mini })`. Bayrak yokken davranış
 (%30 ihtimal, tohumdan oyun) ve rng çekim sırası aynıdır.
 
-**Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı):
+**Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı; çoklu düelloda otomatik çalışır, ek adım yok):
 
 1. Oyun `Games.register` ile kayıtlı olsun ve kural modülü (`*-rules.js`) `initial/parse/toMessage/validate/apply/result` arayüzünü sağlasın.
 2. `games/parti/mini/duel-adapter.js` içindeki `GAMES`'a satır ekle: `{ prefix: <Duel öneki>, title: <Türkçe ad>, rules: ... }`.

@@ -118,3 +118,52 @@ test('minigameSpec bayrağı: ≥2 insanda her tur düello; <2 insanda yok; bayr
         assert.equal(R.minigameSpec(st, { g: g, mini: { game: 'xox' } }).type, 'ffa');
     }
 });
+
+test('minigameSpec: 2–7 insanla çiftler ve extra (tohumlu, deterministik, herkes tam bir yerde)', () => {
+    const g = G.index(require('../games/parti/maps/space.js'));
+    for (let n = 2; n <= 7; n++) {
+        const ids = Array.from({ length: n }, (_, i) => 'h' + i);
+        const seats = ids.map((id, i) => seat(id, i)).concat([seat('bot', 7, true)]);       // bot hep var
+        let duels = 0;
+        const firstPairs = new Set();
+        for (let seed = 1; seed < 300; seed++) {
+            const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: g });
+            st.stage = 'mini';
+            const copy = JSON.parse(JSON.stringify(st));
+            const spec = R.minigameSpec(st, { g: g, mini: { game: null } });          // bayrak: her tur düello
+            assert.deepEqual(spec, R.minigameSpec(copy, { g: g, mini: { game: null } }), 'deterministik');
+            assert.equal(spec.type, 'duel');
+            duels++;
+            assert.equal(spec.pairs.length, Math.floor(n / 2));
+            assert.equal(spec.extra === null, n % 2 === 0);
+            const all = spec.pairs.flat().concat(spec.extra === null ? [] : [spec.extra]);
+            assert.deepEqual(all.slice().sort(), ids.slice().sort(), n + ' insan: herkes tam bir kez, bot yok');
+            assert.deepEqual(spec.players, spec.pairs[0]);
+            assert.ok(C.DUEL_GAMES.includes(spec.game));
+            firstPairs.add(spec.pairs[0].join('-'));
+        }
+        assert.equal(duels, 299);
+        if (n >= 3) assert.ok(firstPairs.size > 1, 'çiftleme tohuma göre değişiyor');
+    }
+});
+
+test('minigameSpec: 1 insan -> çark; bayraksız 3+ insanda da %30 civarı düello ve geçerli çiftler', () => {
+    const g = G.index(require('../games/parti/maps/space.js'));
+    const seats = [seat('h1', 0), seat('h2', 1), seat('h3', 2), seat('h4', 3), seat('h5', 4)];
+    let duels = 0;
+    for (let seed = 1; seed < 400; seed++) {
+        const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: g });
+        st.stage = 'mini';
+        const spec = R.minigameSpec(st, { g: g });
+        if (spec.type === 'duel') {
+            duels++;
+            assert.equal(spec.pairs.length, 2);
+            assert.ok(spec.extra);
+        } else {
+            assert.equal(spec.pairs, undefined);
+        }
+    }
+    assert.ok(duels > 400 * 0.2 && duels < 400 * 0.4, 'oran ≈ %30: ' + duels);
+    const one = R.createGame({ seed: 3, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)] }, { g: g });
+    assert.equal(R.minigameSpec(one, { g: g, mini: { game: null } }).type, 'ffa');
+});

@@ -27,7 +27,7 @@
         var now = opts.now || function () { return Date.now(); };
         var rand = opts.rand || Math.random;
         var startMinigame = opts.startMinigame || Mini.startMinigame;
-        var sess = null;              // yerel minioyun oturumu { key, ac, handlers }
+        var sessions = [];            // yerel minioyun oturumları { mg, pair, observer, ac, handlers } (oyuncu: kendi maçı; lider: ayrıca başsız hakemler)
         var onChange = opts.onChange || function () {};
         var onEmote = opts.onEmote || function () {};
         var lastEmote = {};           // gönderen -> son emote zamanı (hız sınırı; durumda tutulmaz)
@@ -93,8 +93,22 @@
                 S: M.S.map(function (s) { return { i: s.i, n: s.n, a: s.a, t: s.t, b: s.b, c: s.c, d: s.c ? 0 : Math.max(0, Math.round(s.dAt - t)) }; }),
                 g: M.g,
                 dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0, bt: M.bt,
-                mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1, gm: M.mn.gm || null, dl: M.mn.dlAt ? Math.max(0, Math.round(M.mn.dlAt - t)) : -1, hd: M.mn.holdAt ? Math.max(0, Math.round(M.mn.holdAt - t)) : -1 } : null,
+                                mn: M.mn ? packMn(t) : null,
                 lg: M.lg, fx: M.fx, fq: M.fq, kk: M.kk
+            };
+        }
+
+        // Düello çiftleri: pm = [{ p:[a,b], st (başlama), dl (süre sonu), hd (sonuç tutma sonu), o: null | {w,l,d,r} }]
+        function packMn(t) {
+            var m = M.mn;
+            function ms(at) { return at ? Math.max(0, Math.round(at - t)) : -1; }
+            return {
+                ty: m.ty, pl: m.pl, sd: m.sd, rk: m.rk, ms: m.applyAt ? Math.max(0, Math.round(m.applyAt - t)) : -1, gm: m.gm || null,
+                pm: (m.pm || []).map(function (x) {
+                    return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt),
+                        o: x.out ? { w: x.out.w || '', l: x.out.l || '', d: x.out.d ? 1 : 0, r: x.out.r || '' } : null };
+                }),
+                ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null
             };
         }
 
@@ -187,9 +201,35 @@
             if (msg.mn) {
                 if (!Array.isArray(msg.mn.pl) || !Array.isArray(msg.mn.rk) || !isInt(msg.mn.ms, -1, 600000)) return null;
                 var gm = typeof msg.mn.gm === 'string' && msg.mn.gm.length <= 20 ? msg.mn.gm : null;
-                var mdl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
-                var mhd = isInt(msg.mn.hd, -1, 600000) ? msg.mn.hd : -1;
-                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm, dlAt: mdl >= 0 ? t + mdl : 0, holdAt: mhd >= 0 ? t + mhd : 0 };
+                var mpm = [];
+                if (Array.isArray(msg.mn.pm)) {
+                    if (msg.mn.pm.length > 8) return null;
+                    for (var pi = 0; pi < msg.mn.pm.length; pi++) {
+                        var xm = msg.mn.pm[pi];
+                        if (!xm || !Array.isArray(xm.p) || xm.p.length !== 2 || typeof xm.p[0] !== 'string' || typeof xm.p[1] !== 'string') return null;
+                        if (!isInt(xm.st, 0, 600000) || !isInt(xm.dl, -1, 600000) || !isInt(xm.hd, -1, 600000)) return null;
+                        var om = null;
+                        if (xm.o) {
+                            if (typeof xm.o !== 'object') return null;
+                            om = { w: typeof xm.o.w === 'string' ? xm.o.w : '', l: typeof xm.o.l === 'string' ? xm.o.l : '', d: xm.o.d ? 1 : 0, r: typeof xm.o.r === 'string' ? xm.o.r.slice(0, 12) : '' };
+                        }
+                        mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, out: om, off: {} });
+                    }
+                } else if (gm && msg.mn.pl.length === 2) {
+                    // Eski tek çiftli görüntü (pm yok): tek maç olarak oku
+                    var lo = null;
+                    if (msg.mn.ms >= 0 && msg.mn.rk.length === 1) lo = { w: '', l: '', d: 1, r: '' };
+                    else if (msg.mn.ms >= 0 && msg.mn.rk.length >= 2 && msg.mn.rk[0] && msg.mn.rk[1]) lo = { w: String(msg.mn.rk[0][0]), l: String(msg.mn.rk[1][0]), d: 0, r: '' };
+                    var ldl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
+                    var lhd = isInt(msg.mn.hd, -1, 600000) ? msg.mn.hd : -1;
+                    mpm.push({ p: msg.mn.pl.slice(), stAt: 0, dlAt: ldl >= 0 ? t + ldl : 0, hAt: lhd >= 0 ? t + lhd : 0, out: lo, off: {} });
+                }
+                var moc = null;
+                if (msg.mn.oc && typeof msg.mn.oc === 'object' && Array.isArray(msg.mn.oc.win) && Array.isArray(msg.mn.oc.lose) && Array.isArray(msg.mn.oc.draw)) {
+                    moc = { win: msg.mn.oc.win.map(String), lose: msg.mn.oc.lose.map(String), draw: msg.mn.oc.draw.map(String) };
+                }
+                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm,
+                    pm: mpm, ex: typeof msg.mn.ex === 'string' ? msg.mn.ex : null, nFirst: isInt(msg.mn.nf, 0, 8) ? msg.mn.nf : mpm.length, oc: moc };
             }
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
@@ -292,15 +332,24 @@
             return true;
         }
 
+        function newPair(gm, p, stAt) {
+            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, out: null, off: {} };
+        }
+
         function beginMini() {
             var spec = R.minigameSpec(M.g, rctx());
-            var token = { ty: spec.type, pl: spec.players, sd: spec.seed, gm: spec.type === 'duel' && spec.game ? spec.game : null, rk: [], applyAt: 0, dlAt: 0, offAt: {} };
+            var token = { ty: spec.type, pl: spec.players, sd: spec.seed, gm: spec.type === 'duel' && spec.game ? spec.game : null, rk: [], applyAt: 0, pm: [], ex: null, nFirst: 0, oc: null };
             M.mn = token;
             M.pz = true;
             M.dlLeft = 0;
             if (token.gm) {
-                // Düello: tüm istemcilerde oturum açılır (syncMini); lider sonucu o oturumdan alır.
-                token.dlAt = now() + C.duelMs(token.gm);
+                // Düello: çiftler aynı anda oynar. Tüm istemcilerde kendi çiftinin oturumu (syncMini), lider ayrıca başsız
+                // hakemler açar; sonuçlar recordPair ile birleşir.
+                var prs = spec.pairs || [spec.players];
+                token.pl = prs[0].slice();
+                token.pm = prs.map(function (pr) { return newPair(token.gm, pr, 0); });
+                token.nFirst = token.pm.length;
+                token.ex = spec.extra || null;
                 return;
             }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
@@ -313,16 +362,72 @@
             });
         }
 
-        // Lider: minioyun sonucunu kaydeder; MINI_HOLD_MS sonra finishMini ödülleri uygular.
-        // Düello: sonuç hemen kaydedilir (devir/zaman aşımı kaybettirmez); oyun ekranı sonuç tutma süresi (hold) kadar
-        // açık kalır, sıralama kartı onun ardından MINI_HOLD_MS gösterilir.
-        function applyMiniResult(token, ranking, players, reason) {
+        // Lider (ffa/çark): minioyun sonucunu kaydeder; MINI_HOLD_MS sonra finishMini ödülleri uygular.
+        function applyMiniResult(token, ranking, players) {
             if (M.mn !== token || token.applyAt) return;
             token.rk = normalizeRanking(ranking, players || token.pl);
-            var hold = token.gm ? C.duelHold(token.gm, reason) : 0;
-            token.holdAt = hold ? now() + hold : 0;
-            token.applyAt = now() + hold + C.MINI_HOLD_MS;
+            token.applyAt = now() + C.MINI_HOLD_MS;
             publish();
+        }
+
+        // Lider (düello): bir çiftin sonucu { w, l, d, r }. Hemen kaydedilir (devir/zaman aşımı kaybettirmez); oyun ekranı çiftin
+        // sonuç tutma süresi (hAt) kadar açık kalır. İlk biten ilk tur maçı extra için ikinci şans maçını başlatır.
+        function recordPair(token, i, o) {
+            if (M.mn !== token || token.applyAt) return;
+            var x = token.pm[i];
+            if (!x || x.out) return;
+            x.out = { w: o.w || '', l: o.l || '', d: o.d ? 1 : 0, r: o.r || '' };
+            var hold = C.duelHold(token.gm, o.r);
+            x.hAt = hold ? now() + hold : 0;
+            if (token.ex && token.pm.length === token.nFirst && i < token.nFirst) spawnSecondChance(token, x);
+            finalizeDuel(token);
+            publish();
+        }
+
+        // Extra ile ilk biten maçın kaybedeni (beraberlikte tohumlu biri) yeni bir çiftte oynar; loser sonuç tutmasını bitirince başlar.
+        function spawnSecondChance(token, first) {
+            var L = first.out.d ? first.p[(token.sd >>> 3) & 1] : first.out.l;
+            var E = token.ex;
+            token.ex = null;
+            var np = newPair(token.gm, [E, L], Math.max(now(), first.hAt || 0));
+            var sl = seatOf(L);
+            var se = seatOf(E);
+            var lOff = !sl || sl.b || !sl.c;
+            var eOff = !se || se.b || !se.c;
+            // Rakip bağlantısızsa maç hükmen: bağlı olan kazanır (ikisi de yoksa beraberlik)
+            if (lOff && eOff) np.out = { w: '', l: '', d: 1, r: 'forfeit' };
+            else if (lOff) np.out = { w: E, l: L, d: 0, r: 'forfeit' };
+            else if (eOff) np.out = { w: L, l: E, d: 0, r: 'forfeit' };
+            token.pm.push(np);
+        }
+
+        // Tüm maçlar bitince sonucu bağlar. Tek çift (ve extra yok): eski sıralama yolu. Çoklu: duelOutcome (oyuncunun SON maçı).
+        function finalizeDuel(token) {
+            if (token.ex || token.pm.some(function (x) { return !x.out; })) return;
+            var maxHold = 0;
+            token.pm.forEach(function (x) { if (x.hAt > maxHold) maxHold = x.hAt; });
+            if (token.pm.length === 1) {
+                var o = token.pm[0].out;
+                token.rk = normalizeRanking(o.d ? [token.pl.slice()] : [[o.w], [o.l]], token.pl);
+            } else {
+                var last = {};
+                token.pm.forEach(function (x) {
+                    if (x.out.d) { last[x.p[0]] = 'd'; last[x.p[1]] = 'd'; } else { last[x.out.w] = 'w'; last[x.out.l] = 'l'; }
+                });
+                var oc = { win: [], lose: [], draw: [] };
+                Object.keys(last).forEach(function (id) { (last[id] === 'w' ? oc.win : last[id] === 'l' ? oc.lose : oc.draw).push(id); });
+                token.oc = oc;
+                token.rk = [oc.win.concat(oc.draw), oc.lose].filter(function (g) { return g.length; });
+            }
+            token.applyAt = Math.max(now(), maxHold) + C.MINI_HOLD_MS;
+        }
+
+        // Adaptör sonucu { ranking, reason } -> { w, l, d, r }
+        function toOutcome(res, pair) {
+            var rk = res && res.ranking;
+            var r = res && res.reason || '';
+            if (rk && rk.length >= 2 && rk[0].length === 1 && rk[1].length === 1) return { w: rk[0][0], l: rk[1][0], d: 0, r: r };
+            return { w: '', l: '', d: 1, r: r || 'fuse', p: pair };
         }
 
         function normalizeRanking(ranking, players) {
@@ -341,6 +446,18 @@
         // Kopmuş insanlar o minioyunda en sona yazılır; oyun beklemez.
         function finishMini() {
             var mn = M.mn;
+            if (mn.oc) {
+                // Çoklu düello: kopan/ayrılan insanlar sonuçtan düşer (teselli); kalanlar duelOutcome ile ödüllenir
+                var ok = function (id) { var st = seatOf(id); return !!st && (st.b || st.c); };
+                var outcome = { win: mn.oc.win.filter(ok), lose: mn.oc.lose.filter(ok), draw: mn.oc.draw.filter(ok) };
+                M.mn = null;
+                var rr = R.applyMinigame(M.g, { duelOutcome: outcome }, rctx());
+                if (rr.ok) {
+                    addLog(resultLine(mn.rk));
+                    afterRules(rr);
+                }
+                return;
+            }
             var ranking = [];
             var last = [];
             mn.rk.forEach(function (group) {
@@ -587,9 +704,11 @@
             });
             if (M.mn && !M.mn.applyAt && M.mn.gm && M.mn.ty === 'duel') {
                 // düello: ep değişti -> herkes oturumu AYNI tohumla yeniden başlatır (yeni lider sonucu o oturumdan alır)
-                M.mn.rk = [];
-                M.mn.offAt = {};
-                M.mn.dlAt = now() + C.duelMs(M.mn.gm);
+                // biten çiftlerin sonucu mn.pm içinde kalır; bitmeyenler yeni süreyle başlar
+                M.mn.pm.forEach(function (x) {
+                    x.off = {};
+                    if (!x.out) x.dlAt = Math.max(now(), x.stAt) + C.duelMs(M.mn.gm);
+                });
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -626,11 +745,15 @@
                     return;
                 }
                 case 'pt_mg': {
-                    // Yalnızca eşleşen oturumun jetonuyla, düellodaki ikiliden ya da liderden (reset/catchup) kabul edilir
-                    if (!M || !sess || data.mg !== sess.key || typeof data.from !== 'string' || data.from === me.id) return;
+                    // Yalnızca eşleşen oturumun jetonuyla; gönderen o maçın oyuncusu ya da lider (reset/catchup/result)
+                    if (!M || !M.mn || !M.mn.pm || typeof data.mg !== 'string' || typeof data.from !== 'string' || data.from === me.id) return;
                     if (!data.m || typeof data.m !== 'object') return;
-                    if (M.mn.pl.indexOf(data.from) < 0 && data.from !== M.ld) return;
-                    sess.handlers.slice().forEach(function (fn) { fn(data.from, data.m); });
+                    sessions.slice().forEach(function (s) {
+                        if (s.mg !== data.mg) return;
+                        var x = M.mn.pm[s.pair];
+                        if (!x || (x.p.indexOf(data.from) < 0 && data.from !== M.ld)) return;
+                        s.handlers.slice().forEach(function (fn) { fn(data.from, data.m); });
+                    });
                     return;
                 }
                 case 'pt_emote': {
@@ -716,7 +839,7 @@
                     gone = {};
                     lastSyncAt = -1e9;
                     if (M) { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }
-                    if (sess) sess.handlers.slice().forEach(function (fn) { fn(null, { k: '_reconnected' }); });
+                    sessions.slice().forEach(function (s) { s.handlers.slice().forEach(function (fn) { fn(null, { k: '_reconnected' }); }); });
                     emit();
                     return;
                 }
@@ -814,76 +937,120 @@
         // ---- Görünüm ----
         function emit() { syncMini(); onChange(getView()); }
 
-        // ---- Minioyun oturumu (düello: her istemcide; yalnızca lider sonucu uygular) ----
-        function miniKey() {
+        // ---- Minioyun oturumları (düello) ----
+        // Her istemci yalnızca KENDİ maçını oynar (kök/oyun modülü tek örnek); lider ayrıca diğer maçlar için başsız hakem
+        // oturumları açar (kendi maçı dahil sonuçları o birleştirir). Anahtar: ep:tohum:oyun:çiftNo (+ :o gözlemci).
+        function wantedSessions() {
+            var want = [];
             var mn = M && M.ph === 'play' && M.mn;
-            if (!mn || mn.ty !== 'duel' || !mn.gm || mn.pl.length !== 2) return null;
-            // Karar verildiyse mevcut oturum sonuç tutma süresince yaşar (yeni oturum açılmaz)
-            if (mn.applyAt) return sess && mn.holdAt && now() < mn.holdAt ? sess.key : null;
-            return M.ep + ':' + mn.sd + ':' + mn.gm;
+            if (!mn || mn.ty !== 'duel' || !mn.gm || !mn.pm || !mn.pm.length) return want;
+            var t = now();
+            var holdAlive = false;
+            // karar verilmiş maçın oyuncu oturumu sonuç tutma süresince yaşar (devirde ep değişse de yeniden açılmaz)
+            sessions.forEach(function (s) {
+                var x = mn.pm[s.pair];
+                if (!s.observer && x && x.out && x.hAt && t < x.hAt && s.sd === mn.sd) { want.push({ keep: s }); holdAlive = true; }
+            });
+            mn.pm.forEach(function (x, i) {
+                if (x.out) return;
+                var mg = M.ep + ':' + mn.sd + ':' + mn.gm + ':' + i;
+                var mine = x.p.indexOf(me.id) >= 0;
+                var playNow = mine && t >= x.stAt && !holdAlive;
+                if (playNow) want.push({ key: mg + ':p', mg: mg, pair: i, observer: false });
+                else if (isLeader()) want.push({ key: mg + ':o', mg: mg, pair: i, observer: true });
+            });
+            return want;
         }
 
         function syncMini() {
-            var want = miniKey();
-            if (sess && sess.key === want) return;
-            if (sess) endSession();
-            if (want) startSession(want);
+            var want = wantedSessions();
+            var keepSet = [];
+            want.forEach(function (w) { if (w.keep) keepSet.push(w.keep); });
+            sessions.slice().forEach(function (s) {
+                var wanted = keepSet.indexOf(s) >= 0 || want.some(function (w) { return w.key === s.key; });
+                if (!wanted) endSession(s);
+            });
+            want.forEach(function (w) {
+                if (w.keep) return;
+                if (!sessions.some(function (s) { return s.key === w.key; })) startSession(w);
+            });
         }
 
-        function endSession() {
-            var s = sess;
-            sess = null;
-            if (s) s.ac.abort();
+        function endSession(s) {
+            var i = sessions.indexOf(s);
+            if (i >= 0) sessions.splice(i, 1);
+            s.ac.abort();
         }
 
-        function startSession(key) {
+        function endAllSessions() { sessions.slice().forEach(endSession); }
+
+        function startSession(w) {
             var token = M.mn;
-            var s = { key: key, ac: new AbortController(), handlers: [] };
-            sess = s;
+            var x = token.pm[w.pair];
+            var s = { key: w.key, mg: w.mg, pair: w.pair, observer: w.observer, sd: token.sd, ac: new AbortController(), handlers: [] };
+            sessions.push(s);
             var leader = isLeader();
             var names = {};
-            M.S.forEach(function (x) { names[x.i] = x.n; });
+            M.S.forEach(function (st) { names[st.i] = st.n; });
             var net = {
-                send: function (m) { send({ type: 'pt_mg', mg: key, from: me.id, m: m }); },
+                send: function (m) { send({ type: 'pt_mg', mg: w.mg, from: me.id, m: m }); },
                 on: function (fn) {
                     s.handlers.push(fn);
                     return function () { var i = s.handlers.indexOf(fn); if (i >= 0) s.handlers.splice(i, 1); };
                 }
             };
             var p = startMinigame({
-                type: 'duel', game: token.gm, players: token.pl.slice(), seed: token.sd, me: { id: me.id, name: me.name },
-                isLeader: leader, leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, net: net, names: names,
-                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
+                type: 'duel', game: token.gm, players: x.p.slice(), seed: (token.sd + w.pair) >>> 0, me: { id: me.id, name: me.name },
+                isLeader: leader, leader: M.ld, root: w.observer ? null : (opts.miniRoot ? opts.miniRoot() : null), observer: w.observer, net: net, names: names,
+                deadlineMs: x.dlAt ? Math.max(0, x.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
                 timers: opts.timers, now: now
             });
             if (!leader) return;
             Promise.resolve(p).then(function (res) {
-                if (sess !== s || M.mn !== token || (res && res.aborted)) return;
-                applyMiniResult(token, res && res.ranking, null, res && res.reason);
+                if (sessions.indexOf(s) < 0 || M.mn !== token || (res && res.aborted)) return;
+                recordPair(token, w.pair, toOutcome(res, x.p));
             }, function () {
-                if (sess !== s || M.mn !== token) return;
-                applyMiniResult(token, [token.pl.slice()]);
+                if (sessions.indexOf(s) < 0 || M.mn !== token) return;
+                recordPair(token, w.pair, { w: '', l: '', d: 1, r: 'fuse' });
             });
         }
 
-        // Lider: düello gözcüsü — oyuncu kopması (25 sn sonra forfeit) ve sert süre sigortası
+        // Lider: düello gözcüsü — her çift için oyuncu kopması (25 sn sonra hükmen) ve sert süre sigortası
         function duelWatch(t) {
             var mn = M.mn;
             if (!mn || mn.ty !== 'duel' || !mn.gm || mn.applyAt) return;
-            var out = [];
-            mn.pl.forEach(function (id) {
-                var seat = seatOf(id);
-                if (seat && !seat.b && seat.c) { delete mn.offAt[id]; return; }
-                if (mn.offAt[id] === undefined) mn.offAt[id] = t;
-                if (!seat || t - mn.offAt[id] >= C.DUEL_RECONNECT_MS) out.push(id);
+            mn.pm.slice().forEach(function (x, i) {
+                if (x.out || t < x.stAt || M.mn !== mn || mn.applyAt) return;
+                var gone = [];
+                x.p.forEach(function (id) {
+                    var seat = seatOf(id);
+                    if (seat && !seat.b && seat.c) { delete x.off[id]; return; }
+                    if (x.off[id] === undefined) x.off[id] = t;
+                    if (!seat || t - x.off[id] >= C.DUEL_RECONNECT_MS) gone.push(id);
+                });
+                if (gone.length === 1) {
+                    recordPair(mn, i, { w: x.p[0] === gone[0] ? x.p[1] : x.p[0], l: gone[0], d: 0, r: 'forfeit' });
+                } else if (gone.length === 2) {
+                    recordPair(mn, i, { w: '', l: '', d: 1, r: 'forfeit' });
+                } else if (x.dlAt && t >= x.dlAt + C.DUEL_GRACE_MS) {
+                    var wr = Mini.wheelRanking({ players: x.p, seed: (mn.sd + i) >>> 0 });
+                    recordPair(mn, i, { w: wr[0][0], l: wr[1][0], d: 0, r: 'fuse' });
+                }
             });
-            if (out.length === 1) {
-                applyMiniResult(mn, [[mn.pl[0] === out[0] ? mn.pl[1] : mn.pl[0]], [out[0]]], null, 'forfeit');
-            } else if (out.length === 2) {
-                applyMiniResult(mn, [mn.pl.slice()], null, 'forfeit');
-            } else if (mn.dlAt && t >= mn.dlAt + C.DUEL_GRACE_MS) {
-                applyMiniResult(mn, Mini.wheelRanking({ players: mn.pl, seed: mn.sd }), null, 'fuse');
-            }
+        }
+
+        function miniView(t) {
+            var m = M.mn;
+            var pairs = (m.pm || []).map(function (x) {
+                return { players: x.p, done: !!x.out, winner: x.out && !x.out.d ? x.out.w : null, draw: !!(x.out && x.out.d), reason: x.out ? x.out.r : '',
+                    start: Math.max(0, x.stAt - t), left: x.dlAt ? Math.max(0, x.dlAt - t) : -1 };
+            });
+            var mine = -1;
+            pairs.forEach(function (x, i) { if (x.players.indexOf(me.id) >= 0 && !x.done && mine < 0) mine = i; });
+            var p0 = pairs[0];
+            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: m.rk, pairs: pairs, extra: m.ex || null, myPair: mine,
+                live: sessions.some(function (s) { return !s.observer; }),
+                left: m.applyAt ? Math.max(0, m.applyAt - t) : -1, duelLeft: p0 && p0.left >= 0 ? p0.left : -1 };
         }
 
         function getView() {
@@ -916,7 +1083,7 @@
                 afk: !!(M.g && M.g.P[me.id] && M.g.P[me.id].afk),
                 wait: wait,
                 disconnected: dcs,
-                mini: M.mn ? { type: M.mn.ty, game: M.mn.gm || null, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, live: !!sess, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1, duelLeft: M.mn.dlAt ? Math.max(0, M.mn.dlAt - t) : -1 } : null,
+                                mini: M.mn ? miniView(t) : null,
                 log: M.lg,
                 fx: M.fx,
                 fq: M.fq,
@@ -932,7 +1099,7 @@
 
         return {
             onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
-            destroy: function () { endSession(); },
+            destroy: function () { endAllSessions(); },
             _state: function () { return M; }, _gone: function () { return gone; }, _publish: function () { if (M && isLeader()) publish(); }
         };
     }
