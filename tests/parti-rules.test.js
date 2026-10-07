@@ -1230,3 +1230,38 @@ test('kalkan: başlangıç güvenli bölgesinde duran kalkanı harcanmaz (beklem
     assert.equal(bombed.state.P.p1.scd, 0);
     assert.ok(ev.length === 0);
 });
+
+// ---- lejant (yardım): içerik tablolardan üretilir ----
+test('lejant: kutucuk türleri, sandıklar, olay olasılıkları ve silahlar kod tablolarından üretilir', () => {
+    const lg = C.legend();
+    assert.deepEqual(lg.nodes.map((n) => n.id), Object.keys(C.NODE_TYPES));
+    lg.nodes.filter((n) => n.id !== 'normal').forEach((n) => assert.equal(n.icon, C.NODE_TYPES[n.id].icon));
+    assert.equal(lg.nodes.find((n) => n.id === 'event').icon, '❓');
+    assert.deepEqual(lg.chests.map((c) => c.icon), [C.CHEST_ICONS.star, C.CHEST_ICONS.weapon]);
+    assert.deepEqual(lg.events, C.eventOdds());
+    assert.equal(lg.events.reduce((a, e) => a + e.pct, 0), 100);
+    assert.deepEqual(lg.weapons.map((w) => w.id), C.WEAPON_IDS);
+    lg.weapons.forEach((w) => { assert.equal(w.icon, C.WEAPONS[w.id].emoji); assert.ok(w.desc.length > 10); assert.equal(w.weight, C.WEAPON_WEIGHTS[w.id]); });
+});
+
+test('lejant: silah açıklamaları sayıları tablodan alır (tablo değişince metin değişir)', () => {
+    const d = (id) => C.legend().weapons.find((w) => w.id === id).desc;
+    assert.match(d('fist'), /0–1/);
+    assert.match(d('fist'), /100/);
+    assert.match(d('shotgun'), /45/);
+    assert.match(d('shotgun'), /30/);
+    assert.match(d('shotgun'), /15/);
+    assert.match(d('shotgun'), /0–3/);
+    assert.match(d('bow'), /0–5/);
+    assert.match(d('bow'), /20/);
+    assert.match(d('bomb'), /Menzil 4/);
+    assert.match(d('bomb'), /30/);
+    assert.match(d('shield'), /3 tur sürer/);
+    assert.match(d('shield'), /2 tur/);
+    const saved = C.WEAPONS.bomb.damage;
+    C.WEAPONS.bomb.damage = 77;
+    try { assert.match(d('bomb'), /77/); } finally { C.WEAPONS.bomb.damage = saved; }
+    const savedRange = C.WEAPONS.bow.range;
+    C.WEAPONS.bow.range = 7;
+    try { assert.match(d('bow'), /0–7/); } finally { C.WEAPONS.bow.range = savedRange; }
+});

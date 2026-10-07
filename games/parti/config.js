@@ -12,6 +12,8 @@
         bomb:    { id: 'bomb',    name: 'Bomba',   emoji: '💣', kind: 'area',   range: 4, damage: 30 },
         shield:  { id: 'shield',  name: 'Kalkan',  emoji: '🛡️', kind: 'shield' }
     };
+    var SHIELD_TURNS_VALUE = 3;
+    var SHIELD_CD_VALUE = 2;
     var WEAPON_IDS = ['fist', 'shotgun', 'bow', 'bomb', 'shield'];
 
     // Olay kutucuğu: ağırlıklı rastgele küçük olay
@@ -61,13 +63,48 @@
     // Rastgele silah ağırlıkları (kalkan ve bomba nadir, pompalı/yay sık)
     var WEAPON_WEIGHTS = { fist: 1, shotgun: 3, bow: 3, bomb: 2, shield: 2 };
 
+    // Sandık simgeleri (tahta + lejant ortak)
+    var CHEST_ICONS = { star: '🧰', weapon: '🎁' };
+
+    // Silah açıklaması: tablolardan üretilir (ayrı metin kopyası yok)
+    function weaponDesc(def) {
+        if (def.kind === 'shield') {
+            return 'Bir saldırıyı engeller; zardan önce kurulur ve o turun saldırı hakkını harcar. ' + SHIELD_TURNS_VALUE + ' tur sürer, kırılınca ' + SHIELD_CD_VALUE + ' tur yeniden kurulamaz.';
+        }
+        if (def.kind === 'area') {
+            return 'Menzil ' + def.range + ': seçilen kutucuktaki herkese (kendine de) ' + def.damage + ' hasar. Başlangıçtakilere işlemez.';
+        }
+        var dists = Object.keys(def.dmg).map(Number).filter(function (d) { return d >= 1; }).sort(function (a, b) { return a - b; });
+        var vals = dists.map(function (d) { return def.dmg[d]; });
+        var same = vals.every(function (v) { return v === vals[0]; });
+        var dmgText = same ? 'hasar ' + vals[0] : dists.map(function (d) { return d + ' adım: ' + def.dmg[d]; }).join(' · ');
+        var minR = def.dmg[0] !== undefined ? 0 : 1;
+        return 'Menzil ' + minR + '–' + def.range + ' adım, ' + dmgText + (minR === 0 ? ' (aynı kutucuktakine de vurur)' : '') + '. Başlangıçtakilere işlemez.';
+    }
+
+    // Lejant verisi (arayüz yalnızca bunu çizer): kutucuk türleri, sandıklar, olay olasılıkları, silahlar
+    function legend() {
+        return {
+            nodes: Object.keys(NODE_TYPES).map(function (k) { return { id: k, icon: NODE_TYPES[k].icon || '⚪', name: NODE_TYPES[k].name }; }),
+            chests: [
+                { id: 'star', icon: CHEST_ICONS.star, name: 'Yıldız sandığı (1 ya da 2 ⭐; üzerinden geçen alır)' },
+                { id: 'weapon', icon: CHEST_ICONS.weapon, name: 'Silah sandığı (rastgele silah)' }
+            ],
+            events: eventOdds(),
+            weapons: WEAPON_IDS.map(function (w) {
+                var def = WEAPONS[w];
+                return { id: w, icon: def.emoji, name: def.name, weight: WEAPON_WEIGHTS[w], desc: weaponDesc(def) };
+            })
+        };
+    }
+
     return {
         MAX_HP: 100,
         INVENTORY_PER_TYPE: 3,       // sınırsız envanter: tür başına en çok 3
         INVENTORY_TOTAL: 6,          // toplam en çok 6 (fazlası 'kaçtı')
         SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
-        SHIELD_TURNS: 3,             // kurulu kalkan 3 kendi tur sonra düşer
-        SHIELD_COOLDOWN_TURNS: 2,    // kalkan kırılınca 2 kendi tur yeniden kurulamaz
+        SHIELD_TURNS: SHIELD_TURNS_VALUE,             // kurulu kalkan 3 kendi tur sonra düşer
+        SHIELD_COOLDOWN_TURNS: SHIELD_CD_VALUE,       // kalkan kırılınca 2 kendi tur yeniden kurulamaz
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
         STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)
@@ -94,6 +131,9 @@
         WEAPON_IDS: WEAPON_IDS,
         EVENTS: EVENTS,
         eventOdds: eventOdds,
+        legend: legend,
+        weaponDesc: weaponDesc,
+        CHEST_ICONS: CHEST_ICONS,
         eventAnnounce: eventAnnounce,
         NODE_TYPES: NODE_TYPES,
         REWARDS: REWARDS,

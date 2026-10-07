@@ -96,10 +96,12 @@
         C.EMOTES.forEach(function (em) {
             emotes.appendChild(btn(em, 'pt-emote small', function () { if (machine) machine.emote(em); }));
         });
-        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes);
+        var legend = el('div', 'pt-legend');
+        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes); side.appendChild(legend);
         main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
-        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(logBtn);
+        var legendBtn = btn('ⓘ', 'pt-legendbtn small', function () { els.legend.classList.toggle('open'); });
+        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(legendBtn); bar.appendChild(logBtn);
         var logPanel = el('div', 'pt-log hidden');
         var overlay = el('div', 'pt-overlay hidden');
         var toast = el('div', 'pt-toast hidden');
@@ -108,7 +110,7 @@
         root.appendChild(rootEl);
         return {
             root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
-            canvas: canvas, strip: strip, emotes: emotes, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
+            canvas: canvas, strip: strip, emotes: emotes, legend: legend, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
 
@@ -532,6 +534,32 @@
         return t.kind === 'area' ? 'Bomba: listeden ya da haritada bir kutucuğa dokun (menzil ' + t.range + ').' : 'Hedef seç (menzil ' + t.range + ').';
     }
 
+    // Yardım/lejant: içerik koddaki tablolardan (NODE_TYPES, chest simgeleri, EVENTS olasılıkları, WEAPONS) üretilir
+    function buildLegend(box) {
+        box.textContent = '';
+        var data = C.legend();
+        var head = el('div', 'pt-legend-head');
+        head.appendChild(el('strong', '', 'ⓘ Yardım'));
+        head.appendChild(btn('✕', 'small pt-legend-close', function () { box.classList.remove('open'); }));
+        box.appendChild(head);
+        function section(title, rows) {
+            box.appendChild(el('div', 'pt-legend-title', title));
+            rows.forEach(function (r) {
+                var row = el('div', 'pt-legend-row');
+                row.appendChild(el('span', 'pt-legend-icon', r.icon));
+                var txt = el('span', 'pt-legend-text');
+                txt.appendChild(el('b', '', r.name));
+                if (r.desc) txt.appendChild(el('span', '', ' ' + r.desc));
+                row.appendChild(txt);
+                box.appendChild(row);
+            });
+        }
+        section('Kutucuklar', data.nodes);
+        section('Sandıklar', data.chests);
+        section('❓ Olay kutucuğu: ne çıkar?', data.events.map(function (e) { return { icon: e.icon, name: '%' + e.pct, desc: e.label }; }));
+        section('Silahlar (turda bir kez, zardan önce)', data.weapons.map(function (w) { return { icon: w.icon, name: w.name, desc: w.desc }; }));
+    }
+
     // Tahtanın altında son 2 olay
     function renderStrip(v) {
         els.strip.textContent = '';
@@ -774,7 +802,7 @@
             c.textAlign = 'center';
             c.textBaseline = 'middle';
             font(c, 34);
-            c.fillText(ch.k === 'star' ? '🧰' : '🎁', n.x, n.y - 26 - Math.abs(Math.sin(t / 380 + n.id)) * 7);
+            c.fillText(C.CHEST_ICONS[ch.k], n.x, n.y - 26 - Math.abs(Math.sin(t / 380 + n.id)) * 7);
             if (ch.k === 'star') { font(c, 15); c.fillText(ch.n === 2 ? '⭐⭐' : '⭐', n.x, n.y - 5); }
             else { font(c, 15); c.fillText('🔫', n.x, n.y - 5); }
         });
@@ -1013,6 +1041,7 @@
             onChange: onView, startMinigame: PartiMinigame.startMinigame,
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
+        buildLegend(els.legend);
         listen(els.canvas, 'click', onCanvasClick);
         listen(window, 'resize', resize);
         if (typeof ResizeObserver !== 'undefined') {
