@@ -314,7 +314,7 @@ test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, y
     assert.equal(r2.state('A').g.stage, 'mini');
     await r2.settle();
     const mn = r2.view('B').mini;
-    assert.ok(mn && mn.ranking.length === 3, 'çark sonucu herkese gitti');
+    assert.ok(mn && mn.ranking.length === mn.players.length, 'çark sonucu herkese gitti (ffa: 3, düello: 2)');
     assert.ok(['ffa', 'duel'].includes(mn.type));
     const rd = r2.state('A').g.rd;
     r2.advance(C.MINI_HOLD_MS + 500);
@@ -581,7 +581,7 @@ test('günlük: minioyun sonucu tek satır (🥇A 🥈B 🥉C), tek tek ödül s
     const log = r.view('A').log;
     const lines = log.filter((l) => l.startsWith('🎡'));
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+ 🥉\S+$/);
+    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+( 🥉\S+)?$/);          // düelloda iki, ffa'da üç madalya
     assert.ok(!log.some((l) => /minioyunda \d\. oldu/.test(l) || /\(minioyun\)/.test(l)));
 });
 

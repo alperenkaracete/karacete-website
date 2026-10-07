@@ -6,6 +6,8 @@
     'use strict';
 
     var TYPES = ['normal', 'start', 'treasure', 'weapon', 'event'];
+    var MAX_START_EDGE = 200;     // başlangıçtan ilk düğüme en uzun kenar
+    var MIN_START_GAP = 60;       // başlangıç kutucuğunun başka düğümlere en yakın mesafesi
 
     // map: { id, nodes: [{id, x, y, type, next: [id]}], decor }
     function index(map) {
@@ -108,6 +110,17 @@
             var seen = reach(s);
             nonStart.forEach(function (o) { if (!seen[o]) errors.push('başlangıçtan ulaşılamaz: ' + s + ' -> ' + o); });
         });
+        // başlangıç kutucukları: giriş kenarı kısa (çapraz uzun çizgi yok) ve diğer düğümlerden yeterince uzak (piyonlar üst üste binmesin)
+        map.nodes.forEach(function (n) {
+            if (n.type !== 'start') return;
+            n.next.forEach(function (to) {
+                var t = g.byId[to];
+                if (t && Math.hypot(n.x - t.x, n.y - t.y) > MAX_START_EDGE) errors.push('başlangıç kenarı çok uzun: ' + n.id + '->' + to);
+            });
+            map.nodes.forEach(function (o) {
+                if (o.id !== n.id && Math.hypot(n.x - o.x, n.y - o.y) < MIN_START_GAP) errors.push('başlangıç düğümü yakın: ' + n.id + ',' + o.id);
+            });
+        });
         for (var i = 0; i < map.nodes.length; i++) {
             for (var j = 0; j < i; j++) {
                 var a = map.nodes[i];
@@ -118,5 +131,5 @@
         return errors;
     }
 
-    return { TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, validate: validate };
+    return { MAX_START_EDGE: MAX_START_EDGE, MIN_START_GAP: MIN_START_GAP, TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, validate: validate };
 });
