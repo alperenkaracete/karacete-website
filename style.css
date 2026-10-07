@@ -567,6 +567,7 @@ body {
 .cd-power-note { font-size: 11px; color: rgba(255, 255, 255, 0.75); }
 .cd-power.selected { border-color: #ffd400; background: rgba(255, 212, 0, 0.28); }
 .cd-power.cooling { background: rgba(120, 120, 120, 0.35); color: rgba(255, 255, 255, 0.55); }
+.cd-power:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .cd-power:disabled { cursor: default; }
 .cd-power:not(:disabled):hover { background: rgba(255, 255, 255, 0.22); }
 

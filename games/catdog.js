@@ -13,7 +13,8 @@
         { key: 'heal', label: '🧪 Can İksiri', hint: '+25 can, atış yok' },
         { key: 'wind', label: '🎯 Rüzgârsız', hint: 'Rüzgâr 0' },
         { key: 'double', label: '✌️ Çift Atış', hint: '2 atış' },
-        { key: 'big', label: '💥 Büyük Patlama', hint: '2x alan' }
+        { key: 'big', label: '💥 Büyük Patlama', hint: '2x alan' },
+        { key: 'guide', label: '🧭 Nişan Rehberi', hint: 'Tam yolu gösterir' }
     ];
 
     var ui = null;
@@ -33,6 +34,7 @@
     var effects = [];
     var aim = { angle: 45, power: 60, powerUp: null };
     var dragging = false;
+    var trailCache = { key: '', path: null };   // nişan izi hesabı (her karede yeniden koşmasın)
 
     function now() { return performance.now(); }
 
@@ -144,6 +146,7 @@
             }
         }
 
+        drawAimTrail();
         drawAimGuide();
         drawProjectile(t);
         drawEffects(t);
@@ -167,6 +170,51 @@
     function muzzleOf(index) {
         var pl = shown.board.players[index];
         return { x: pl.x, y: pl.y - R.MUZZLE_OFFSET };
+    }
+
+    // Nişan izi: sırası olan oyuncuya, seçili açı/güçle atışın yolunun ilk %30'u noktalı çizilir (herkese açık yardım).
+    // 🧭 Nişan Rehberi seçiliyse tam yol ve çarpma noktası. Hesap catdog-rules aimPath ile (fizik aynı, rüzgâr dahil).
+    function aimPathNow() {
+        var b = board();
+        var full = aim.powerUp === 'guide';
+        var key = [b.turn, latestView.myIndex, aim.angle, aim.power, aim.powerUp || '', full ? 1 : 0].join(':');
+        if (trailCache.key !== key) {
+            trailCache = { key: key, path: R.aimPath(b, latestView.myIndex, aim.angle, aim.power, aim.powerUp, full ? 1 : R.TRAIL_FRACTION), full: full };
+        }
+        return trailCache;
+    }
+
+    function drawAimTrail() {
+        if (!myTurnNow() || latestView.myIndex < 0) return;
+        var tr = aimPathNow();
+        var pts = tr.path.points;
+        var c = ctx2d;
+        var total = (pts.length - 1) * 3;
+        c.save();
+        c.fillStyle = tr.full ? '#ffd400' : '#ffffff';
+        for (var i = 1; i <= total; i++) {
+            var f = i / 3;
+            var a = Math.floor(f);
+            var b2 = Math.min(pts.length - 1, a + 1);
+            var k = f - a;
+            var x = pts[a][0] + (pts[b2][0] - pts[a][0]) * k;
+            var y = pts[a][1] + (pts[b2][1] - pts[a][1]) * k;
+            c.globalAlpha = tr.full ? 0.9 : 0.9 - 0.55 * (i / total);
+            c.beginPath();
+            c.arc(x, y, tr.full ? 2.5 : 2.2, 0, Math.PI * 2);
+            c.fill();
+        }
+        if (tr.full && tr.path.full) {
+            var e = pts[pts.length - 1];
+            c.globalAlpha = 1;
+            c.lineWidth = 3;
+            c.strokeStyle = '#ffd400';
+            c.beginPath();
+            c.moveTo(e[0] - 6, e[1] - 6); c.lineTo(e[0] + 6, e[1] + 6);
+            c.moveTo(e[0] + 6, e[1] - 6); c.lineTo(e[0] - 6, e[1] + 6);
+            c.stroke();
+        }
+        c.restore();
     }
 
     function drawAimGuide() {
@@ -409,7 +457,7 @@
             btn.querySelector('.cd-power-note').textContent = cooling ? left + ' tur bekle' : def.hint;
         });
         els.cancel.style.display = aim.powerUp ? '' : 'none';
-        els.fire.textContent = aim.powerUp === 'wind' ? 'Fırlat! (rüzgâr 0)' : (aim.powerUp === 'double' ? 'Fırlat! ×2' : (aim.powerUp === 'big' ? 'Fırlat! 💥' : 'Fırlat!'));
+        els.fire.textContent = aim.powerUp === 'wind' ? 'Fırlat! (rüzgâr 0)' : (aim.powerUp === 'double' ? 'Fırlat! ×2' : (aim.powerUp === 'big' ? 'Fırlat! 💥' : (aim.powerUp === 'guide' ? 'Fırlat! 🧭' : 'Fırlat!')));
         els.hint.textContent = enabled
             ? 'Açı ve gücü kaydırıcılarla ya da sahnede sürükleyerek ayarla.'
             : (anim ? '' : 'Rakibin sırası…');
@@ -605,11 +653,13 @@
                 }
                 aim.powerUp = aim.powerUp === def.key ? null : def.key;
                 renderControls();
+                requestDraw();
             });
         });
         listen(els.cancel, 'click', function () {
             aim.powerUp = null;
             renderControls();
+            requestDraw();
         });
         listen(els.fire, 'click', fire);
 
