@@ -470,7 +470,7 @@
                 var ok = function (id) { var st = seatOf(id); return !!st && (st.b || st.c); };
                 var outcome = { win: mn.oc.win.filter(ok), lose: mn.oc.lose.filter(ok), draw: mn.oc.draw.filter(ok) };
                 M.mn = null;
-                var rr = R.applyMinigame(M.g, { duelOutcome: outcome }, rctx());
+                var rr = R.applyMinigame(M.g, { duelOutcome: outcome, game: mn.gm }, rctx());
                 if (rr.ok) {
                     addLog(resultLine(mn.rk, medalsOf(mn)));
                     afterRules(rr);
@@ -489,7 +489,7 @@
             });
             if (last.length) ranking.push(last);
             M.mn = null;
-            var r = R.applyMinigame(M.g, { ranking: ranking }, rctx());
+            var r = R.applyMinigame(M.g, { ranking: ranking, game: mn.gm }, rctx());
             if (r.ok) {
                 addLog(resultLine(ranking));
                 afterRules(r);

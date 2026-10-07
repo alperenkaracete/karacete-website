@@ -502,31 +502,49 @@
     }
 
     // ---- Minioyun ----
-    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game?, pairs?, extra? }
-    // Düello: yalnızca insanlar (botlar seçilmez) tohumlu karıştırılıp ardışık ÇİFTLERE bölünür; hepsi aynı oyunu aynı anda
-    // oynar (game = C.DUEL_GAMES[seed % n]). Tek sayıda insanda sondaki kişi `extra`dır (ilk biten maçın kaybedeniyle ikinci
-    // şans maçı oynar). pairs[k][0] o maçın ev sahibi (isHost). `players` = ilk çift (geri uyum). rng çekimi eskisiyle aynı
-    // (2 insanda spec birebir aynı), eski tohumlu oyunlar değişmez. 1 insan -> çark (ffa).
+    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', game, players: [id], seed, pairs?, extra? }
+    // Seçim registry'den (mini/registry.js): bu insan sayısıyla uygun oyunlar eşit ağırlıkla (tohumlu rng) seçilir; havuz 2'den
+    // büyükse bir önceki oyun (state.lm) hariç tutulur. Düello: yalnızca insanlar (botlar seçilmez) tohumlu karıştırılıp ardışık
+    // ÇİFTLERE bölünür; hepsi aynı oyunu aynı anda oynar. Tek sayıda insanda sondaki kişi `extra`dır (ilk biten maçın kaybedeniyle
+    // ikinci şans maçı oynar). pairs[k][0] o maçın ev sahibi (isHost). ffa (Kurbağa): herkes (botlar dahil) aynı anda oynar.
+    // Şans Çarkı YALNIZCA acil yedektir: uygun oyun yoksa game:null (ffa) döner. Spec saf kalır: state.lm burada YAZILMAZ,
+    // oynanan oyun applyMinigame'e `game` olarak geçince yazılır.
     function minigameSpec(state, ctx) {
         var rng = Rng(state, ctx);
         var humans = state.order.filter(function (id) { return !state.P[id].bot; });
         var seed = Math.floor(rng.f() * 4294967296) >>> 0;
-        if (humans.length >= 2) {
-            // ctx.mini (test bayrağı ?mini=, yalnızca lider tarayıcısında okunur): her tur düello. rng çekimi bayraksızla
-            // aynı sırada kalır, bayrak yokken davranış (%30) değişmez.
-            var roll = rng.f();
-            if (ctx.mini || roll < 0.3) {
-                var shuffled = rng.shuffle(humans);
-                var pairs = [];
-                for (var i = 0; i + 1 < shuffled.length; i += 2) pairs.push([shuffled[i], shuffled[i + 1]]);
-                var game = ctx.mini && ctx.mini.game ? ctx.mini.game : C.DUEL_GAMES[seed % C.DUEL_GAMES.length];
-                return { type: 'duel', game: game, players: pairs[0].slice(), pairs: pairs, extra: shuffled.length % 2 ? shuffled[shuffled.length - 1] : null, seed: seed };
-            }
+        var roll = rng.f();
+        var pool = C.MINI.eligible(humans.length);
+        // ctx.mini (test bayrağı ?mini=, yalnızca lider tarayıcısında okunur): havuzu o oyuna (game) ya da yalnız düellolara
+        // (game:null) indirir; uygun değilse bayrak yok sayılır.
+        if (ctx.mini) {
+            var narrowed = pool.filter(function (e) { return ctx.mini.game ? e.id === ctx.mini.game : e.kind === 'duel'; });
+            if (narrowed.length) pool = narrowed;
         }
-        return { type: 'ffa', players: state.order.slice(), seed: seed };
+        var cand = pool;
+        if (pool.length > 2 && state.lm) {
+            cand = pool.filter(function (e) { return e.id !== state.lm; });
+            if (!cand.length) cand = pool;
+        }
+        if (!cand.length) return { type: 'ffa', game: null, players: state.order.slice(), seed: seed };
+        var total = cand.reduce(function (a, e) { return a + e.weight; }, 0);
+        var at = roll * total;
+        var chosen = cand[cand.length - 1];
+        for (var k = 0; k < cand.length; k++) {
+            at -= cand[k].weight;
+            if (at < 0) { chosen = cand[k]; break; }
+        }
+        if (chosen.kind === 'duel') {
+            var shuffled = rng.shuffle(humans);
+            var pairs = [];
+            for (var i = 0; i + 1 < shuffled.length; i += 2) pairs.push([shuffled[i], shuffled[i + 1]]);
+            return { type: 'duel', game: chosen.id, players: pairs[0].slice(), pairs: pairs, extra: shuffled.length % 2 ? shuffled[shuffled.length - 1] : null, seed: seed };
+        }
+        return { type: 'ffa', game: chosen.id, players: state.order.slice(), seed: seed };
     }
 
-    // Test bayrağı: adres satırındaki ?mini=duel (rastgele düello oyunu) ya da ?mini=duel:<oyun> (DUEL_GAMES'ten).
+    // Test bayrağı: adreste `?mini=<oyun-id>` (xox | connect4 | catdog | kurbaga), `?mini=duel` (rastgele düello) ya da eski
+    // `?mini=duel:<oyun>` (düello oyunları).
     // -> null (bayrak yok/geçersiz) | { game: null | oyun kimliği }
     function parseMiniFlag(search) {
         var m = /[?&]mini=([^&#]*)/.exec(search || '');
@@ -535,8 +553,9 @@
         try { v = decodeURIComponent(v); } catch (e) { return null; }
         if (v === 'duel') return { game: null };
         var g = /^duel:(.+)$/.exec(v);
-        if (g && C.DUEL_GAMES.indexOf(g[1]) >= 0) return { game: g[1] };
-        return null;
+        if (g) return C.DUEL_GAMES.indexOf(g[1]) >= 0 ? { game: g[1] } : null;
+        var e = C.MINI.get(v);
+        return e && e.kind !== 'grup' ? { game: e.id } : null;
     }
 
     // Eşit dereceli sıralamadan derece: [[a,b],[c]] -> a:1, b:1, c:3
@@ -592,6 +611,7 @@
             var ranks = ranksOf(result && result.ranking ? result.ranking : []);
             state.order.forEach(function (id) { giveMini(id, ranks[id]); });
         }
+        if (result && typeof result.game === 'string' && C.MINI.get(result.game)) state.lm = result.game;   // son OYNANAN oyun (çark yedeği yazmaz)
         state.rev = (state.rev || 0) + 1;
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };
         state.rd++;

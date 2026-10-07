@@ -7,6 +7,8 @@ const { reachDuel, pairOf, playToWin, mover, rewardsFromFx, MAXHOLD } = require(
 
 const mnOf = (r) => r.state('A').mn;
 const stars = (r, id) => r.state('A').g.P[id].s;
+// Minioyun ödülünden gelen yıldızlar (sonraki turun sandık/olay yıldızları karışmaz; tohum havuzu değişse de test sabit kalır)
+const miniStars = (r, id) => r.state('A').fx.filter((e) => e.t === 'star' && e.why === 'mini' && e.id === id).length;
 
 // i. XOX maçını berabere bitirir (sırayla: ilk başlayan X, ikinci O)
 function drawXox(r, i) {
@@ -30,7 +32,6 @@ const lastResultLog = (r) => r.state('A').lg.filter((l) => l.indexOf('🎡') ===
 test('tek çift beraberlik: ikisi de 2. ödül (yıldız yok), günlükte 🥈🥈 (🥇 yok), mini.medals [1]', async () => {
     const r = await reachDuel('xox');
     const [a, b] = pairOf(r, 0);
-    const before = { a: stars(r, a), b: stars(r, b) };
     drawXox(r, 0);
     await r.settle();
     assert.deepEqual(mnOf(r).oc.win, []);
@@ -40,8 +41,8 @@ test('tek çift beraberlik: ikisi de 2. ödül (yıldız yok), günlükte 🥈�
     r.advance(MAXHOLD + C.MINI_HOLD_MS + 500, 100);
     const rw = rewardsFromFx(r);
     assert.deepEqual(rw, { [a]: 2, [b]: 2 });
-    assert.equal(stars(r, a), before.a, 'yıldız verilmedi');
-    assert.equal(stars(r, b), before.b);
+    assert.equal(miniStars(r, a), 0, 'yıldız verilmedi');
+    assert.equal(miniStars(r, b), 0);
     const line = lastResultLog(r);
     assert.equal(medalCount(line, '🥇'), 0, line);
     assert.equal(medalCount(line, '🥈'), 2, line);
@@ -107,11 +108,9 @@ test('ikinci şans: ikisi de berabere biterse kimse 1. alamaz, hepsi 2. (🥈)',
     const everyone = [...new Set([p, q, ...s])];
     reachResultView(r);
     assert.deepEqual(r.view('A').mini.medals, [1]);
-    const before = {};
-    everyone.forEach((id) => { before[id] = stars(r, id); });
     r.advance(MAXHOLD + C.MINI_HOLD_MS + 500, 100);
     const rw = rewardsFromFx(r);
-    everyone.forEach((id) => { assert.equal(rw[id], 2, id); assert.equal(stars(r, id), before[id], id + ' yıldız yok'); });
+    everyone.forEach((id) => { assert.equal(rw[id], 2, id); assert.equal(miniStars(r, id), 0, id + ' yıldız yok'); });
     const line = lastResultLog(r);
     assert.equal(medalCount(line, '🥇'), 0, line);
     assert.equal(medalCount(line, '🥈'), 3, line);
