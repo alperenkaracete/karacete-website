@@ -452,7 +452,7 @@
         }
         var p = g.P[v.me.id];
         if (g.stage === 'roll') {
-            Ctl.appendChild(btn('🎲 Zar At', 'primary big', function () { act({ type: 'roll' }); }));
+            renderRollControls(Ctl, v, p);
         } else if (g.stage === 'choose') {
             Ctl.appendChild(el('span', 'pt-hint', 'Yön seç (' + g.steps + ' adım kaldı) — haritaya da dokunabilirsin:'));
             var row = el('div', 'pt-row');
@@ -462,8 +462,6 @@
                 row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol'), 'primary', function () { act({ type: 'dir', to: to }); }));
             });
             Ctl.appendChild(row);
-        } else if (g.stage === 'act') {
-            renderActControls(Ctl, v, p);
         }
     }
 
@@ -481,43 +479,50 @@
         return DIR_ARROWS[((idx % 8) + 8) % 8];
     }
 
-    function renderActControls(Ctl, v, p) {
+    // Zar aşaması: önce (isteğe bağlı) silah, sonra zar. Menzilde hedef ya da kullanılabilir silah yoksa silah satırı hiç çıkmaz.
+    function renderRollControls(Ctl, v, p) {
         var g = v.game;
         var graph = graphFor(g.mapId);
         var rctx = { g: graph };
-        var opts = R.attackOptions(g, rctx);
-        Ctl.appendChild(el('span', 'pt-hint', targeting ? targetingHint(targeting) : 'İstersen bir silah kullan, sonra turu bitir.'));
-        var row = el('div', 'pt-row');
-        invList(p).forEach(function (e) {
-            var w = e[0];
-            var def = C.WEAPONS[w];
-            var usable = def.kind === 'shield' ? !p.shield : (def.kind === 'area' ? true : opts.some(function (o) { return o.w === w; }));
-            var b = btn(def.emoji + ' ' + def.name + (e[1] > 1 ? ' ×' + e[1] : ''), targeting && targeting.w === w ? 'primary' : '', function () {
-                if (def.kind === 'shield') { act({ type: 'use', w: w }); return; }
-                targeting = targeting && targeting.w === w ? null : { kind: def.kind, range: def.range, w: w };
-                sig = ''; render();
-            }, !usable);
-            row.appendChild(b);
+        var opts = g.atk ? [] : R.attackOptions(g, rctx);
+        var usable = g.atk ? [] : invList(p).filter(function (e) {
+            var def = C.WEAPONS[e[0]];
+            return def.kind === 'shield' ? !p.shield : opts.some(function (o) { return o.w === e[0]; });
         });
-        Ctl.appendChild(row);
-        if (targeting) {
-            var tray = el('div', 'pt-row');
-            var def2 = C.WEAPONS[targeting.w];
-            if (def2.kind === 'target') {
-                opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
-                    var d = G.distance(graph, p.pos, g.P[o.target].pos);
-                    tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + ' (−' + def2.dmg[d] + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, target: o.target }); }));
-                });
-            } else {
-                opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
-                    var names = g.order.filter(function (id) { return g.P[id].pos === o.node; }).map(function (id) { return g.P[id].av; }).join('');
-                    tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, node: o.node }); }));
-                });
+        if (!usable.length) targeting = null;
+        if (usable.length) {
+            Ctl.appendChild(el('span', 'pt-hint', targeting ? targetingHint(targeting) : 'İstersen önce bir silah kullan (turda bir kez), sonra zar at.'));
+            var row = el('div', 'pt-row');
+            usable.forEach(function (e) {
+                var w = e[0];
+                var def = C.WEAPONS[w];
+                row.appendChild(btn(def.emoji + ' ' + def.name + (e[1] > 1 ? ' ×' + e[1] : ''), targeting && targeting.w === w ? 'primary' : '', function () {
+                    if (def.kind === 'shield') { act({ type: 'use', w: w }); return; }
+                    targeting = targeting && targeting.w === w ? null : { kind: def.kind, range: def.range, w: w };
+                    sig = ''; render();
+                }));
+            });
+            Ctl.appendChild(row);
+            if (targeting) {
+                var tray = el('div', 'pt-row');
+                var def2 = C.WEAPONS[targeting.w];
+                if (def2.kind === 'target') {
+                    opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
+                        var d = G.distance(graph, p.pos, g.P[o.target].pos);
+                        var dmgLabel = Number.isFinite(def2.dmg[Math.max(1, d)]) ? ' (−' + def2.dmg[Math.max(1, d)] + ')' : '';
+                        tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + dmgLabel, 'danger', function () { targeting = null; act({ type: 'use', w: o.w, target: o.target }); }));
+                    });
+                } else {
+                    opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
+                        var names = g.order.filter(function (id) { return g.P[id].pos === o.node; }).map(function (id) { return g.P[id].av; }).join('');
+                        tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, node: o.node }); }));
+                    });
+                }
+                tray.appendChild(btn('İptal', 'small', function () { targeting = null; sig = ''; render(); }));
+                Ctl.appendChild(tray);
             }
-            tray.appendChild(btn('İptal', 'small', function () { targeting = null; sig = ''; render(); }));
-            Ctl.appendChild(tray);
         }
-        Ctl.appendChild(btn('Turu Bitir ➜', 'primary', function () { targeting = null; act({ type: 'end' }); }));
+        Ctl.appendChild(btn('🎲 Zar At', 'primary big', function () { targeting = null; act({ type: 'roll' }); }));
     }
 
     function targetingHint(t) {
@@ -918,7 +923,7 @@
         if (view.cur === view.me.id && g.stage === 'choose') {
             var to = nearest(g.choices);
             if (to !== null) act({ type: 'dir', to: to });
-        } else if (view.cur === view.me.id && g.stage === 'act' && targeting && targeting.kind === 'area') {
+        } else if (view.cur === view.me.id && g.stage === 'roll' && !g.atk && targeting && targeting.kind === 'area') {
             var me = g.P[view.me.id];
             var inRange = graph.map.nodes.filter(function (n) { return G.distance(graph, me.pos, n.id) <= targeting.range; }).map(function (n) { return n.id; });
             var node = nearest(inRange);
@@ -962,6 +967,8 @@
             ro.observe(els.board);
             listeners.push(function () { ro.disconnect(); });
         }
+        // Yalnızca testler/elle deneme için: ?debug=1 ile makineye erişim (durumu elle kurup yayınlamak için)
+        if (/[?&]debug=1(&|$)/.test(location.search)) window.__partiDebug = { machine: machine };
         view = machine.getView();
         raf = requestAnimationFrame(frame);
         // Oyun saati requestAnimationFrame'e bağlı OLMAMALI: arka plandaki sekmede rAF durur, lider botları/süreleri

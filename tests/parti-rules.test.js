@@ -68,7 +68,7 @@ test('kurulum: herkes ortak başlangıçta, 100 can, 0 yıldız; ceil(n/2)+1 yı
     assert.equal(s.stage, 'roll');
 });
 
-test('zar 1-6, adım adım yürür, varış düğümünde durur; sonra "act" evresi', () => {
+test('zar 1-6, adım adım yürür, varış düğümünde durur; yürüyüş bitince tur kendiliğinden biter', () => {
     let s = game(2);
     const start = loopNode.id;
     s.P.p0.pos = start;
@@ -80,7 +80,9 @@ test('zar 1-6, adım adım yürür, varış düğümünde durur; sonra "act" evr
     }
     const r = apply(s, { type: 'roll', by: 'p0' }, { dice: () => 1 });
     assert.equal(r.state.P.p0.pos, loopNode.next[0]);
-    assert.ok(['act', 'swap'].includes(r.state.stage));
+    assert.equal(R.current(r.state), 'p1', 'yürüyüş bitti: sıra sonraki oyuncuya geçti (act aşaması yok)');
+    assert.equal(r.state.stage, 'roll');
+    assert.equal(r.state.atk, 0, 'yeni turun saldırı hakkı sıfır');
 });
 
 test('sıra kimde değilse ya da evre yanlışsa eylem reddedilir', () => {
@@ -107,7 +109,7 @@ test('dallanma: yön sorar, geçersiz yön reddedilir, seçilen yönde kalan ad�
     const r2 = apply(r.state, { type: 'dir', by: 'p0', to: branch.next[1] });
     assert.equal(r2.state.P.p0.pos === branch.id, false);
     assert.equal(r2.events.find((e) => e.t === 'move').path[0], branch.next[1]);
-    assert.ok(['act'].includes(r2.state.stage));
+    assert.equal(R.current(r2.state), 'p1', 'yön seçilip yürüyüş bitince tur biter');
 });
 
 test('sandık: üzerinden geçen alır (yıldız), duran alır; envanter sınırında fazlası kaçar', () => {
@@ -156,7 +158,7 @@ function duelSetup(weapon, dist) {
     s.P.p0.pos = a;
     s.P.p1.pos = b;
     s.P.p0.w = inv(weapon);
-    s.stage = 'act';
+    s.stage = 'roll';
     return s;
 }
 
@@ -204,7 +206,7 @@ test('bomba: seçilen kutucuktaki herkese (kendisi dahil) 30; menzil 4', () => {
     s.P.p2.pos = target;
     s.P.p3.pos = nodeAt(a, 4);
     s.P.p0.w = inv('bomb');
-    s.stage = 'act';
+    s.stage = 'roll';
     let r = apply(s, { type: 'use', by: 'p0', item: 0, node: target });
     assert.equal(r.state.P.p1.hp, 70);
     assert.equal(r.state.P.p2.hp, 70);
@@ -218,20 +220,22 @@ test('bomba: seçilen kutucuktaki herkese (kendisi dahil) 30; menzil 4', () => {
     assert.equal(reduceT(s, { type: 'use', by: 'p0', item: 0, node: nodeAt(a, 5) }, ctx()).ok, false);
 });
 
-test('kalkan: kurmak turu harcamaz; bir sonraki saldırıyı engeller ve tükenir; ikinci kez kurulamaz', () => {
+test('kalkan: kurmak turun saldırı hakkını harcar (zardan önce), ardından zar atılabilir; saldırıyı engeller ve tükenir; ikinci kez kurulamaz', () => {
     const s = duelSetup('fist', 1);
     s.P.p1.w = inv('shield', 'shield');
-    // p1 sırası gelince kalkan kurar
     const t = JSON.parse(JSON.stringify(s));
-    t.turn = 1; t.stage = 'act';
+    t.turn = 1; t.stage = 'roll'; t.atk = 0;
     let r = apply(t, { type: 'use', by: 'p1', item: 0 });
     assert.equal(r.state.P.p1.shield, true);
-    assert.equal(r.state.stage, 'act', 'tur devam eder');
+    assert.equal(r.state.atk, 1, 'saldırı hakkı harcandı');
+    assert.equal(r.state.stage, 'roll', 'zar atılabilir');
+    assert.equal(R.current(r.state), 'p1', 'tur bitmedi');
     assert.equal(count(r.state.P.p1), 1);
-    assert.equal(reduceT(r.state, { type: 'use', by: 'p1', item: 0 }, ctx()).ok, false, 'zaten kalkan var');
+    assert.equal(reduceT(r.state, { type: 'use', by: 'p1', item: 0 }, ctx()).ok, false, 'saldırı hakkı yok / zaten kalkan var');
+    assert.ok(reduceT(r.state, { type: 'roll', by: 'p1' }, ctx()).ok, 'kalkandan sonra zar');
     // saldırı engellenir
     const u = JSON.parse(JSON.stringify(r.state));
-    u.turn = 0;
+    u.turn = 0; u.atk = 0;
     r = apply(u, { type: 'use', by: 'p0', item: 0, target: 'p1' });
     assert.equal(r.state.P.p1.hp, 100);
     assert.equal(r.state.P.p1.shield, false);
@@ -261,8 +265,17 @@ test('ölüm: min(3, yarısı) yıldız saldırana gider; başlangıca döner, c
     assert.equal(r.state.P.p1.pos, s.P.p1.home);
     assert.equal(r.state.P.p1.sk, 0, 'ölümde tur atlatma yok');
     assert.ok(!r.events.some((e) => e.t === 'skip'));
-    assert.equal(r.state.stage, 'roll', 'sıra ölen oyuncuya geçer (atlatılmaz)');
-    assert.equal(R.current(r.state), 'p1');
+    assert.equal(r.state.stage, 'roll', 'saldıran zar atabilir (silah turu bitirmez)');
+    assert.equal(R.current(r.state), 'p0');
+    assert.equal(r.state.atk, 1);
+    // ölen oyuncu bir sonraki turunda normal oynar (atlanmaz)
+    const nextRound = JSON.parse(JSON.stringify(r.state));
+    nextRound.stage = 'mini'; nextRound.turn = nextRound.order.length;
+    const afterMini = R.applyMinigame(nextRound, { ranking: [['p0'], ['p1']] }, ctx()).state;
+    const played = new Set();
+    let st = afterMini;
+    for (let i = 0; i < 12 && st.stage !== 'mini'; i++) { played.add(R.current(st)); st = apply(st, R.autoAction(st, ctx()), { dice: () => 1 }).state; }
+    assert.deepEqual([...played].sort(), ['p0', 'p1'], 'ölen de oynar');
     assert.deepEqual(r.state.P.p1.w, { bow: 1 });
     assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1' && e.killer === 'p0' && e.lost === 2));
 });
@@ -274,13 +287,13 @@ test('ölüm: bomba/çoklu hedefte en çok hasar veren yıldızları alır; kend
     s.P.p2.dmg = { p0: 10, p1: 50 };            // önceki saldırılar
     s.P.p0.pos = nodeAt(a, 1);
     s.P.p0.w = inv('bomb');
-    s.stage = 'act';
+    s.stage = 'roll';
     let r = apply(s, { type: 'use', by: 'p0', item: 0, node: a });
     assert.equal(r.state.P.p2.s, 3);
     assert.equal(r.state.P.p1.s, 3, 'en çok hasar veren p1');
     assert.equal(r.state.P.p0.s, 0);
     const t = game(2);
-    t.P.p0.pos = loopNode.id; t.P.p0.hp = 20; t.P.p0.s = 4; t.P.p0.w = inv('bomb'); t.stage = 'act';
+    t.P.p0.pos = loopNode.id; t.P.p0.hp = 20; t.P.p0.s = 4; t.P.p0.w = inv('bomb'); t.stage = 'roll';
     r = apply(t, { type: 'use', by: 'p0', item: 0, node: loopNode.id });
     assert.equal(r.state.P.p0.s, 2);
     assert.equal(r.state.P.p1.s, 0);
@@ -311,7 +324,7 @@ test('takım: arkadaşa saldırı yasak, bomba arkadaşa vurmaz ama kendine vuru
     s.P.p0.pos = a; s.P.p1.pos = nodeAt(a, 1); s.P.p2.pos = nodeAt(a, 1, [s.P.p1.pos]) || nodeAt(a, 2);
     assert.equal(s.P.p0.t, s.P.p1.t);
     s.P.p0.w = inv('fist', 'bomb');
-    s.stage = 'act';
+    s.stage = 'roll';
     assert.equal(reduceT(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false);
     s.P.p2.pos = s.P.p1.pos;
     const r = apply(s, { type: 'use', by: 'p0', item: 1, node: s.P.p1.pos });
@@ -351,7 +364,7 @@ test('kazanma: takımda toplam yıldız hedefe ulaşınca takım kazanır (kayı
     t.P.p0.hp = 5;
     t.P.p2.pos = loopNode.id; t.P.p3.pos = loopNode.id;
     t.P.p0.pos = nodeAt(loopNode.id, 1);
-    t.turn = 2; t.stage = 'act'; t.P.p2.w = inv('fist');
+    t.turn = 2; t.stage = 'roll'; t.P.p2.w = inv('fist');
     const r2 = apply(t, { type: 'use', by: 'p2', item: 0, target: 'p0' });
     assert.equal(R.teamStars(r2.state, 0), 3);
     assert.equal(R.teamStars(r2.state, 1), 3);
@@ -456,8 +469,8 @@ test('autoAction: süre dolunca zar atılır, yön rastgele seçilir, silah kull
     const a = R.autoAction(s, ctx());
     assert.equal(a.type, 'dir');
     assert.ok([4, 9].includes(a.to));
-    s.stage = 'act';
-    assert.equal(R.autoAction(s, ctx()).type, 'end');
+    s.stage = 'roll';
+    assert.equal(R.autoAction(s, ctx()).type, 'roll', 'süre dolunca silah kullanılmaz, zar atılır');
 });
 
 test('bot: menzilde rakip varken (rastgele < 0.5) saldırır, değilse turu bitirir; takım arkadaşına saldırmaz', () => {
@@ -465,16 +478,21 @@ test('bot: menzilde rakip varken (rastgele < 0.5) saldırır, değilse turu biti
     const yes = R.botAction(s, ctx({ rand: () => 0.1 }));
     assert.equal(yes.type, 'use');
     assert.equal(yes.target, 'p1');
-    assert.equal(R.botAction(s, ctx({ rand: () => 0.9 })).type, 'end');
+    assert.equal(R.botAction(s, ctx({ rand: () => 0.9 })).type, 'roll');
     const far = duelSetup('fist', 3);
-    assert.equal(R.botAction(far, ctx({ rand: () => 0.1 })).type, 'end');
+    assert.equal(R.botAction(far, ctx({ rand: () => 0.1 })).type, 'roll');
     const t = game(4, { mode: 'team' });
     t.P.p0.pos = loopNode.id; t.P.p1.pos = nodeAt(loopNode.id, 1); t.P.p2.pos = nodeAt(loopNode.id, 40) || 0;
-    t.P.p0.w = inv('fist'); t.stage = 'act';
+    t.P.p0.w = inv('fist'); t.stage = 'roll';
     t.P.p2.pos = t.P.p3.pos = nodeAt(loopNode.id, 12);
-    assert.equal(R.botAction(t, ctx({ rand: () => 0.1 })).type, 'end');
-    const sh = game(2); sh.P.p0.w = inv('shield'); sh.stage = 'act';
-    assert.deepEqual(R.botAction(sh, ctx()), { type: 'use', by: 'p0', w: 'shield' });
+    assert.equal(R.botAction(t, ctx({ rand: () => 0.1 })).type, 'roll');
+    const sh = game(2); sh.P.p0.w = inv('shield'); sh.stage = 'roll';
+    sh.P.p0.pos = loopNode.id; sh.P.p1.pos = nodeAt(loopNode.id, 2);
+    assert.deepEqual(R.botAction(sh, ctx()), { type: 'use', by: 'p0', w: 'shield' }, 'yakında rakip + kalkan: kurar');
+    sh.P.p1.pos = nodeAt(loopNode.id, 6);
+    assert.equal(R.botAction(sh, ctx()).type, 'roll', 'rakip yakında değil: zar');
+    sh.P.p1.pos = sh.home;
+    assert.equal(R.botAction(sh, ctx()).type, 'roll', 'rakip güvenli bölgede: kalkan kurmaz');
 });
 
 test('removePlayer: sıradaki ayrılırsa sıra geçer; ikiden aza inerse oyun biter', () => {
@@ -580,7 +598,7 @@ test('attackOptions: bomba için atanın kendi kutucuğu sunulmaz (aynı kutucuk
     const s = game(3);
     const a = loopNode.id;
     s.P.p0.pos = a; s.P.p1.pos = a; s.P.p2.pos = nodeAt(a, 2);
-    s.P.p0.w = inv('bomb'); s.stage = 'act';
+    s.P.p0.w = inv('bomb'); s.stage = 'roll';
     const opts = R.attackOptions(s, ctx());
     assert.ok(opts.length > 0, 'başka kutucuktaki rakip hâlâ hedef');
     assert.ok(opts.every((o) => o.node !== a), 'kendi kutucuğu yok');
@@ -819,9 +837,8 @@ test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıld�
         if (st.stage !== 'choose' && rnd() < 0.8) st.order.forEach((pid) => { st.P[pid].pos = nodes[Math.floor(rnd() * nodes.length)]; });      // sık aynı kutucuk
         const cur = R.current(st);
         if (count(st.P[cur]) < 6 && rnd() < 0.5) { const wid = C.WEAPON_IDS[Math.floor(rnd() * 4)]; if ((st.P[cur].w[wid] || 0) < 3) st.P[cur].w[wid] = (st.P[cur].w[wid] || 0) + 1; }
-        if (st.stage === 'roll' && rnd() < 0.4) st.stage = 'act';          // saldırı aşamasına sık gir
         let act;
-        const opts = st.stage === 'act' ? R.attackOptions(st, ctx()) : [];
+        const opts = st.stage === 'roll' ? R.attackOptions(st, ctx()) : [];
         if (opts.length && rnd() < 0.7) { act = opts[Math.floor(rnd() * opts.length)]; attacks++; }
         else act = R.botAction(st, ctx({ rand: rnd }));
         const r = reduceT(st, act, ctx({ rand: rnd }));
@@ -899,7 +916,7 @@ function startSetup(weapon, victimPos) {
     s.P.p0.pos = a;
     s.P.p1.pos = victimPos;
     s.P.p0.w = inv(weapon);
-    s.stage = 'act';
+    s.stage = 'roll';
     return s;
 }
 
@@ -1033,4 +1050,69 @@ test('rules: kabul edilen her eylem state.rev artırır; reddedilen artırmaz', 
     const m = miniState(2);
     assert.equal(R.applyMinigame(m, { ranking: [['p0'], ['p1']] }, ctx()).state.rev, m.rev + 1);
     assert.equal(R.removePlayer(game(3), 'p2', ctx()).state.rev, game(3).rev + 1);
+});
+
+// ---- zardan önce saldırı ----
+test('silah yalnızca roll aşamasında (zardan önce) kullanılır; choose aşamasında ve yürüyüşten sonra reddedilir', () => {
+    const s = duelSetup('bow', 2);
+    assert.equal(s.stage, 'roll');
+    assert.ok(reduceT(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok);
+    const c = JSON.parse(JSON.stringify(s));
+    c.stage = 'choose'; c.choices = [1, 2]; c.steps = 2;
+    assert.equal(reduceT(c, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false, 'yön seçerken silah yok');
+    assert.equal(R.attackOptions(c, ctx()).length, 0, 'choose aşamasında seçenek sunulmaz');
+    // act aşaması yok: yürüyüş sonrası sıra ilerler, saldırı yeni turun başında
+    const r = apply(s, { type: 'roll', by: 'p0' }, { dice: () => 1 });
+    assert.equal(R.current(r.state), 'p1');
+    assert.equal(reduceT(r.state, { type: 'end', by: 'p1' }, ctx()).ok, false, "'end' eylemi kalktı");
+});
+
+test('turda tek saldırı hakkı: silah turu bitirmez, ikinci silah reddedilir, zar serbest; yeni turda hak yenilenir', () => {
+    const s = duelSetup('bow', 2);
+    s.P.p0.w = inv('bow', 'bow', 'fist');
+    const r = apply(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    assert.equal(R.current(r.state), 'p0', 'tur bitmedi');
+    assert.equal(r.state.stage, 'roll');
+    assert.equal(r.state.atk, 1);
+    assert.equal(reduceT(r.state, { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false, 'ikinci silah yok');
+    assert.deepEqual(R.attackOptions(r.state, ctx()), [], 'saldırı seçeneği kalmaz');
+    assert.equal(R.botAction(r.state, ctx({ rand: () => 0.0 })).type, 'roll', 'bot ikinci kez saldırmaz, zar atar');
+    const r2 = apply(r.state, { type: 'roll', by: 'p0' }, { dice: () => 1 });
+    assert.equal(r2.state.atk, 0, 'sonraki oyuncunun turunda hak yenilendi');
+    assert.equal(R.current(r2.state), 'p1');
+});
+
+test('menzilde hedef yoksa saldırı seçeneği yok (arayüz silah satırını göstermez): yalnızca zar', () => {
+    const s = duelSetup('bow', 6);                       // menzil 5, hedef 6 adım uzakta
+    assert.deepEqual(R.attackOptions(s, ctx()), []);
+    assert.equal(R.botAction(s, ctx({ rand: () => 0.0 })).type, 'roll');
+});
+
+test('yürüyüşte/olay kutucuğunda bulunan silah sonraki tur başında kullanılabilir', () => {
+    const zone = pirate.nodes.find((n) => n.type === 'weapon');
+    const pre = pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === zone.id);
+    const s = game(2);
+    s.chests = {};
+    s.P.p0.pos = pre.id;
+    const r = apply(s, { type: 'roll', by: 'p0' }, { dice: () => 1, rand: () => 2 / 11 });       // pompalı
+    assert.equal(r.state.P.p0.w.shotgun, 1);
+    assert.equal(R.current(r.state), 'p1', 'tur bitti: hemen kullanılamaz');
+    // p1 de oynar (autoAction ile), tur sonu, minioyun; p0'ın sırası gelince silah kullanılabilir
+    let st = r.state;
+    for (let i = 0; i < 8 && st.stage !== 'mini'; i++) st = apply(st, R.autoAction(st, ctx()), { dice: () => 1 }).state;
+    assert.equal(st.stage, 'mini');
+    st = R.applyMinigame(st, { ranking: [['p1'], ['p0']] }, ctx()).state;
+    for (let i = 0; i < 8 && !(R.current(st) === 'p0' && st.stage === 'roll'); i++) st = apply(st, R.autoAction(st, ctx()), { dice: () => 1 }).state;
+    assert.equal(R.current(st), 'p0');
+    st.P.p0.pos = loopNode.id; st.P.p1.pos = nodeAt(loopNode.id, 2);
+    assert.ok(R.attackOptions(st, ctx()).some((o) => o.w === 'shotgun' && o.target === 'p1'), 'silah sonraki turda kullanılabilir');
+});
+
+test('öldürme turu bitirmez: öldüren hâlâ zar atabilir; ölünce tur başlangıçta devam eder', () => {
+    const s = duelSetup('fist', 1);
+    s.P.p1.hp = 10; s.P.p1.s = 4;
+    const r = apply(s, { type: 'use', by: 'p0', w: 'fist', target: 'p1' });
+    assert.equal(R.current(r.state), 'p0');
+    const r2 = apply(r.state, { type: 'roll', by: 'p0' }, { dice: () => 1 });
+    assert.equal(R.current(r2.state), 'p1');
 });

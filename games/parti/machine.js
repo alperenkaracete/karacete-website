@@ -136,6 +136,9 @@
                 g.home = start;
                 g.order.forEach(function (id) { g.P[id].home = start; });
             }
+            // eski aşamalar: 'act' (yürüyüş sonrası) ve 'swap' (envanter seçimi) kalktı -> 'roll'
+            if (g.stage === 'act' || g.stage === 'swap') g.stage = 'roll';
+            if (g.atk === undefined) g.atk = 0;
             g.order.forEach(function (id) {
                 var p = g.P[id];
                 // eski biçim: silah dizisi ['fist','bow'] -> sayaç nesnesi {fist:1, bow:1}; seçim bekleyen öğeler atılır
@@ -250,7 +253,7 @@
             if (M.bt !== cur) M.bt = null;
             if (seat && !seat.b && !seat.c) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.DISCONNECT_BOT_MS);
             else if (seat && !seat.b && P && P.afk) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.AFK_BOT_DELAY_MS);
-            else { M.bt = null; M.dlAt = t + (C.STAGE_MS[g.stage] || C.STAGE_MS.act); }
+            else { M.bt = null; M.dlAt = t + (C.STAGE_MS[g.stage] || C.STAGE_MS.roll); }
         }
 
         function afterRules(r, quiet) {
@@ -490,7 +493,7 @@
                 if (M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === by) setDeadline();
                 return true;
             }
-            var allowed = { roll: 1, dir: 1, use: 1, end: 1 };
+            var allowed = { roll: 1, dir: 1, use: 1 };
             if (!allowed[a.type]) return false;
             var act = { type: a.type, by: by };
             if (a.type === 'dir') act.to = a.to;
@@ -539,7 +542,7 @@
             if (!M) return false;
             if (isLeader()) return handle(a, me.id);
             // oyun eylemleri istemcinin gördüğü oyun revizyonunu taşır (lider eski görünümden gelen çift dokunuşu reddeder)
-            if (M.g && M.ph === 'play' && (a.type === 'roll' || a.type === 'dir' || a.type === 'use' || a.type === 'end')) a = Object.assign({}, a, { rv: M.g.rev });
+            if (M.g && M.ph === 'play' && (a.type === 'roll' || a.type === 'dir' || a.type === 'use')) a = Object.assign({}, a, { rv: M.g.rev });
             send({ type: 'pt_action', id: me.id, a: a });
             return true;
         }
@@ -817,7 +820,7 @@
 
         return {
             onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
-            _state: function () { return M; }, _gone: function () { return gone; }
+            _state: function () { return M; }, _gone: function () { return gone; }, _publish: function () { if (M && isLeader()) publish(); }
         };
     }
 

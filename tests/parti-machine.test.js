@@ -591,7 +591,7 @@ test('günlük: ölüm satırı yazılır', () => {
     const M = r.state('A');
     const ids = M.g.order;
     const g = G.index(maps.pirate);
-    M.g.P[ids[0]].w = { fist: 1 }; M.g.stage = 'act'; M.g.turn = 0;
+    M.g.P[ids[0]].w = { fist: 1 }; M.g.stage = 'roll'; M.g.turn = 0;
     const start = g.starts[0];
     const other = g.byId[start].next[0];
     M.g.P[ids[0]].pos = start; M.g.P[ids[1]].pos = other; M.g.P[ids[1]].hp = 5; M.g.P[ids[1]].s = 4;
@@ -733,11 +733,11 @@ function nonLeaderTurn(r) {
     return curId(r);
 }
 
-test('aşama süreleri: zar 15 sn, yön 8 sn, eylem 15 sn', () => {
-    assert.deepEqual(C.STAGE_MS, { roll: 15000, choose: 8000, act: 15000, swap: 15000 });
+test('aşama süreleri: zar aşaması (silah+zar) 20 sn, yön 8 sn; act/swap yok', () => {
+    assert.deepEqual(C.STAGE_MS, { roll: 20000, choose: 8000 });
     const r = started(2);
     const dl = () => r.view('A').dlLeft;
-    assert.ok(dl() > 14000 && dl() <= 15000, 'zar ' + dl());
+    assert.ok(dl() > 19000 && dl() <= 20000, 'zar ' + dl());
     // yön aşaması: dallanmada
     const M = r.state('A');
     const cur = curId(r);
@@ -870,11 +870,13 @@ test('AFK: bot devralmışken insanın herhangi geçerli eylemi bayrağı kaldı
     r.state('A').g.P[target].afkc = 2;
     guard = 0;
     while (R.current(r.state('A').g) !== target && guard++ < 500) await stepWorld(r, target);
-    r.advance(C.AFK_BOT_DELAY_MS + 300, 100);       // bot devraldı ve zarı attı
+    r.state('A').g.P[target].pos = PG.start;         // başlangıçtan zar: ilk hamle yön seçtirir (bot iki adımda oynar)
+    r.advance(C.AFK_BOT_DELAY_MS + 100, 50);        // bot devraldı ve zarı attı (yön seçimi 0,9 sn sonra)
     assert.equal(r.state('A').bt, target);
     assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === target));
     const g = r.state('A').g;
-    // bot zar attıktan sonra kalan aşamayı insan oynar
+    // bot zar attıktan sonra kalan aşamayı (yön) insan oynar
+    assert.equal(R.current(g), target);
     const act = R.autoAction(g, { g: PG });
     r.m(target).dispatch(act);
     r.flush();
@@ -1101,4 +1103,37 @@ test('envanter sınırları: tür başına ≤3, toplam ≤6, kalkan ≤1; fazla
     const res = R.applyMinigame(st, { ranking: [[id]] }, { g });
     assert.ok(res.events.some((e) => e.t === 'lost' && e.id === id));
     assert.equal(Object.values(res.state.P[id].w).reduce((a, b) => a + b, 0), 6);
+});
+
+test('eski anlık görüntü göçü: "act"/"swap" aşamaları "roll"a çevrilir, atk eklenir', () => {
+    for (const oldStage of ['act', 'swap']) {
+        const r = started(2);
+        const snap = lastState(r, 'A');
+        snap.g.stage = oldStage;
+        delete snap.g.atk;
+        snap.rv += 200 + (oldStage === 'act' ? 0 : 50);
+        r.m('B').onMessage(snap);
+        assert.equal(r.state('B').g.stage, 'roll', oldStage);
+        assert.equal(r.state('B').g.atk, 0);
+    }
+});
+
+test('silah kullanmak turu bitirmez: takipçi use gönderir, ardından zar atar (rv her adımda güncel)', () => {
+    const r = started(3);
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    const who = curId(r);
+    const g = G.index(maps.pirate);
+    const M = r.state('A');
+    const other = M.g.order.find((id) => id !== who);
+    // who ile other aynı kutucukta (başlangıç dışı), who'da yumruk
+    const node = maps.pirate.nodes.find((n) => n.type === 'normal').id;
+    M.g.P[who].pos = node; M.g.P[other].pos = node; M.g.P[who].w = { fist: 1 };
+    r.m(who).dispatch({ type: 'use', w: 'fist', target: other });
+    r.flush();
+    assert.equal(curId(r), who, 'tur bitmedi');
+    assert.equal(r.state('A').g.atk, 1);
+    r.m(who).dispatch({ type: 'roll' });
+    r.flush();
+    assert.notEqual(curId(r), who);
 });

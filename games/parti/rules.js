@@ -49,7 +49,7 @@
             mode: opts.cfg.mode === 'team' ? 'team' : 'solo',
             goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
-            home: g.start, rev: 0, rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
+            home: g.start, rev: 0, atk: 0, rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
             order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
         };
         var rng = Rng(state, ctx);
@@ -275,6 +275,7 @@
             }
             state.turn = idx;
             state.stage = 'roll';
+            state.atk = 0;              // her turda tek saldırı hakkı (zardan önce)
             return;
         }
     }
@@ -292,12 +293,7 @@
             applyEvent(state, id, rng, evts);
         }
         if (state.stage === 'over') return;
-        var died = evts.some(function (e) { return e.t === 'death' && e.id === id; });
-        if (died) {
-            nextTurn(state, g, rng, evts);          // turunda öldü: tur biter
-            return;
-        }
-        state.stage = 'act';
+        nextTurn(state, g, rng, evts);              // yürüyüş + kutucuk etkisi bitti: tur biter (silah yalnızca zardan önce)
     }
 
     function applyEvent(state, id, rng, evts) {
@@ -378,7 +374,8 @@
                 return done();
             }
             case 'use': {
-                if (state.stage !== 'act') return fail('silah şu an kullanılamaz');
+                if (state.stage !== 'roll') return fail('silah yalnızca zardan önce kullanılır');
+                if (state.atk) return fail('bu turda saldırı hakkını kullandın');
                 var wid = action.w;
                 if (typeof wid !== 'string' || !Object.prototype.hasOwnProperty.call(C.WEAPONS, wid) || invCount(p, wid) < 1) return fail('geçersiz öğe');
                 var def = C.WEAPONS[wid];
@@ -386,8 +383,9 @@
                     if (p.shield) return fail('zaten kalkanın var');
                     takeItem(p, wid);
                     p.shield = true;
+                    state.atk = 1;            // kalkan kurmak da turun saldırı hakkını harcar (zar atmak serbest)
                     evts.push({ t: 'shield', id: id });
-                    return done();            // tur harcanmaz
+                    return done();
                 }
                 if (def.kind === 'target') {
                     if (!validPlayer(state, action.target) || action.target === id) return fail('geçersiz hedef');
@@ -415,12 +413,7 @@
                         hit(state, vid, def.damage, id, evts);
                     });
                 }
-                if (state.stage !== 'over') nextTurn(state, g, rng, evts);
-                return done();
-            }
-            case 'end': {
-                if (state.stage !== 'act') return fail('tur şimdi bitirilemez');
-                nextTurn(state, g, rng, evts);
+                state.atk = 1;                // silah turu bitirmez: ardından zar atılır
                 return done();
             }
             default:
@@ -434,7 +427,6 @@
         var id = current(state);
         if (state.stage === 'roll') return { type: 'roll', by: id };
         if (state.stage === 'choose') return { type: 'dir', by: id, to: rng.pick(state.choices) };
-        if (state.stage === 'act') return { type: 'end', by: id };
         return null;
     }
 
@@ -443,6 +435,7 @@
         var id = current(state);
         var p = state.P[id];
         var out = [];
+        if (state.stage !== 'roll' || state.atk) return out;         // yalnızca zardan önce, turda tek saldırı hakkı
         C.WEAPON_IDS.forEach(function (w) {
             if (invCount(p, w) < 1) return;
             var def = C.WEAPONS[w];
@@ -465,14 +458,24 @@
         return out;
     }
 
-    // Bot: zar, rastgele yön; menzilde rakip varken %50 olasılıkla silah; kalkanı varsa kurar.
+    // Yakında rakip var mı (kalkan kurma kararı): başlangıç dışında, takım arkadaşı olmayan biri en çok 3 adım uzakta
+    function rivalNear(state, ctx, steps) {
+        var id = current(state);
+        var p = state.P[id];
+        return state.order.some(function (o) {
+            if (o === id || isTeammate(state, id, o) || isSafe(state, state.P[o])) return false;
+            return G.distance(ctx.g, p.pos, state.P[o].pos) <= steps;
+        });
+    }
+
+    // Bot (zardan önce): kalkanı varsa ve yakında rakip varsa kurar; menzilde rakip varken %50 saldırır; sonra zar atar.
     function botAction(state, ctx) {
         var rng = Rng(clone(state), ctx);
         var id = current(state);
         var auto = autoAction(state, ctx);
-        if (!auto || state.stage !== 'act') return auto;
+        if (!auto || state.stage !== 'roll' || state.atk) return auto;
         var p = state.P[id];
-        if (invCount(p, 'shield') > 0 && !p.shield) return { type: 'use', by: id, w: 'shield' };
+        if (invCount(p, 'shield') > 0 && !p.shield && rivalNear(state, ctx, 3)) return { type: 'use', by: id, w: 'shield' };
         var opts = attackOptions(state, ctx);
         if (opts.length && rng.f() < 0.5) return rng.pick(opts);
         return auto;

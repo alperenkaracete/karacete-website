@@ -68,7 +68,7 @@
         SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
-        STAGE_MS: { roll: 15000, choose: 8000, act: 15000, swap: 15000 },   // aşama başına süre
+        STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)
         DISCONNECT_BOT_MS: 30000,    // sırası gelen kopmuş oyuncu için bot devralmadan önce bekleme
         AFK_BOT_DELAY_MS: 3000,      // AFK oyuncunun turunda bot oynamadan önce bekleme (insan "Ben buradayım" diyebilsin)
         AFK_TURNS: 2,                // üst üste bu kadar AFK turdan sonra bot devralır
