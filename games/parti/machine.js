@@ -5,7 +5,8 @@
 // backend yeniden katılanı listenin sonuna ekler. Lider düşerse bağlı insan koltuklar arasında koltuk sırasına göre
 // ilk kişi lider olur (herkes aynı kuralı yerelde uygular), `ep` (devir sayısı) artar ve saklı durumdan sürer.
 //
-// Mesajlar: pt_state {ep, rv, ld, ph, cf, S, g, dl, pz, mn, lg, fx, fq, kk}, pt_action {id, a}, pt_sync {id}
+// Mesajlar: pt_state {ep, rv, ld, ph, cf, S, g, dl, pz, mn, lg, fx, fq, kk}, pt_action {id, a}, pt_sync {id},
+//           pt_mg {mg, from, m} (minioyun yükü; durum DEĞİL: yalnızca eşleşen oturuma, düellodaki ikiliden ya da liderden kabul edilir)
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'));
@@ -26,6 +27,7 @@
         var now = opts.now || function () { return Date.now(); };
         var rand = opts.rand || Math.random;
         var startMinigame = opts.startMinigame || Mini.startMinigame;
+        var sess = null;              // yerel minioyun oturumu { key, ac, handlers }
         var onChange = opts.onChange || function () {};
         var onEmote = opts.onEmote || function () {};
         var lastEmote = {};           // gönderen -> son emote zamanı (hız sınırı; durumda tutulmaz)
@@ -91,7 +93,7 @@
                 S: M.S.map(function (s) { return { i: s.i, n: s.n, a: s.a, t: s.t, b: s.b, c: s.c, d: s.c ? 0 : Math.max(0, Math.round(s.dAt - t)) }; }),
                 g: M.g,
                 dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0, bt: M.bt,
-                mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1 } : null,
+                mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1, gm: M.mn.gm || null, dl: M.mn.dlAt ? Math.max(0, Math.round(M.mn.dlAt - t)) : -1 } : null,
                 lg: M.lg, fx: M.fx, fq: M.fq, kk: M.kk
             };
         }
@@ -184,7 +186,9 @@
             var mn = null;
             if (msg.mn) {
                 if (!Array.isArray(msg.mn.pl) || !Array.isArray(msg.mn.rk) || !isInt(msg.mn.ms, -1, 600000)) return null;
-                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t };
+                var gm = typeof msg.mn.gm === 'string' && msg.mn.gm.length <= 20 ? msg.mn.gm : null;
+                var mdl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
+                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm, dlAt: mdl >= 0 ? t + mdl : 0 };
             }
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
@@ -289,22 +293,31 @@
 
         function beginMini() {
             var spec = R.minigameSpec(M.g, rctx());
-            var token = { ty: spec.type, pl: spec.players, sd: spec.seed, rk: [], applyAt: 0 };
+            var token = { ty: spec.type, pl: spec.players, sd: spec.seed, gm: spec.type === 'duel' && spec.game ? spec.game : null, rk: [], applyAt: 0, dlAt: 0, offAt: {} };
             M.mn = token;
             M.pz = true;
             M.dlLeft = 0;
+            if (token.gm) {
+                // Düello: tüm istemcilerde oturum açılır (syncMini); lider sonucu o oturumdan alır.
+                token.dlAt = now() + C.DUEL_MS;
+                return;
+            }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
             Promise.resolve(p).then(function (res) {
                 if (M.mn !== token) return;
-                token.rk = normalizeRanking(res && res.ranking, spec.players);
-                token.applyAt = now() + C.MINI_HOLD_MS;
-                publish();
+                applyMiniResult(token, res && res.ranking, spec.players);
             }, function () {
                 if (M.mn !== token) return;
-                token.rk = [spec.players.slice()];
-                token.applyAt = now() + C.MINI_HOLD_MS;
-                publish();
+                applyMiniResult(token, [spec.players.slice()], spec.players);
             });
+        }
+
+        // Lider: minioyun sonucunu kaydeder; MINI_HOLD_MS sonra finishMini ödülleri uygular.
+        function applyMiniResult(token, ranking, players) {
+            if (M.mn !== token || token.applyAt) return;
+            token.rk = normalizeRanking(ranking, players || token.pl);
+            token.applyAt = now() + C.MINI_HOLD_MS;
+            publish();
         }
 
         function normalizeRanking(ranking, players) {
@@ -567,7 +580,12 @@
                 if (x.i === me.id) { x.c = 1; x.dAt = 0; }
                 else if (gone[x.i] && !x.b && x.i !== rejoined) markDisconnected(x);      // kopanlar
             });
-            if (M.mn && !M.mn.applyAt) {
+            if (M.mn && !M.mn.applyAt && M.mn.gm && M.mn.ty === 'duel') {
+                // düello: ep değişti -> herkes oturumu AYNI tohumla yeniden başlatır (yeni lider sonucu o oturumdan alır)
+                M.mn.rk = [];
+                M.mn.offAt = {};
+                M.mn.dlAt = now() + C.DUEL_MS;
+            } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
                 M.mn.applyAt = now() + C.MINI_HOLD_MS;
@@ -600,6 +618,14 @@
                     resyncOk = false;
                     Object.keys(gone).forEach(function (id) { if (M.S.some(function (s) { return s.i === id && s.c; })) delete gone[id]; });
                     emit();
+                    return;
+                }
+                case 'pt_mg': {
+                    // Yalnızca eşleşen oturumun jetonuyla, düellodaki ikiliden ya da liderden (reset/catchup) kabul edilir
+                    if (!M || !sess || data.mg !== sess.key || typeof data.from !== 'string' || data.from === me.id) return;
+                    if (!data.m || typeof data.m !== 'object') return;
+                    if (M.mn.pl.indexOf(data.from) < 0 && data.from !== M.ld) return;
+                    sess.handlers.slice().forEach(function (fn) { fn(data.from, data.m); });
                     return;
                 }
                 case 'pt_emote': {
@@ -685,6 +711,7 @@
                     gone = {};
                     lastSyncAt = -1e9;
                     if (M) { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }
+                    if (sess) sess.handlers.slice().forEach(function (fn) { fn(null, { k: '_reconnected' }); });
                     emit();
                     return;
                 }
@@ -732,6 +759,7 @@
             var stage = M.g.stage;
             if (stage === 'mini') {
                 if (M.mn && M.mn.applyAt && t >= M.mn.applyAt) { finishMini(); publish(); }
+                else if (M.mn && M.mn.gm) duelWatch(t);
                 return;
             }
             if (stage === 'over') return;
@@ -779,7 +807,77 @@
         }
 
         // ---- Görünüm ----
-        function emit() { onChange(getView()); }
+        function emit() { syncMini(); onChange(getView()); }
+
+        // ---- Minioyun oturumu (düello: her istemcide; yalnızca lider sonucu uygular) ----
+        function miniKey() {
+            var mn = M && M.ph === 'play' && M.mn;
+            if (!mn || mn.ty !== 'duel' || !mn.gm || mn.applyAt || mn.pl.length !== 2) return null;
+            return M.ep + ':' + mn.sd + ':' + mn.gm;
+        }
+
+        function syncMini() {
+            var want = miniKey();
+            if (sess && sess.key === want) return;
+            if (sess) endSession();
+            if (want) startSession(want);
+        }
+
+        function endSession() {
+            var s = sess;
+            sess = null;
+            if (s) s.ac.abort();
+        }
+
+        function startSession(key) {
+            var token = M.mn;
+            var s = { key: key, ac: new AbortController(), handlers: [] };
+            sess = s;
+            var leader = isLeader();
+            var names = {};
+            M.S.forEach(function (x) { names[x.i] = x.n; });
+            var net = {
+                send: function (m) { send({ type: 'pt_mg', mg: key, from: me.id, m: m }); },
+                on: function (fn) {
+                    s.handlers.push(fn);
+                    return function () { var i = s.handlers.indexOf(fn); if (i >= 0) s.handlers.splice(i, 1); };
+                }
+            };
+            var p = startMinigame({
+                type: 'duel', game: token.gm, players: token.pl.slice(), seed: token.sd, me: { id: me.id, name: me.name },
+                isLeader: leader, leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, net: net, names: names,
+                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.DUEL_MS, signal: s.ac.signal,
+                timers: opts.timers, now: now
+            });
+            if (!leader) return;
+            Promise.resolve(p).then(function (res) {
+                if (sess !== s || M.mn !== token || (res && res.aborted)) return;
+                applyMiniResult(token, res && res.ranking);
+            }, function () {
+                if (sess !== s || M.mn !== token) return;
+                applyMiniResult(token, [token.pl.slice()]);
+            });
+        }
+
+        // Lider: düello gözcüsü — oyuncu kopması (25 sn sonra forfeit) ve sert süre sigortası
+        function duelWatch(t) {
+            var mn = M.mn;
+            if (!mn || mn.ty !== 'duel' || !mn.gm || mn.applyAt) return;
+            var out = [];
+            mn.pl.forEach(function (id) {
+                var seat = seatOf(id);
+                if (seat && !seat.b && seat.c) { delete mn.offAt[id]; return; }
+                if (mn.offAt[id] === undefined) mn.offAt[id] = t;
+                if (!seat || t - mn.offAt[id] >= C.DUEL_RECONNECT_MS) out.push(id);
+            });
+            if (out.length === 1) {
+                applyMiniResult(mn, [[mn.pl[0] === out[0] ? mn.pl[1] : mn.pl[0]], [out[0]]]);
+            } else if (out.length === 2) {
+                applyMiniResult(mn, [mn.pl.slice()]);
+            } else if (mn.dlAt && t >= mn.dlAt + C.DUEL_GRACE_MS) {
+                applyMiniResult(mn, Mini.wheelRanking({ players: mn.pl, seed: mn.sd }));
+            }
+        }
 
         function getView() {
             var t = now();
@@ -811,7 +909,7 @@
                 afk: !!(M.g && M.g.P[me.id] && M.g.P[me.id].afk),
                 wait: wait,
                 disconnected: dcs,
-                mini: M.mn ? { type: M.mn.ty, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1 } : null,
+                mini: M.mn ? { type: M.mn.ty, game: M.mn.gm || null, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1, duelLeft: M.mn.dlAt ? Math.max(0, M.mn.dlAt - t) : -1 } : null,
                 log: M.lg,
                 fx: M.fx,
                 fq: M.fq,
@@ -827,6 +925,7 @@
 
         return {
             onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
+            destroy: function () { endSession(); },
             _state: function () { return M; }, _gone: function () { return gone; }, _publish: function () { if (M && isLeader()) publish(); }
         };
     }

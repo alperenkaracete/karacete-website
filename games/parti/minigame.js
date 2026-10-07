@@ -19,8 +19,8 @@
 // [[kazanan], [kaybeden]], beraberlikte [[a, b]] olur. Makine sonucu normalizeRanking ile temizler (machine.js):
 //   - players dışı kimlikler ve tekrarlar atılır; sıralamada olmayan oyuncular SON gruba (eşit derece) eklenir;
 //   - boş/geçersiz sonuç -> tüm oyuncular tek grup (hepsi eşit).
-// Ödüller (config REWARDS) dereceye göredir: [[a,b]] -> ikisi de 1.; diğer oyuncular `önceki sayı + 1`. Düello dışındakiler
-// tek grup olarak sonda kalır (eşit 3.).
+// Ödüller (config REWARDS) dereceye göredir: [[a,b]] -> ikisi de 1.; [[w],[l]] -> 1. ve 2. DÜELLODA OLMAYAN oyuncular ranking'de
+// yer almaz ve ödül almaz (mevcut davranış; ffa'da herkes sıralanır). Kopan insanlar finishMini'de sona yazılır.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory(require('./mini/duel-adapter.js'));
     else root.PartiMinigame = factory(root.PartiDuelAdapter);
