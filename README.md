@@ -143,17 +143,25 @@ canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa
 
 ## Parti (2–8 kişilik tahta oyunu)
 
-**Kurallar.** Tur = herkesin sırayla bir hamlesi: 🎲 zar (1-6) → zar kadar adım yürü (dallanmada yön seç) → durduğun
-kutucuğun etkisi → isteğe bağlı bir silah → turu bitir. Her adım için **20 sn** vardır; dolunca otomatik oynanır (zar atılır,
-yön rastgele, silah kullanılmaz). Süreler aşamaya göre: zar 15 sn, yön 8 sn, eylem 15 sn. Herkes oynayınca tur biter: minioyun →
-ödüller → yeni sandıklar. Tur başı sırası her turda bir kayar (ilk oynayan sona geçer), böylece sabit ilk sıra avantajı olmaz.
-- **Kutucuklar:** başlangıç 🏁, hazine ✨ (sandık çıkar), silah bölgesi ⚔️ (rastgele silah), olay 🎁 (rastgele küçük olay:
-  +1 ⭐, 15 hasar, başlangıca ışınlanma, silah, bir tur dinlenme).
-- **Sandıklar:** her tur başında boş hazine noktalarına `ceil(oyuncu/2)+1` yıldız sandığı (1 ya da 2 ⭐, %70/%30) ve 1 silah sandığı çıkar.
-  Üzerinden geçen ya da orada duran alır. Envanter (en çok 3) doluysa bir öğeyi bırakma ya da vazgeçme seçeneği sunulur.
-- **Silahlar** (tek atımlık, can 100; menzil = tahtadaki en kısa adım sayısı): 👊 Yumruk menzil 1 / 30 · 🔫 Pompalı menzil 3,
-  1/2/3 adımda 45/30/15 · 🏹 Yay menzil 5 / 20 · 💣 Bomba menzil 4, seçilen kutucuktaki herkese (kendine de) 30 · 🛡️ Kalkan
-  bir sonraki saldırıyı engeller (kurmak turu harcamaz). Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
+**Kurallar.** Tur = herkesin sırayla bir hamlesi: (isteğe bağlı) bir silah → 🎲 zar (1-6) → zar kadar adım yürü (dallanmada yön seç; seçim
+sırasında her yönün bitiş kutucuğu kırmızı halkayla, yoldaki sandıklar sarı/beyaz halkayla önizlenir) → durduğun kutucuğun etkisi →
+tur kendiliğinden biter. Süreler: silah + zar aşaması **20 sn**, yön seçimi **8 sn**; dolunca otomatik oynanır (zar atılır, yön
+rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüller → yeni sandıklar. Tur başı sırası her turda bir kayar
+(ilk oynayan sona geçer), böylece sabit ilk sıra avantajı olmaz; kartlarda "⏳ N sıra sonra" ve "N sıra sonra sen" görünür.
+- **Başlangıç:** herkes **tek ortak başlangıç düğümünden** başlar (en az 2 çıkış: ilk hamlede yön seçilir); ölünce de buraya dönülür.
+  Başlangıç **güvenli bölgedir**: orada duran hasar almaz, hedef olarak sunulmaz; hiçbir silah/bomba oradakileri etkilemez.
+- **Kutucuklar:** başlangıç 🏁, hazine ✨ (sandık çıkar), silah bölgesi ⚔️ (rastgele silah), olay ❓ (rastgele küçük olay; olasılıklar ⓘ
+  yardımında): +1 ⭐, tuzak −15 can, başlangıca ışınlanma, hediye silah (🎁), bir tur dinlenme. 🎁 yalnızca silah sandığı/ödül içindir.
+- **Sandıklar:** her tur başında boş hazine noktalarına `ceil(oyuncu/2)+1` yıldız sandığı 🧰 (1 ya da 2 ⭐, %70/%30) ve 1 silah sandığı 🎁 çıkar.
+  Üzerinden geçen ya da orada duran alır.
+- **Envanter:** sınırsız ama sayaçlı: her silah türünden en çok **3**, toplam en çok **6**, kalkan en çok **1**; sığmayan öğe "kaçtı"
+  (seçim ekranı yok). Kartlarda `×N` görünür; oyuncu kartına dokununca ayrıntı açılır.
+- **Silahlar** (tek atımlık, can 100; menzil = tahtadaki en kısa adım sayısı): 👊 Yumruk menzil 0–1 (aynı ya da komşu kutucuk), tek
+  vuruş 100 hasar · 🔫 Pompalı menzil 0–3, 1/2/3 adımda 45/30/15 · 🏹 Yay menzil 0–5 / 20 · 💣 Bomba menzil 4, seçilen kutucuktaki
+  herkese (kendine de) 30 · 🛡️ Kalkan bir saldırıyı engeller. **Silah yalnızca zardan önce kullanılır ve turda tek saldırı hakkı vardır**
+  (silah turu bitirmez, ardından zar atılır); menzilde hedef ya da kullanılabilir silah yoksa silah satırı hiç görünmez. Yürüyüşte/olayda
+  bulunan silah sonraki turun başında kullanılabilir. Kalkan kurmak da o turun saldırı hakkını harcar; **3 kendi tur** sonra düşer,
+  kırılırsa **2 kendi tur** yeniden kurulamaz. Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
 - **Ölüm:** can 0 olunca `min(3, yıldız/2 aşağı)` yıldız saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
   can dolar, envanter korunur; tur atlatılmaz.
 - **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
@@ -181,7 +189,18 @@ doğrular. Rastgelelik yalnızca liderde ve durumdaki tohumdan (`rs`) üretilir;
   Bir oyuncu koptuğunda sırası geldiğinde oyun bekler: "X bağlantısı koptu, kalan süre M:SS"; lider **Bekle / Turu geç / At**
   seçebilir; 3 dk dolunca tur geçilir ve koltuk boşalır. Dönen oyuncu tam durumu alır (`pt_sync`). Minioyun sırasında kopan
   en sona yazılır. Oyun sürerken gelen tanınmayan oyuncu izleyici olur.
-- **Botlar** lider tarafından oynanır (zar, rastgele yön, menzilde rakip varken %50 silah, kalkanı kurar); düelloya seçilmez.
+- **Botlar** lider tarafından oynanır: zardan önce menzilde rakip varken %50 olasılıkla saldırır, kalkanı varsa ve yakında (≤3 adım) rakip varsa
+  kurar; sonra zar atar, yönü rastgele seçer. Düelloya seçilmez. Kopan insanın sırası gelince 30 sn sonra, 2 AFK turdan sonra (3 sn
+  bekleyip) bot oynar; insan "🙋 Ben buradayım" ya da herhangi bir eylemle turu geri alır.
+- **Oyun revizyonu `rv`:** `pt_action`lar istemcinin gördüğü oyun revizyonunu (`g.rev`, yalnızca kabul edilen kural adımlarında artar)
+  taşır; eşleşmezse lider eylemi reddeder (çift dokunuş koruması). Makine seviyesindeki `rv` (her yayında artar) bu iş için kullanılmaz,
+  alakasız yayınlar meşru eylemi engellerdi. `rv` yoksa eski davranış.
+- **Eski anlık görüntü göçü:** gelen durumda `p.w` dizisi → sayaç nesnesi, `act`/`swap` aşaması → `roll`, haritada olmayan konum
+  (eski 8 başlangıç düğümü) → ortak başlangıç, `shield: true` → 3 tur sayacı; sonlu olmayan/geçersiz can-yıldız-konum içeren durum reddedilir.
+- **Elle deneme/test:** `?debug=1` ile `window.__partiDebug.machine` (durum makinesi, `_state()`/`_publish()`) ve `tickerMode()` açılır.
+- **Lider saati:** `games/parti/ticker.js` tick'i bir Web Worker'dan (Blob URL) 250 ms'lik mesajla tetikler; arka plandaki sekmelerde
+  `requestAnimationFrame` durur ve `setInterval` kısılır, worker zamanlayıcıları kısılmaz. Worker kurulamazsa, hata verirse ya da 2 sn
+  sessiz kalırsa `setInterval`'a düşülür; sekme görünür olunca ve gelen her mesajda da ayrıca tick atılır.
 
 **Minioyun sözleşmesi** (`games/parti/minigame.js`) - tur sonunda çağrılır, gerçek minioyunlar bu fonksiyonun yerini alır:
 
@@ -198,14 +217,15 @@ startMinigame({ type: 'ffa' | 'duel', players: [id, ...], seed }) -> Promise<{ r
 
 ```js
 { id, name, palette: { bgTop, bgBottom, path, pathEdge, label, wave, fx: 'waves' | 'stars' },
-  nodes: [{ id, x, y, type: 'normal'|'start'|'treasure'|'weapon'|'event', next: [id, ...] }],   // 35-50 düğüm, ≥8 start
+  nodes: [{ id, x, y, type: 'normal'|'start'|'treasure'|'weapon'|'event', next: [id, ...] }],   // 35-50 düğüm, TEK start (≥2 çıkış)
   decor: [{ e: '🌴', x, y, s: boyutPx, a: 'float'|'bob'|'twinkle'|'none' }] }
 ```
 
 `tests/parti-graph.test.js` haritayı doğrular (düğüm sayısı, çıkışsız düğüm, döngüsellik, başlangıçtan erişim, ≥2 dallanma,
-çakışma); yeni haritayı oradaki listeye ekle. **Yeni silah eklemek:** `games/parti/config.js` içindeki `WEAPONS`'a ekle
-(`kind: 'target'` + `range`/`dmg` tablosu, `'area'` + `damage` ya da `'shield'`) ve `WEAPON_IDS`'e yaz; kurallar ve arayüz tabloyu okur.
-Olaylar (`EVENTS`), ödüller (`REWARDS`), süreler ve sandık sayıları da aynı dosyadadır.
+tek başlangıç ve ≥2 çıkışı, başlangıç kenarı ≤200 birim, çakışma); yeni haritayı oradaki listeye ekle. **Yeni silah eklemek:** `games/parti/config.js` içindeki `WEAPONS`'a ekle
+(`kind: 'target'` + `range`/`dmg` tablosu (mesafe 0 dahil), `'area'` + `damage` ya da `'shield'`), `WEAPON_IDS`'e ve `WEAPON_WEIGHTS`'e yaz;
+kurallar, arayüz ve ⓘ yardımı tabloyu okur (`C.legend()`). Olaylar (`EVENTS`, olasılıklar ağırlıklardan üretilir), ödüller (`REWARDS`),
+süreler ve sandık sayıları da aynı dosyadadır.
 
 ## Testler
 
@@ -295,6 +315,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   düğüm/hedef kimliklerini yalnızca kendi özellikleriyle eşler. Gönderen kimliği hâlâ mesajdaki `id`'dir; `pt_action`'da `from`
   alanı varsa `id` ile aynı olmak zorundadır. **Backend gönderen kimliğini (`from`) kendisi eklemeli** (sunucunun bildiği oturum
   kimliği); o zaman sahte `id` ile eylem göndermek mümkün olmaz. Şu an backend'e dokunulmadı.
+- Parti: Worker'lı lider saati arka plandaki sekmede oyunun ilerlemesini sağlar, ama mobil tarayıcılar ekran kilitlenince ya da uygulama
+  uzun süre arka planda kalınca sayfayı tamamen dondurabilir; bu durumda lider olan oyuncunun cihazı oyunu durdurur (diğerlerinde
+  "lider sessiz" gibi görünür, kopma/lider devri süreci devreye girmez çünkü bağlantı hâlâ açıktır). Test ortamında yalnızca
+  `requestAnimationFrame` durdurma + `document.hidden` taklidi doğrulanabildi.
 - Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
   koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
