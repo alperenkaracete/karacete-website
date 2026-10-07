@@ -5,10 +5,11 @@ const pirate = require('../games/parti/maps/pirate.js');
 const space = require('../games/parti/maps/space.js');
 
 for (const map of [pirate, space]) {
-    test(map.name + ': harita geçerli (35-50 düğüm, döngüsel, dallanma, 8 başlangıç)', () => {
+    test(map.name + ': harita geçerli (35-50 düğüm, döngüsel, dallanma, tek ortak başlangıç)', () => {
         assert.deepEqual(G.validate(map), []);
         const g = G.index(map);
-        assert.ok(g.starts.length >= 8);
+        assert.equal(g.starts.length, 1, 'tek ortak başlangıç');
+        assert.ok(g.byId[g.start].next.length >= 2, 'başlangıçtan ≥2 dal');
         assert.ok(map.nodes.filter((n) => n.next.length > 1).length >= 2);
         assert.ok(map.decor.length >= 20);
         assert.ok(map.nodes.filter((n) => n.type === 'treasure').length >= 4, 'sandık için yeterli hazine noktası');
@@ -90,13 +91,20 @@ test('başlangıç kenarları ≤ 200 birim, başlangıç düğümleri başka d�
     }
 });
 
-test('doğrulayıcı: uzun başlangıç kenarı ve yakın başlangıç yakalanır', () => {
-    const bad = JSON.parse(JSON.stringify(space));
-    const start = bad.nodes.find((n) => n.type === 'start');
-    start.next = [1];                                  // üst kenara çapraz uzun çizgi
-    assert.ok(G.validate(bad).some((e) => /çok uzun/.test(e)));
+test('doğrulayıcı: tek başlangıç, ≥2 dal, kısa kenar ve yakın düğüm kuralları yakalanır', () => {
+    const long = JSON.parse(JSON.stringify(space));
+    const st = long.nodes.find((n) => n.type === 'start');
+    st.next = [1, long.nodes.find((n) => n.y < 100 && n.id !== 1).id];   // üst kenara çapraz uzun çizgiler
+    assert.ok(G.validate(long).some((e) => /çok uzun/.test(e)));
+    const one = JSON.parse(JSON.stringify(pirate));
+    one.nodes.find((n) => n.type === 'start').next = [one.nodes.find((n) => n.type === 'start').next[0]];
+    assert.ok(G.validate(one).some((e) => /en az 2 dal/.test(e)));
+    const two = JSON.parse(JSON.stringify(pirate));
+    two.nodes.push({ id: 900, x: 700, y: 650, type: 'start', next: [0, 1] });
+    assert.ok(G.validate(two).some((e) => /tam 1 başlangıç/.test(e)));
     const close = JSON.parse(JSON.stringify(pirate));
-    const starts = close.nodes.filter((n) => n.type === 'start');
-    starts[1].x = starts[0].x + 20; starts[1].y = starts[0].y;
+    const start = close.nodes.find((n) => n.type === 'start');
+    const other = close.nodes.find((n) => n.type === 'normal');
+    other.x = start.x + 20; other.y = start.y;
     assert.ok(G.validate(close).some((e) => /yakın/.test(e)));
 });

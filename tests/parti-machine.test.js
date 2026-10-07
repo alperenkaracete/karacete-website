@@ -994,3 +994,25 @@ test('pt_state: sonlu olmayan/geçersiz can, yıldız ya da konum içeren durum 
     r.m('B').onMessage(ok);
     assert.equal(r.state('B').rv, before + 60);
 });
+
+test('eski anlık görüntü göçü: haritada olmayan konumlar (eski 8 başlangıç) ortak başlangıca taşınır, g.home eklenir', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const gr = G.index(maps.pirate);
+    delete snap.g.home;                                   // eski biçim: üst düzey home yok
+    snap.g.order.forEach((id, i) => { snap.g.P[id].pos = 39 + i; snap.g.P[id].home = 40 + i; });   // eski başlangıç kimlikleri
+    snap.rv += 40;
+    r.m('B').onMessage(snap);
+    const g = r.state('B').g;
+    assert.equal(g.home, gr.start);
+    g.order.forEach((id) => { assert.equal(g.P[id].pos, gr.start); assert.equal(g.P[id].home, gr.start); });
+    // geçerli konumlar olduğu gibi kalır
+    const snap2 = lastState(r, 'A');
+    delete snap2.g.home;
+    const first = snap2.g.order[0];
+    snap2.g.P[first].pos = 5;
+    snap2.rv += 80;
+    r.m('B').onMessage(snap2);
+    assert.equal(r.state('B').g.P[first].pos, 5);
+    assert.equal(r.state('B').g.P[first].home, gr.start);
+});

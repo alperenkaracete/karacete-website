@@ -49,7 +49,7 @@
             mode: opts.cfg.mode === 'team' ? 'team' : 'solo',
             goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
-            rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
+            home: g.start, rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
             order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
         };
         var rng = Rng(state, ctx);
@@ -58,7 +58,7 @@
             state.order.push(s.id);
             state.P[s.id] = {
                 id: s.id, n: s.name, av: s.av, t: state.mode === 'team' ? s.t : -1, bot: !!s.bot,
-                hp: C.MAX_HP, s: 0, w: [], pos: g.starts[i % g.starts.length], home: g.starts[i % g.starts.length],
+                hp: C.MAX_HP, s: 0, w: [], pos: g.start, home: g.start,
                 sk: 0, shield: false, dmg: {}, offers: []
             };
         });
@@ -189,6 +189,10 @@
         });
     }
 
+    // Başlangıç düğümü güvenli bölgedir: orada duran oyuncu hasar almaz, hedef sunulmaz.
+    function homeOf(state, p) { return state.home !== undefined ? state.home : p.home; }
+    function isSafe(state, p) { return p.pos === homeOf(state, p); }
+
     // Mesafeye göre hasar: aynı kutucuk (mesafe 0) mesafe 1 hasarıyla aynıdır; tabloda olmayan mesafe null.
     function weaponDamage(def, d) {
         var v = def.dmg[Math.max(1, d)];
@@ -221,6 +225,7 @@
         // NaN/Infinity asla oluşmasın: geçersiz hasar yok sayılır; bozuk (sonlu olmayan) can onarılır.
         if (!Number.isFinite(p.hp)) p.hp = C.MAX_HP;
         if (!Number.isFinite(amount) || amount <= 0) return false;
+        if (isSafe(state, p)) return false;          // güvenli bölge: kalkan harcanmaz, hasar yok
         if (p.shield) {
             p.shield = false;
             evts.push({ t: 'block', id: victim, by: attacker });
@@ -384,6 +389,7 @@
                     if (!validPlayer(state, action.target) || action.target === id) return fail('geçersiz hedef');
                     var tgt = state.P[action.target];
                     if (isTeammate(state, id, action.target)) return fail('takım arkadaşına saldırılamaz');
+                    if (isSafe(state, tgt)) return fail('başlangıç güvenli bölgedir');
                     var d = G.distance(g, p.pos, tgt.pos);
                     if (d > def.range) return fail('hedef menzil dışında');
                     var dmg = weaponDamage(def, d);
@@ -394,6 +400,7 @@
                 } else {
                     var node = action.node;
                     if (!validNode(g, node)) return fail('geçersiz kutucuk');
+                    if (node === homeOf(state, p)) return fail('başlangıç güvenli bölgedir');
                     if (G.distance(g, p.pos, node) > def.range) return fail('hedef menzil dışında');
                     p.w.splice(idx, 1);
                     evts.push({ t: 'attack', id: id, w: def.id, node: node });
@@ -437,7 +444,7 @@
             var def = C.WEAPONS[w];
             if (def.kind === 'target') {
                 state.order.forEach(function (o) {
-                    if (o === id || isTeammate(state, id, o)) return;
+                    if (o === id || isTeammate(state, id, o) || isSafe(state, state.P[o])) return;     // güvenli bölgedekine hedef sunulmaz
                     if (G.distance(g, p.pos, state.P[o].pos) <= def.range) out.push({ type: 'use', by: id, item: i, target: o });
                 });
             } else if (def.kind === 'area') {
@@ -445,7 +452,7 @@
                 seen[p.pos] = true;          // atanın kendi kutucuğu hedef olarak sunulmaz (bot kendini bombalamasın)
                 state.order.forEach(function (o) {
                     var pos = state.P[o].pos;
-                    if (o === id || isTeammate(state, id, o) || seen[pos]) return;
+                    if (o === id || isTeammate(state, id, o) || seen[pos] || pos === homeOf(state, p)) return;
                     seen[pos] = true;
                     if (G.distance(g, p.pos, pos) <= def.range) out.push({ type: 'use', by: id, item: i, node: pos });
                 });

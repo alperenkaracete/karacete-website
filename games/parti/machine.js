@@ -122,6 +122,22 @@
             return true;
         }
 
+        // Eski anlık görüntüler: haritada olmayan konumlar (eski 8 başlangıç düğümü) ortak başlangıca taşınır;
+        // üst düzey `home` (ortak başlangıç) yoksa eklenir ve oyuncuların `home` alanı buna eşitlenir.
+        function migrateGame(g, mapId) {
+            var gr = graphFor(mapId);
+            var start = gr.start;
+            if (g.home === undefined) {
+                g.home = start;
+                g.order.forEach(function (id) { g.P[id].home = start; });
+            }
+            g.order.forEach(function (id) {
+                var p = g.P[id];
+                if (!Object.prototype.hasOwnProperty.call(gr.byId, p.pos)) p.pos = start;
+                if (!Object.prototype.hasOwnProperty.call(gr.byId, p.home)) p.home = start;
+            });
+        }
+
         function unpack(msg) {
             if (!msg || !isInt(msg.ep, 0, 1e6) || !isInt(msg.rv, 0, 1e9)) return null;
             if (typeof msg.ld !== 'string' || PHASES.indexOf(msg.ph) < 0) return null;
@@ -142,6 +158,7 @@
             // player_disconnect/player_joined'u henüz işlememiş olabilir ve yeni liderin ilk yayını reddedilirdi.
             if (!seats.some(function (x) { return x.i === msg.ld && !x.b; })) return null;
             if (msg.g !== null && !validGame(msg.g)) return null;
+            if (msg.g !== null) migrateGame(msg.g, msg.cf.mp);
             if (!isInt(msg.dl, 0, 3600000)) return null;
             var mn = null;
             if (msg.mn) {

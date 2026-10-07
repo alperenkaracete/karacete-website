@@ -746,6 +746,15 @@
             c.lineWidth = 3;
             c.strokeStyle = map.palette.pathEdge;
             c.stroke();
+            if (n.type === 'start') {          // güvenli bölge halkası
+                c.beginPath();
+                c.arc(n.x, n.y, NODE_R + 9, 0, Math.PI * 2);
+                c.setLineDash([6, 5]);
+                c.strokeStyle = 'rgba(255,255,255,0.8)';
+                c.lineWidth = 3;
+                c.stroke();
+                c.setLineDash([]);
+            }
             if (st.icon) { c.textAlign = 'center'; c.textBaseline = 'middle'; font(c, 17); c.fillText(st.icon, n.x, n.y + 1); }
             if (rangeNodes[n.id]) {
                 c.beginPath(); c.arc(n.x, n.y, NODE_R + 6, 0, Math.PI * 2);
@@ -777,8 +786,9 @@
         });
         Object.keys(byNode).forEach(function (key) {
             var list = byNode[key];
+            var atHome = key === 'n' + g.home;
             list.forEach(function (it, i) {
-                var off = list.length > 1 ? { x: (i - (list.length - 1) / 2) * 22, y: (i % 2) * 8 } : { x: 0, y: 0 };
+                var off = fanOffset(i, list.length, atHome);
                 drawToken(c, g, it.id, it.pos.x + off.x, it.pos.y + off.y - 4, v, t);
             });
         });
@@ -829,6 +839,18 @@
                 c.globalAlpha = 1;
             }
         }
+    }
+
+    // Aynı kutucuktaki piyonların dizilişi: başlangıçta (8 kişiye kadar) çakışmayan daire/yelpaze,
+    // diğer kutucuklarda küçük yan yana. n = o kutucuktaki piyon sayısı, i = sıra.
+    function fanOffset(i, n, atHome) {
+        if (n <= 1) return { x: 0, y: 0 };
+        if (!atHome) return { x: (i - (n - 1) / 2) * 22, y: (i % 2) * 8 };
+        if (n <= 3) return { x: (i - (n - 1) / 2) * 38, y: 0 };
+        // elips: 8 piyon için komşu mesafesi ≥ 36 (piyon çapı 34), alt/üst taşma yok (rx 66, ry 44)
+        var scale = n >= 8 ? 1 : 0.85 + 0.15 * (n - 4) / 4;
+        var a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+        return { x: Math.cos(a) * 66 * scale, y: Math.sin(a) * 44 * scale };
     }
 
     function drawToken(c, g, id, x, y, v, t) {

@@ -22,7 +22,7 @@
                 if (undirected[to].indexOf(n.id) < 0) undirected[to].push(n.id);
             });
         });
-        return { map: map, byId: byId, undirected: undirected, starts: starts, cache: {} };
+        return { map: map, byId: byId, undirected: undirected, starts: starts, start: starts.length ? starts[0] : null, cache: {} };
     }
 
     // Tahtadaki en kısa adım sayısı (yön gözetmeden: menzil için); ulaşılamazsa Infinity
@@ -84,7 +84,11 @@
             if (!n.next.length) errors.push('çıkışsız düğüm ' + n.id);
             n.next.forEach(function (to) { if (!g.byId[to]) errors.push('bilinmeyen hedef ' + n.id + '->' + to); });
         });
-        if (g.starts.length < 8) errors.push('en az 8 başlangıç düğümü gerekir: ' + g.starts.length);
+        // tek ortak başlangıç düğümü, en az 2 çıkış (ilk hamlede yön seçimi)
+        if (g.starts.length !== 1) errors.push('tam 1 başlangıç düğümü gerekir: ' + g.starts.length);
+        g.starts.forEach(function (sid) {
+            if (g.byId[sid].next.length < 2) errors.push('başlangıçtan en az 2 dal çıkmalı: ' + sid);
+        });
         var branching = map.nodes.filter(function (n) { return n.next.length > 1; }).length;
         if (branching < 2) errors.push('en az 2 dallanma gerekir: ' + branching);
         ['treasure', 'weapon', 'event'].forEach(function (t) {

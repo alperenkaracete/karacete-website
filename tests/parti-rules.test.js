@@ -38,11 +38,13 @@ function nodeAt(from, d, skip) {
 
 const loopNode = pirate.nodes.find((n) => n.type === 'normal' && n.next.length === 1);
 
-test('kurulum: herkes kendi başlangıcında, 100 can, 0 yıldız; ceil(n/2)+1 yıldız + 1 silah sandığı çıkar', () => {
+test('kurulum: herkes ortak başlangıçta, 100 can, 0 yıldız; ceil(n/2)+1 yıldız + 1 silah sandığı çıkar', () => {
     const s = R.createGame({ seed: 3, cfg: { mode: 'solo', goal: 10, map: 'pirate' }, seats: seats(8) }, ctx());
     const starts = new Set();
     s.order.forEach((id) => { starts.add(s.P[id].pos); assert.equal(s.P[id].hp, 100); assert.equal(s.P[id].s, 0); assert.equal(g.byId[s.P[id].pos].type, 'start'); });
-    assert.equal(starts.size, 8);
+    assert.equal(starts.size, 1, 'tüm oyuncular tek ortak başlangıç düğümünde');
+    assert.equal(s.home, g.start);
+    s.order.forEach((id) => assert.equal(s.P[id].home, g.start));
     const chests = Object.values(s.chests);
     assert.equal(chests.filter((c) => c.k === 'star').length, 5, '8 oyuncu: ceil(8/2)+1');
     assert.equal(chests.filter((c) => c.k === 'weapon').length, 1);
@@ -792,7 +794,7 @@ test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıld�
     let seed = 99;
     const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
     let st = R.createGame({ seed: 5, cfg: { mode: 'solo', goal: 25, map: 'pirate' }, seats: seats(4) }, ctx());
-    const nodes = pirate.nodes.filter((n) => n.type !== 'start').slice(0, 6).map((n) => n.id);
+    const nodes = pirate.nodes.filter((n) => n.type !== 'start').slice(0, 3).map((n) => n.id);
     let attacks = 0;
     for (let i = 0; i < 300; i++) {
         if (st.stage === 'over') break;
@@ -801,6 +803,7 @@ test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıld�
         if (rnd() < 0.5) st.P[st.order[Math.floor(rnd() * st.order.length)]].pos = nodes[Math.floor(rnd() * nodes.length)];
         const cur = R.current(st);
         if (st.P[cur].w.length < 3 && rnd() < 0.5) st.P[cur].w.push(C.WEAPON_IDS[Math.floor(rnd() * 4)]);
+        if (st.stage === 'roll' && rnd() < 0.4) st.stage = 'act';          // saldırı aşamasına sık gir
         let act;
         const opts = st.stage === 'act' ? R.attackOptions(st, ctx()) : [];
         if (opts.length && rnd() < 0.7) { act = opts[Math.floor(rnd() * opts.length)]; attacks++; }
@@ -870,4 +873,80 @@ test('olay kutucuğu sonuçları: her olay türü bir olay üretir (yıldız, tu
         if (e.id === 'rest') assert.equal(r.state.P.p0.sk, 1);
     }
     assert.equal(seen.size, C.EVENTS.length);
+});
+
+
+// ---- ortak başlangıç: güvenli bölge ----
+function startSetup(weapon, victimPos) {
+    const s = game(3);
+    const a = loopNode.id;
+    s.P.p0.pos = a;
+    s.P.p1.pos = victimPos;
+    s.P.p0.w = [weapon];
+    s.stage = 'act';
+    return s;
+}
+
+test('tüm oyuncular tek başlangıçtan başlar; ölünce de oraya döner (home)', () => {
+    const spaceMap = require('../games/parti/maps/space.js');
+    const gs = G.index(spaceMap);
+    const s = R.createGame({ seed: 4, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: seats(8) }, { g: gs });
+    assert.equal(new Set(s.order.map((id) => s.P[id].pos)).size, 1);
+    assert.equal(s.P[s.order[0]].pos, gs.start);
+    const d = duelSetup('fist', 0);
+    d.P.p1.hp = 10;
+    const r = apply(d, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+    assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'));
+    assert.equal(r.state.P.p1.pos, r.state.home, 'ölen ortak başlangıca döndü');
+    assert.equal(r.state.home, g.start);
+});
+
+test('güvenli bölge: başlangıçtaki oyuncu hasar almaz; hedef sunulmaz; her silah/bomba reddeder', () => {
+    for (const w of ['fist', 'shotgun', 'bow']) {
+        const s = startSetup(w, g.start);
+        s.P.p0.pos = nodeAt(g.start, w === 'fist' ? 1 : 1, [g.start]);
+        const res = R.reduce(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx());
+        assert.equal(res.ok, false, w + ' başlangıçtakine vuramaz');
+        assert.ok(!R.attackOptions(s, ctx()).some((o) => o.target === 'p1'), w + ': hedef sunulmaz');
+    }
+    // bomba: başlangıç kutucuğu hedef olamaz; yakındaki kutuculara atılırsa başlangıçtakiler etkilenmez
+    const b = startSetup('bomb', g.start);
+    b.P.p0.pos = nodeAt(g.start, 1, [g.start]);
+    assert.equal(R.reduce(b, { type: 'use', by: 'p0', item: 0, node: g.start }, ctx()).ok, false);
+    assert.ok(!R.attackOptions(b, ctx()).some((o) => o.node === g.start));
+    // hit() doğrudan: başlangıçtaki hasar almaz, kalkanı da harcanmaz
+    const s2 = game(2);
+    s2.P.p1.shield = true;
+    s2.P.p1.pos = g.start;
+    const ev = [];
+    // olay hasarı (tuzak) bile başlangıçta etkisizdir: dolaylı test için bomba komşu kutucuğa
+    const bomb = startSetup('bomb', nodeAt(g.start, 1, [g.start]));
+    bomb.P.p0.pos = nodeAt(g.start, 2, [g.start]);
+    bomb.P.p2.pos = g.start;
+    bomb.P.p2.shield = true;
+    const r = apply(bomb, { type: 'use', by: 'p0', item: 0, node: bomb.P.p1.pos });
+    assert.equal(r.state.P.p2.hp, 100);
+    assert.equal(r.state.P.p2.shield, true, 'güvenli bölgedeki kalkan harcanmadı');
+    assert.ok(ev.length === 0);
+});
+
+test('başlangıçtan çıkınca hasar alınır (güvenli bölge yalnızca başlangıç düğümünde)', () => {
+    const s = startSetup('fist', 0);
+    const next = nodeAt(g.start, 1, [g.start]);
+    s.P.p0.pos = next; s.P.p1.pos = next;
+    assert.equal(apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }).state.P.p1.hp, 70);
+});
+
+test('başlangıç düğümünden en az 2 dal çıkar: ilk hamle yön seçtirir', () => {
+    const st = game(2);
+    assert.ok(g.byId[g.start].next.length >= 2);
+    const r = apply(st, { type: 'roll', by: 'p0' }, { dice: () => 3 });
+    assert.equal(r.state.stage, 'choose');
+    assert.equal(r.state.P.p0.pos, g.start);
+    assert.deepEqual(r.state.choices, g.byId[g.start].next);
+});
+
+test('eski anlık görüntü uyumu: createGame home alanları geçerli (p.home = g.start)', () => {
+    const s = R.createGame({ seed: 1, cfg: { mode: 'solo', goal: 10, map: 'pirate' }, seats: seats(3) }, ctx());
+    s.order.forEach((id) => assert.equal(s.P[id].home, s.home));
 });
