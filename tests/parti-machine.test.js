@@ -272,12 +272,12 @@ test('süre dolunca otomatik: zar atılır; 20 sn sonra yön/seçim/tur sonu oto
     const r = started(2);
     const cur = curId(r);
     const rd0 = r.state('A').rv;
-    r.advance(C.STEP_MS - 1000);
+    r.advance(C.STAGE_MS.roll - 1000);
     assert.equal(r.state('A').rv, rd0, 'süre dolmadı');
     r.advance(2000);
     assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === cur), 'zar otomatik atıldı');
     // sıradaki evre ne olursa olsun süre dolunca ilerler ve turu devralan oyuncuya geçer
-    for (let i = 0; i < 6 && curId(r) === cur; i++) r.advance(C.STEP_MS + 100);
+    for (let i = 0; i < 6 && curId(r) === cur; i++) r.advance(C.STAGE_MS.roll + 100);
     assert.notEqual(curId(r), cur);
 });
 
@@ -337,10 +337,11 @@ test('kopma: oyun kopan oyuncunun sırasında bekler, süre sayılır; dönünce
     const v = r.view(viewer);
     assert.ok(v.wait && v.wait.id === dcId, 'bekleme bildirimi');
     assert.ok(v.wait.left > 170000 && v.wait.left <= 180000);
-    assert.equal(v.paused, true);
-    r.advance(60000);
-    assert.equal(curId(r), dcId, 'oyun bekliyor, tur geçmedi');
-    assert.ok(r.view('A').wait.left < 125000);
+    assert.equal(v.wait.bot, false);
+    assert.ok(v.wait.botIn > 25000 && v.wait.botIn <= C.DISCONNECT_BOT_MS, 'bot devri sayacı: ' + v.wait.botIn);
+    r.advance(20000);
+    assert.equal(curId(r), dcId, '30 sn dolmadan oyun bekliyor, tur geçmedi');
+    assert.ok(r.view('A').wait.left < 165000, 'koltuk süresi akıyor');
     // geri dönüş: aynı kimlikle; tam durum gelir, sıra yine onda
     r.rejoin(dcId);
     r.flush();
@@ -348,8 +349,8 @@ test('kopma: oyun kopan oyuncunun sırasında bekler, süre sayılır; dönünce
     assert.equal(r.view(dcId).mode, 'play');
     assert.equal(curId(r), dcId);
     assert.equal(r.view('A').wait, null);
-    assert.equal(r.view('A').paused, false);
     assert.equal(r.view(dcId).game.order.length, 3);
+    assert.equal(r.state('A').bt, null, 'bot devri yok');
 });
 
 test('kopma: 3 dk dolunca tur otomatik geçilir ve koltuk boşalır', () => {
@@ -375,7 +376,7 @@ test('kopma: lider "turu geç" ve "at" seçebilir', () => {
     assert.notEqual(victim, 'A');
     r.leave(victim);
     r.flush();
-    assert.equal(r.view('A').paused, true);
+    assert.ok(r.view('A').wait && r.view('A').wait.id === victim);
     r.m('A').dispatch({ type: 'skipturn' });
     r.flush();
     assert.notEqual(curId(r), victim);
@@ -607,7 +608,7 @@ test('zaman: tick seyrek (250 ms ya da 1 sn) çağrılsa da süre dolunca lider 
         r.m('A').dispatch({ type: 'start' });
         r.flush();
         const rv0 = r.state('A').rv;
-        r.advance(C.STEP_MS * 3, step);
+        r.advance(C.STAGE_MS.roll * 3, step);
         assert.ok(r.state('A').rv > rv0 + 2, 'adım ' + step + ': oyun ilerledi');
         assert.ok(r.state('A').fx.length > 0 || r.state('A').lg.length > 1);
     }
@@ -722,4 +723,172 @@ test('yeniden oyna: koltuk sayısı 8\'i geçmez; atılan izleyici koltuk almaz'
     assert.equal(seats.length, 8, '8 sınırı');
     assert.ok(!seats.some((s) => s.i === 'S0'), 'atılan koltuk almaz');
     assert.ok(seats.some((s) => s.b), 'bot korunur');
+});
+
+
+// ---- madde 8: aşama süreleri, kopan oyuncu için bot, AFK ----
+function nonLeaderTurn(r) {
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    return curId(r);
+}
+
+test('aşama süreleri: zar 15 sn, yön 8 sn, eylem 15 sn', () => {
+    assert.deepEqual(C.STAGE_MS, { roll: 15000, choose: 8000, act: 15000, swap: 15000 });
+    const r = started(2);
+    const dl = () => r.view('A').dlLeft;
+    assert.ok(dl() > 14000 && dl() <= 15000, 'zar ' + dl());
+    // yön aşaması: dallanmada
+    const M = r.state('A');
+    const cur = curId(r);
+    const g = G.index(maps.pirate);
+    const branch = maps.pirate.nodes.find((n) => n.next.length > 1);
+    const pre = maps.pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === branch.id);
+    M.g.P[cur].pos = pre.id;
+    r.m(cur).dispatch({ type: 'roll' });
+    r.flush();
+    for (let i = 0; i < 6 && r.state('A').g.stage === 'roll'; i++) r.m(curId(r)).dispatch({ type: 'roll' });
+    if (r.state('A').g.stage === 'choose') assert.ok(dl() > 7000 && dl() <= 8000, 'yön ' + dl());
+});
+
+test('yön aşaması süre dolunca (8 sn) rastgele yön seçilir', () => {
+    const r = started(2);
+    const M = r.state('A');
+    const cur = curId(r);
+    const branch = maps.pirate.nodes.find((n) => n.next.length > 1);
+    const pre = maps.pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === branch.id);
+    M.g.P[cur].pos = pre.id;
+    // zar: dallanma sonrası adım kalsın diye birkaç deneme yerine doğrudan 'choose' kur
+    M.g.stage = 'choose'; M.g.choices = branch.next.slice(); M.g.steps = 3; M.g.P[cur].pos = branch.id;
+    r.m('A').dispatch({ type: 'cfg' });         // yayın tetikleme gerekmez; süreyi 8 sn'ye çek
+    M.dlAt = r.clock + C.STAGE_MS.choose;
+    r.advance(C.STAGE_MS.choose + 600);
+    assert.notEqual(r.state('A').g.stage, 'choose', 'süre dolunca yön otomatik seçildi');
+});
+
+test('kopan oyuncunun sırası: 30 sn sonra bot oynar, koltuk 3 dk saklı; bekleme kartında "Bot oynuyor"', () => {
+    const r = started(3);
+    const victim = nonLeaderTurn(r);
+    assert.notEqual(victim, 'A');
+    r.leave(victim);
+    r.flush();
+    r.advance(C.DISCONNECT_BOT_MS - 2000);
+    assert.equal(curId(r), victim, '30 sn dolmadı');
+    assert.equal(r.view('A').wait.bot, false);
+    r.advance(3000);                                     // bot devraldı
+    assert.ok(r.state('A').bt === victim || curId(r) !== victim, 'bot devraldı ya da tur geçti');
+    let sawBotCard = false;
+    for (let i = 0; i < 40 && curId(r) === victim; i++) {
+        const w = r.view('A').wait;
+        if (w && w.bot) sawBotCard = true;
+        r.advance(300);
+    }
+    assert.ok(sawBotCard || curId(r) !== victim, 'kartta "Bot oynuyor" durumu görüldü');
+    assert.notEqual(curId(r), victim, 'bot turu oynayıp bitirdi');
+    assert.ok(r.state('A').S.some((s) => s.i === victim), 'koltuk hâlâ saklı');
+    assert.ok(r.state('A').g.order.includes(victim));
+});
+
+test('kopan oyuncu bot oynarken dönerse turu geri alır', () => {
+    const r = started(3);
+    const victim = nonLeaderTurn(r);
+    r.leave(victim); r.flush();
+    r.advance(C.DISCONNECT_BOT_MS + 400);
+    assert.equal(r.state('A').bt, victim);
+    r.rejoin(victim); r.flush();
+    r.advance(200);
+    assert.equal(r.state('A').bt, null, 'bot devri bitti');
+    if (curId(r) === victim) {
+        const dl = r.view('A').dlLeft;
+        assert.ok(dl > 7000, 'normal aşama süresi döndü: ' + dl);
+    }
+});
+
+const PG = G.index(maps.pirate);
+
+// Dünyayı bir adım ilerlet: `idle` oyuncu hiç eylem yapmaz, diğerleri (insan) otomatik oynar, minioyun tamamlanır.
+async function stepWorld(r, idle) {
+    const g = r.state('A').g;
+    if (g.stage === 'mini') {
+        await r.settle();
+        r.advance(C.MINI_HOLD_MS + 300, 300);
+        return;
+    }
+    const cur = R.current(g);
+    if (cur !== idle) {
+        const act = R.autoAction(g, { g: PG });
+        if (act) r.m(cur).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+        r.flush();
+    }
+    r.advance(cur === idle ? 1000 : 200, 200);
+}
+
+test('AFK: üst üste 2 turda hiç eylem yapmayan insanı bot devralır; "Ben buradayım" ile geri döner (bot 3 sn bekler)', async () => {
+    const r = room();
+    r.join('A', 'A'); r.join('B', 'B'); r.join('C', 'C');
+    r.m('A').dispatch({ type: 'start' }); r.flush();
+    const target = 'B';
+    const turnsSeen = new Set();
+    let guard = 0;
+    while (!r.state('A').g.P[target].afk && guard++ < 3000) {
+        const g = r.state('A').g;
+        if (g.stage !== 'mini' && R.current(g) === target) turnsSeen.add(g.rd);
+        await stepWorld(r, target);
+    }
+    assert.ok(r.state('A').g.P[target].afk, 'B AFK oldu');
+    assert.equal(turnsSeen.size, C.AFK_TURNS, 'tam ' + C.AFK_TURNS + ' AFK turdan sonra');
+    assert.ok(r.view('A').log.some((l) => /bot devraldı/.test(l)));
+    assert.equal(r.view('B').afk, true, 'B kendi ekranında "Ben buradayım" görür');
+    assert.equal(r.view('A').afk, false);
+    // sıra B'ye gelince bot önce 3 sn bekler
+    guard = 0;
+    while ((r.state('A').g.stage === 'mini' || R.current(r.state('A').g) !== target) && guard++ < 3000) await stepWorld(r, target);
+    assert.equal(R.current(r.state('A').g), target);
+    r.advance(C.AFK_BOT_DELAY_MS - 1200, 200);
+    assert.notEqual(r.state('A').bt, target, '3 sn dolmadan bot oynamaz');
+    r.m(target).dispatch({ type: 'back' });
+    r.flush();
+    assert.equal(r.state('A').g.P[target].afk, false);
+    assert.equal(r.state('A').g.P[target].afkc, 0);
+    r.advance(C.AFK_BOT_DELAY_MS + 1000, 200);
+    assert.notEqual(r.state('A').bt, target, 'bot devralmadı');
+    assert.equal(R.current(r.state('A').g), target, 'sıra hâlâ insanda');
+    assert.ok(r.view('A').dlLeft > 8000, 'normal aşama süresi geri geldi: ' + r.view('A').dlLeft);
+});
+
+test('AFK: bot devralmışken insanın herhangi geçerli eylemi bayrağı kaldırır ve botu durdurur', async () => {
+    const r = room();
+    r.join('A', 'A'); r.join('B', 'B');
+    r.m('A').dispatch({ type: 'start' }); r.flush();
+    const target = 'B';
+    let guard = 0;
+    // bayrak, B'nin turu başlamadan önce konsun (gerçek akışta bayrak önceki turların sonunda konur)
+    while (R.current(r.state('A').g) === target && guard++ < 50) {
+        r.m(target).dispatch(R.autoAction(r.state('A').g, { g: PG })); r.flush();
+    }
+    r.state('A').g.P[target].afk = true;
+    r.state('A').g.P[target].afkc = 2;
+    guard = 0;
+    while (R.current(r.state('A').g) !== target && guard++ < 500) await stepWorld(r, target);
+    r.advance(C.AFK_BOT_DELAY_MS + 300, 100);       // bot devraldı ve zarı attı
+    assert.equal(r.state('A').bt, target);
+    assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === target));
+    const g = r.state('A').g;
+    // bot zar attıktan sonra kalan aşamayı insan oynar
+    const act = R.autoAction(g, { g: PG });
+    r.m(target).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+    r.flush();
+    assert.equal(r.state('A').g.P[target].afk, false, 'eylem AFK bayrağını kaldırdı');
+    assert.equal(r.state('A').bt, null);
+});
+
+test('AFK: eylem yapan oyuncu AFK sayılmaz; sayaç sıfırlanır', () => {
+    const r = started(2);
+    r.state('A').g.P.B.afkc = 1;
+    let guard = 0;
+    while (curId(r) !== 'B' && guard++ < 100) { r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: PG })); r.flush(); }
+    r.m('B').dispatch({ type: 'roll' });
+    r.flush();
+    assert.equal(r.state('A').g.P.B.afkc, 0);
+    assert.equal(r.view('B').afk, false);
 });

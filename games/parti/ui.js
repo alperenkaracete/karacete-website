@@ -131,7 +131,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
         return parts.join(':');
     }
 
@@ -167,6 +167,7 @@
         else if (v.mode === 'spectator') cards.push(toastCard('👀 İzleyicisin: oyun başlamış, eylem yapamazsın.', [btn('Lobiye Dön', '', function () { gctx.leave(); })]));
         if (v.offline) cards.push(toastCard('📡 Bağlantı koptu, yeniden bağlanılıyor…'));
         if (v.wait) cards.push(waitCard(v));
+        if (v.afk && v.mode === 'play') cards.push(afkCard());
         if (v.game && v.game.stage === 'mini' && v.mini) cards.push(miniCard(v));
         if (v.mode === 'over' && v.game) cards.push(overCard(v));
         if (v.mode !== 'lobby' && v.game && v.game.stage === 'swap' && v.cur === v.me.id) cards.push(swapCard(v));
@@ -193,8 +194,12 @@
         c.appendChild(el('strong', '', '📵 ' + v.wait.name + ' bağlantısı koptu'));
         var t = el('span', 'pt-hint');
         t.dataset.wait = v.wait.id;
-        t.textContent = 'Kalan süre ' + fmtTime(v.wait.left);
-        timerEls.push({ node: t, fn: function (vv) { return vv.wait ? 'Kalan süre ' + fmtTime(vv.wait.left) : ''; } });
+        function waitText(vv) {
+            if (!vv.wait) return '';
+            return (vv.wait.bot ? '🤖 Bot oynuyor' : '🤖 Bot ' + fmtTime(vv.wait.botIn) + ' sonra oynayacak') + ' · koltuk ' + fmtTime(vv.wait.left) + ' saklı';
+        }
+        t.textContent = waitText(v);
+        timerEls.push({ node: t, fn: waitText });
         c.appendChild(t);
         if (v.isLeader) {
             var row = el('div', 'pt-row');
@@ -205,6 +210,14 @@
         } else {
             c.appendChild(el('span', 'pt-hint', 'Lider bekleyip beklemeyeceğine karar verir.'));
         }
+        return c;
+    }
+
+    // AFK oyuncuya: bot devraldı, geri dönmek için büyük düğme (her eylem de aynı işi görür)
+    function afkCard() {
+        var c = el('div', 'pt-card pt-card-small pt-afk');
+        c.appendChild(el('strong', '', '😴 Bot senin yerine oynuyor'));
+        c.appendChild(btn('🙋 Ben buradayım', 'primary big', function () { act({ type: 'back' }); }));
         return c;
     }
 
@@ -424,6 +437,7 @@
             var status = '';
             if (seat && !seat.b && !seat.c) status += '📵';
             if (p.sk > 0) status += '💤';
+            if (p.afk) status += '😴';
             if (status) cardEl.appendChild(el('span', 'pt-pstatus', status));
             grid.appendChild(cardEl);
         });

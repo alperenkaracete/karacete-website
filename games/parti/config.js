@@ -35,7 +35,10 @@
         INVENTORY: 3,
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
-        STEP_MS: 20000,              // her adım için süre
+        STAGE_MS: { roll: 15000, choose: 8000, act: 15000, swap: 15000 },   // aşama başına süre
+        DISCONNECT_BOT_MS: 30000,    // sırası gelen kopmuş oyuncu için bot devralmadan önce bekleme
+        AFK_BOT_DELAY_MS: 3000,      // AFK oyuncunun turunda bot oynamadan önce bekleme (insan "Ben buradayım" diyebilsin)
+        AFK_TURNS: 2,                // üst üste bu kadar AFK turdan sonra bot devralır
         DISCONNECT_MS: 180000,       // kopan oyuncuyu bekleme
         BOT_DELAY_MS: 900,           // bot eylemleri arası (görünürlük)
         MINI_HOLD_MS: 5000,          // minioyun sonucu ekranda kalma

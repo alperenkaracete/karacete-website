@@ -1136,3 +1136,6 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-turn { font-size: 18px; padding: 1px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.12); }
 .pt-turn.now { background: #ffb400; box-shadow: 0 0 0 2px #ffd24a; }
 .pt-turn.done { opacity: 0.45; }
+
+.pt-afk { border: 2px solid #ffb400; }
+.pt-afk .pt-btn { width: 100%; }
