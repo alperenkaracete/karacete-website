@@ -509,11 +509,30 @@
         var rng = Rng(state, ctx);
         var humans = state.order.filter(function (id) { return !state.P[id].bot; });
         var seed = Math.floor(rng.f() * 4294967296) >>> 0;
-        if (humans.length >= 2 && rng.f() < 0.3) {
-            var pair = rng.shuffle(humans).slice(0, 2);
-            return { type: 'duel', game: C.DUEL_GAMES[seed % C.DUEL_GAMES.length], players: pair, seed: seed };
+        if (humans.length >= 2) {
+            // ctx.mini (test bayrağı ?mini=, yalnızca lider tarayıcısında okunur): her tur düello. rng çekimi bayraksızla
+            // aynı sırada kalır, bayrak yokken davranış (%30) değişmez.
+            var roll = rng.f();
+            if (ctx.mini || roll < 0.3) {
+                var pair = rng.shuffle(humans).slice(0, 2);
+                var game = ctx.mini && ctx.mini.game ? ctx.mini.game : C.DUEL_GAMES[seed % C.DUEL_GAMES.length];
+                return { type: 'duel', game: game, players: pair, seed: seed };
+            }
         }
         return { type: 'ffa', players: state.order.slice(), seed: seed };
+    }
+
+    // Test bayrağı: adres satırındaki ?mini=duel (rastgele düello oyunu) ya da ?mini=duel:<oyun> (DUEL_GAMES'ten).
+    // -> null (bayrak yok/geçersiz) | { game: null | oyun kimliği }
+    function parseMiniFlag(search) {
+        var m = /[?&]mini=([^&#]*)/.exec(search || '');
+        if (!m) return null;
+        var v = m[1];
+        try { v = decodeURIComponent(v); } catch (e) { return null; }
+        if (v === 'duel') return { game: null };
+        var g = /^duel:(.+)$/.exec(v);
+        if (g && C.DUEL_GAMES.indexOf(g[1]) >= 0) return { game: g[1] };
+        return null;
     }
 
     // Eşit dereceli sıralamadan derece: [[a,b],[c]] -> a:1, b:1, c:3
@@ -537,7 +556,16 @@
         var ranks = ranksOf(result && result.ranking ? result.ranking : []);
         state.order.forEach(function (id) {
             var rank = ranks[id];
-            var reward = rank && C.REWARDS[rank];
+            if (!rank) {
+                // Sıralamada yok (düelloda olmayan): teselli iyileşmesi
+                var comfort = Math.min(C.MAX_HP, state.P[id].hp + C.MINI_CONSOLATION.heal) - state.P[id].hp;
+                if (comfort > 0) {
+                    state.P[id].hp += comfort;
+                    evts.push({ t: 'heal', id: id, n: comfort });
+                }
+                return;
+            }
+            var reward = C.REWARDS[rank];
             if (!reward) return;
             evts.push({ t: 'reward', id: id, rank: rank });
             if (reward.stars) addStars(state, id, reward.stars, evts, 'mini');
@@ -630,7 +658,7 @@
 
     return {
         createGame: createGame, reduce: reduce, autoAction: autoAction, botAction: botAction, attackOptions: attackOptions,
-        minigameSpec: minigameSpec, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
+        minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
         standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
         checkWin: checkWin, clone: clone, nextRand: nextRand
     };

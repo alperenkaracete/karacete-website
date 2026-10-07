@@ -168,7 +168,8 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
   can dolar, envanter korunur; tur atlatılmaz.
 - **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
 - **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.;
-  düelloda olmayanlar sıralamada yer almaz, ödül almaz; beraberlikte ikisi de 1.).
+  beraberlikte ikisi de 1.). **Düelloda olmayanlar** (sıralamada yer almayanlar) ödül değil **teselli** alır: +25 ❤️ (üst sınır 100,
+  `MINI_CONSOLATION`); sıralamadakiler teselli almaz, 3. derece ödülüyle çakışmaz (düello sıralamasında 3. derece yoktur).
   Envanter doluysa silah ödülü kaybolur.
 - **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
   ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
@@ -224,10 +225,17 @@ startMinigame({
 - **Ağ:** `{ type:'pt_mg', mg: <ep:tohum:oyun>, from, m }`. `pt_mg` durum **değildir** (`pt_state`'e girmez, `rv` artmaz). Makine yalnızca
   güncel oturumun `mg` jetonunu taşıyan ve gönderen `players` içinde olan (ya da lider olan: `reset`/`catchup`) mesajları iletir.
   Gönderen kimliği mesajın içindedir (backend eklemez); arkadaş grubu için güvenilir kabul edilir.
-- **Düello (XOX, Dörtlü Bağla):** `mini/duel-adapter.js` oyunun kendi `init/onMessage/destroy`'unu iki oyunculu sahte `ctx` ile çalıştırır
+- **Düello (XOX, Dörtlü Bağla, Kedi - Köpek):** `mini/duel-adapter.js` oyunun kendi `init/onMessage/destroy`'unu iki oyunculu sahte `ctx` ile çalıştırır
   (`players` = ikili, `isHost()` = ilk oyuncu, `send` = pt_mg, `leave` boş); `core/duel*.js` ve `*-rules.js` değişmez. Rövanş kapalıdır
   (düğmeler gizli, `*_rematch` mesajları gitmez/iletilmez). Gelen oyun mesajı yalnız düellodaki rakipten iletilir. Düelloda olmayanlar
   "A ve B XOX oynuyor" + kalan süre kartını görür. Sonucu **lider** `mini/duel-referee.js` ile hesaplar (oyuncular da olsa izleyici de olsa).
+- **Kedi - Köpek atış kuralı:** oyuncu başına en çok **3 atış**. Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
+  gibi güçlendirmeli atışlar dahil — hasar verirler); `cd_heal` (can iksiri) atış **sayılmaz** (kural modülünde başka eylem türü yoktur).
+  Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 3 atışı bitince ya da 90 sn dolunca **kalan cana**
+  göre sıralanır; can eşitse beraberlik `[[a, b]]`. Sınır hakemdedir (`catdog-rules.js` değişmez; `duel-adapter.js` `GAMES.catdog` +
+  `partial`): kural modülü sınırı bilmediği için oyunun kendi arayüzü bitmez; dolunca oyuncuların ekranına "Atışlar bitti" katmanı biner
+  (rövanş/lobiye dön zaten gizli), sonucu hakem belirler — animasyon (rAF) arka plan sekmesinde dursa da sonuç etkilenmez. Kenar durum:
+  heal sırayı tüketir; 3 atışını bitiren oyuncunun sırası rakip bitirmeden gelebilir, bu fazladan atışlar uygulanır ama sayılmaz.
 - **Süre/takılma:** 90 sn dolunca bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
   Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer
   (lider kaçan rakip hamlelerini `catchup` ile yeniden gönderir). Sayfası yenilenen oyuncu için durum kurtarılamaz: düello iki tarafta
@@ -236,12 +244,18 @@ startMinigame({
   sonucu o oturumdan alır.
 - **İptal/temizlik:** `signal.abort()` oyunu yıkar (`destroy`), kökü temizler, Promise `{ ranking: null, aborted: true }` ile biter.
 
+**Test bayrağı `?mini=`:** adreste `?mini=duel` (rastgele düello oyunu) ya da `?mini=duel:xox` / `duel:connect4` / `duel:catdog` varsa ve
+odada en az 2 insan varsa her tur sonunda düello seçilir (geçersiz değer yok sayılır). Minioyunu **lider** seçtiği için bayrak **lider
+tarayıcısında** okunur (diğer sekmelerde etkisizdir); `PartiRules.parseMiniFlag` / `minigameSpec(state, { mini })`. Bayrak yokken davranış
+(%30 ihtimal, tohumdan oyun) ve rng çekim sırası aynıdır.
+
 **Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı):
 
 1. Oyun `Games.register` ile kayıtlı olsun ve kural modülü (`*-rules.js`) `initial/parse/toMessage/validate/apply/result` arayüzünü sağlasın.
 2. `games/parti/mini/duel-adapter.js` içindeki `GAMES`'a satır ekle: `{ prefix: <Duel öneki>, title: <Türkçe ad>, rules: ... }`.
 3. `games/parti/ui.js` içindeki `DUEL_TITLES`'a ad ekle ve `games/parti/config.js` `DUEL_GAMES` listesine oyun kimliğini yaz
-   (`rules.minigameSpec` buradan, tohumla deterministik seçer; botlar düelloya seçilmez).
+   (`rules.minigameSpec` buradan, tohumla deterministik seçer; botlar düelloya seçilmez). Kedi - Köpek gibi sınırlı oyunlar için
+   `GAMES` girdisine `limit: { shots, counts(move) }` ekle: sınır dolunca hakem biter, "Atışlar bitti" katmanı çıkar.
 4. Süre sınırı gerekiyorsa (ör. atış sayısı) kural modülüne isteğe bağlı `partial(board, order) -> ranking | null` ekle: süre dolunca hakem bunu kullanır.
 5. `tests/parti-duel-flow.test.js` içindeki `RULES`'a ekleyip akış testlerini çalıştır; Tarayıcıda: 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
@@ -352,7 +366,7 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   uzun süre arka planda kalınca sayfayı tamamen dondurabilir; bu durumda lider olan oyuncunun cihazı oyunu durdurur (diğerlerinde
   "lider sessiz" gibi görünür, kopma/lider devri süreci devreye girmez çünkü bağlantı hâlâ açıktır). Test ortamında yalnızca
   `requestAnimationFrame` durdurma + `document.hidden` taklidi doğrulanabildi.
-- Parti: düello minioyunu şimdilik XOX ve Dörtlü Bağla (Kedi - Köpek ayrı çalışmada); düelloda olmayanlar ödül almaz; düello sırasında
+- Parti: düello minioyunu XOX, Dörtlü Bağla ve Kedi - Köpek; düello sırasında
   lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
   (oyun dosyaları modül düzeyinde tek örnek tutar): iki oyuncu için iki ayrı sekme gerekir. Sürerken gelen yeni oyuncu yalnızca izleyici
   olur; kopmuş oyuncunun koltuğu 3 dk sonra düşer.

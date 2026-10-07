@@ -21,6 +21,16 @@
 
     var GLOBAL = typeof self !== 'undefined' ? self : this;
 
+    // Kedi - Köpek: kural modülü atış/süre sınırı bilmez (ve değişmez); sınır hakemde, kalan can sıralaması burada.
+    // Atış = kind 'shot' (güçlendirmeli atış dahil); 'heal' atış sayılmaz. Eşit canda null -> hakem beraberlik verir.
+    function catdogPartial(board, order) {
+        var a = board.players[0].hp;
+        var b = board.players[1].hp;
+        if (a === b) return null;
+        var w = a > b ? 0 : 1;
+        return [[order[w]], [order[1 - w]]];
+    }
+
     // Hazır düello oyunları. Yeni oyun: buraya satır ekle (README).
     var GAMES = {
         xox: {
@@ -30,6 +40,15 @@
         connect4: {
             prefix: 'c4', title: 'Dörtlü Bağla',
             rules: function () { return isNode ? require('../../connect4-rules.js') : GLOBAL.Connect4Rules; }
+        }
+    };
+
+    GAMES.catdog = {
+        prefix: 'cd', title: 'Kedi - Köpek',
+        limit: { shots: 3, counts: function (move) { return move.kind === 'shot'; } },
+        rules: function () {
+            var r = isNode ? require('../../catdog-rules.js') : GLOBAL.CatDogRules;
+            return Object.assign({}, r, { partial: catdogPartial });
         }
     };
 
@@ -52,6 +71,11 @@
             left: leftMs === undefined || leftMs === null ? null : Math.max(0, leftMs),
             leftText: leftMs === undefined || leftMs === null ? '' : 'Kalan süre ' + fmtTime(leftMs)
         };
+    }
+
+    // "Atışlar bitti" katmanı metni (saf)
+    function limitInfo() {
+        return { title: 'Atışlar bitti', hint: 'Sonuç hesaplanıyor…' };
     }
 
     function defaultTimers() {
@@ -80,7 +104,11 @@
         return new Promise(function (resolve, reject) {
             var resolved = false;
             var torn = false;
-            var referee = spec.isLeader ? Referee.create({ prefix: info.prefix, rules: rules, players: players }) : null;
+            // Hakem: lider her zaman (sonucu o belirler); atış sınırı olan oyunlarda oyuncular da (yalnız "Atışlar bitti"
+            // katmanı için; sonucu çözmez, zamanlayıcı kurmaz).
+            var referee = (spec.isLeader || (info.limit && isPlayer))
+                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: showLimit })
+                : null;
             var offNet = null;
             var deadlineTimer = null;
             var tickTimer = null;
@@ -97,8 +125,24 @@
                 resolve({ ranking: ranking, reason: reason });
             }
 
+            // Atış sınırı doldu: oyunun kendi arayüzü bitmez; üstüne katman biner, sonucu hakem (lider) belirler.
+            function showLimit() {
+                if (!isPlayer || !spec.root || torn) return;
+                var doc = spec.root.ownerDocument;
+                var info2 = limitInfo();
+                var layer = doc.createElement('div');
+                layer.className = 'pt-duel-limit';
+                var t1 = doc.createElement('strong');
+                var t2 = doc.createElement('span');
+                t1.textContent = info2.title;
+                t2.textContent = info2.hint;
+                layer.appendChild(t1);
+                layer.appendChild(t2);
+                spec.root.appendChild(layer);
+            }
+
             function check() {
-                if (!referee || resolved) return;
+                if (!referee || !spec.isLeader || resolved) return;
                 var out = referee.outcome();
                 if (out) finish(out.ranking, out.reason);
             }
@@ -174,6 +218,7 @@
                     if (!isPlayer || from !== spec.leader || m.to !== meId || !Array.isArray(m.msgs) || !def) return;
                     m.msgs.forEach(function (e) {
                         if (e && e.f === oppId && e.m && typeof e.m.type === 'string' && !/_rematch$/.test(e.m.type)) {
+                            if (referee) referee.feed(oppId, e.m);
                             oppSeen++;
                             def.onMessage(e.m);
                         }
@@ -208,7 +253,7 @@
             offNet = net.on(onNet);
             if (spec.root && spec.root.classList) spec.root.classList.add('pt-duel');
 
-            if (referee && spec.deadlineMs > 0) {
+            if (referee && spec.isLeader && spec.deadlineMs > 0) {
                 deadlineTimer = timers.set(function () {
                     deadlineTimer = null;
                     finish(referee.timeout(), 'timeout');
@@ -241,5 +286,5 @@
         });
     }
 
-    return { run: run, supports: supports, spectatorInfo: spectatorInfo, GAMES: GAMES, fmtTime: fmtTime };
+    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, GAMES: GAMES, fmtTime: fmtTime };
 });

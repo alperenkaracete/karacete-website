@@ -408,6 +408,33 @@ test('ödüller: eşit 1.ler ikisi de 1. ödülünü alır, sonraki 3. sayılır
     assert.equal(r.state.P.p2.hp, 65);
 });
 
+test('teselli: düelloda olmayanlar +25 can alır (üst sınır 100); düellocular almaz; 3. derece ödülüyle çakışmaz', () => {
+    const s = miniState(5);
+    s.P.p0.hp = 30; s.P.p1.hp = 30; s.P.p2.hp = 90; s.P.p3.hp = 100; s.P.p4.hp = 10;
+    const r = R.applyMinigame(s, { ranking: [['p0'], ['p1']] }, ctx());     // düello: p0 1., p1 2.
+    assert.equal(r.state.P.p0.hp, 30, 'kazanan teselli almaz');
+    assert.equal(r.state.P.p1.hp, 30, 'kaybeden teselli almaz');
+    assert.equal(r.state.P.p2.hp, 100, 'üst sınır 100');
+    assert.equal(r.state.P.p3.hp, 100);
+    assert.equal(r.state.P.p4.hp, 35);
+    const heals = r.events.filter((e) => e.t === 'heal');
+    assert.deepEqual(heals.map((e) => [e.id, e.n]).sort(), [['p2', 10], ['p4', 25]], 'tam canlıya olay yok');
+    // düello sıralamasında 3. derece yok: kimse hem 3. ödülü hem tesellisini almaz
+    assert.deepEqual(r.events.filter((e) => e.t === 'reward').map((e) => e.rank).sort(), [1, 2]);
+});
+
+test('teselli: ffa\'da herkes sıralıdır, teselli yok; beraberlikte ([[a,b]]) diğerleri teselli alır', () => {
+    const s = miniState(4);
+    s.P.p0.hp = 50; s.P.p1.hp = 50; s.P.p2.hp = 50; s.P.p3.hp = 50;
+    const r = R.applyMinigame(s, { ranking: [['p0'], ['p1'], ['p2'], ['p3']] }, ctx());
+    assert.equal(r.state.P.p3.hp, 50, 'ffa 4.: ödül yok, teselli yok');
+    assert.equal(r.state.P.p2.hp, 75, 'ffa 3.: yalnız 3. derece ödülü (+25), çift değil');
+    const d = R.applyMinigame(s, { ranking: [['p0', 'p1']] }, ctx());
+    assert.equal(d.state.P.p2.hp, 75);
+    assert.equal(d.state.P.p3.hp, 75);
+    assert.equal(d.state.P.p0.hp, 50);
+});
+
 test('ödüller: düelloda kazanan 1., kaybeden 2. ödülünü alır; katılmayanlar bir şey almaz', () => {
     const s = miniState(4);
     const r = R.applyMinigame(s, { ranking: [['p2'], ['p3']] }, ctx());

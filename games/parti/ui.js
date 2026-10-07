@@ -37,7 +37,7 @@
     var ticker = null;
     var TICK_MS = 250;
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
-    var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla' };
+    var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -1080,6 +1080,7 @@
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
             onChange: onView, startMinigame: PartiMinigame.startMinigame, miniRoot: function () { return miniRoot; },
+            forceMini: PartiRules.parseMiniFlag(location.search),
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         buildLegend(els.legend);

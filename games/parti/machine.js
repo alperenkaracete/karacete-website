@@ -50,7 +50,7 @@
             if (!graphs[mapId]) graphs[mapId] = G.index(opts.maps[mapId]);
             return graphs[mapId];
         }
-        function rctx() { return { g: graphFor(M.cf.mp) }; }
+        function rctx() { return { g: graphFor(M.cf.mp), mini: opts.forceMini || null }; }
 
         function seatOf(id) {
             for (var i = 0; i < M.S.length; i++) if (M.S[i].i === id) return M.S[i];

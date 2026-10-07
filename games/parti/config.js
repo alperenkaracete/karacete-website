@@ -117,7 +117,7 @@
         DUEL_MS: 90000,              // düello toplam süresi (dolunca bitmemiş oyun beraberlik / kısmi sonuç)
         DUEL_GRACE_MS: 5000,         // lider sigortası: süre + bu kadar içinde sonuç yoksa çark sonucu
         DUEL_RECONNECT_MS: 25000,    // düello oyuncusu koparsa dönmesi için bekleme; dönmezse kopan kaybeder
-        DUEL_GAMES: ['xox', 'connect4'],   // minigameSpec'in seçebildiği hazır düello oyunları
+        DUEL_GAMES: ['xox', 'connect4', 'catdog'],   // minigameSpec'in seçebildiği hazır düello oyunları
         GOALS: [5, 10, 15, 20, 25],
         GOAL_AUTO: 0,                // 0 = otomatik: 2-3 kişide 15, 4-8 kişide 10
         autoGoal: function (players) { return players <= 3 ? 15 : 10; },
@@ -141,6 +141,9 @@
         eventAnnounce: eventAnnounce,
         NODE_TYPES: NODE_TYPES,
         REWARDS: REWARDS,
+        // Düelloda olmayanlar (sıralamada yer almayanlar) için küçük teselli: iyileşme (üst sınır MAX_HP).
+        // REWARDS[3] ile çakışmaz: o derece yalnızca sıralamadakilere verilir; sıralamadakiler teselli almaz.
+        MINI_CONSOLATION: { heal: 25 },
         WEAPON_WEIGHTS: WEAPON_WEIGHTS,
         TEAMS: [
             { id: 0, name: 'Kırmızı', color: '#e5484d' },

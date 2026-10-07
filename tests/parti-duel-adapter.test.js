@@ -216,5 +216,6 @@ test('adaptör: izleyici kartı verisi (saf)', () => {
     assert.equal(info.leftText, 'Kalan süre 0:42');
     assert.equal(Adapter.spectatorInfo({ game: 'xox', players: ['A', 'B'] }, 0).leftText, 'Kalan süre 0:00');
     assert.equal(Adapter.supports('xox'), true);
-    assert.equal(Adapter.supports('catdog'), false);
+    assert.equal(Adapter.supports('catdog'), true);
+    assert.equal(Adapter.supports('yok'), false);
 });

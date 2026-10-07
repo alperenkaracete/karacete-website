@@ -2,10 +2,12 @@
 // kurallarıyla yeniden oynatıp sonucu bulur. Böylece Duel/oyun dosyalarına dokunulmadan, düelloda olmayan lider de
 // sonucu hesaplayabilir.
 //
-//   create({ prefix, rules, players:[ev sahibi, konuk] })
+//   create({ prefix, rules, players:[ev sahibi, konuk], limit?, onLimit? })
+//     limit = { shots: n, counts(move) -> bool }: SAYILAN hamlelerden her oyuncu n tane yapınca (ve oyun kendi kendine bitmediyse)
+//     oyun biter; sıralamayı rules.partial verir (yoksa beraberlik). onLimit(ranking) bir kez çağrılır.
 //   feed(from, msg)  -> true: mesaj kabul edildi (günlüğe yazıldı)
 //   outcome()        -> null | { ranking, reason:'win'|'draw' }
-//   timeout()        -> ranking (bitmemiş oyun: rules.partial varsa o, yoksa beraberlik)
+//   timeout()        -> ranking (bitmemiş oyun: rules.partial(board, order) varsa o, null/yoksa beraberlik)
 //   forfeit(id)      -> ranking ([[kalan],[id]])
 //   log() / reset()
 //
@@ -22,10 +24,11 @@
         var players = options.players.slice(0, 2);
         var T_START = prefix + '_start';
         var MOVE_TYPES = rules.messageTypes || [prefix + '_move'];
+        var limit = options.limit || null;
         var st;
 
         function reset() {
-            st = { phase: 'waiting', round: 0, order: [null, null], turn: 0, board: null, result: null, log: [] };
+            st = { phase: 'waiting', round: 0, order: [null, null], turn: 0, board: null, result: null, log: [], shots: [0, 0] };
         }
         reset();
 
@@ -68,19 +71,28 @@
                     : { ranking: draw(), reason: 'draw' };
             } else {
                 st.turn = 1 - st.turn;
+                if (limit && limit.counts(move)) {
+                    st.shots[players.indexOf(from)]++;
+                    if (st.shots[0] >= limit.shots && st.shots[1] >= limit.shots) {
+                        st.phase = 'over';
+                        st.result = { ranking: partialRanking(), reason: 'limit' };
+                        if (options.onLimit) options.onLimit(st.result.ranking);
+                    }
+                }
             }
             return true;
+        }
+
+        function partialRanking() {
+            var p = rules.partial && st.board ? rules.partial(st.board, st.order) : null;
+            return p || draw();
         }
 
         function outcome() { return st.result; }
 
         function timeout() {
             if (st.result) return st.result.ranking;
-            if (st.phase === 'playing' && rules.partial) {
-                var p = rules.partial(st.board, st.order);
-                if (p) return p;
-            }
-            return draw();
+            return st.phase === 'playing' ? partialRanking() : draw();
         }
 
         function forfeit(id) {
@@ -91,6 +103,7 @@
         return {
             feed: feed, outcome: outcome, timeout: timeout, forfeit: forfeit, reset: reset,
             log: function () { return st.log.slice(); },
+            shots: function () { return st.shots.slice(); },
             phase: function () { return st.phase; }
         };
     }
