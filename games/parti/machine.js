@@ -9,11 +9,11 @@
 //           pt_mg {mg, from, m} (minioyun yükü; durum DEĞİL: yalnızca eşleşen oturuma, düellodaki ikiliden ya da liderden kabul edilir)
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'));
+        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'), require('./mini/kurbaga-rules.js'));
     } else {
-        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch);
+        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch, root.PartiKurbagaRules);
     }
-})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch) {
+})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch, KRules) {
     'use strict';
 
     var PHASES = ['lobby', 'play', 'over'];
@@ -98,6 +98,17 @@
             };
         }
 
+        // Kurbağa (ffa): st/ea oyunun başlangıcı ve sonu (yayın anına göre işaretli ms), sn rapor veren insan sayısı,
+        // rp: { id: [satır, sütun, ölüm, varış ms | -1] }. Araçlar ve botlar tohumdan, ağda yok.
+        function packFf(ff, t) {
+            var rp = {};
+            Object.keys(ff.rep).forEach(function (id) {
+                var q = ff.rep[id];
+                rp[id] = [q.r, q.c, q.d, q.f];
+            });
+            return { st: Math.round(ff.stAt - t), ea: Math.round(ff.endAt - t), sn: ff.sn || 0, rp: rp };
+        }
+
         // Düello çiftleri: pm = [{ p:[a,b], st (başlama), dl (süre sonu), hd (sonuç tutma sonu), o: null | {w,l,d,r} }]
         function packMn(t) {
             var m = M.mn;
@@ -108,7 +119,8 @@
                     return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt), bd: ms(x.bAt), wb: x.wb || null,
                         o: x.out ? { w: x.out.w || '', l: x.out.l || '', d: x.out.d ? 1 : 0, r: x.out.r || '' } : null };
                 }),
-                ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null
+                ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null,
+                ff: m.ff ? packFf(m.ff, t) : null
             };
         }
 
@@ -217,7 +229,7 @@
                         }
                         mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, bAt: xbd >= 0 ? t + xbd : 0, wb: Watch.sanitize(xm.wb), out: om, off: {} });
                     }
-                } else if (gm && msg.mn.pl.length === 2) {
+                } else if (gm && msg.mn.ty === 'duel' && msg.mn.pl.length === 2) {
                     // Eski tek çiftli görüntü (pm yok): tek maç olarak oku
                     var lo = null;
                     if (msg.mn.ms >= 0 && msg.mn.rk.length === 1) lo = { w: '', l: '', d: 1, r: '' };
@@ -230,8 +242,23 @@
                 if (msg.mn.oc && typeof msg.mn.oc === 'object' && Array.isArray(msg.mn.oc.win) && Array.isArray(msg.mn.oc.lose) && Array.isArray(msg.mn.oc.draw)) {
                     moc = { win: msg.mn.oc.win.map(String), lose: msg.mn.oc.lose.map(String), draw: msg.mn.oc.draw.map(String) };
                 }
+                var mff = null;
+                if (msg.mn.ff) {
+                    var fx = msg.mn.ff;
+                    if (typeof fx !== 'object' || !isInt(fx.st, -1000000, 1000000) || !isInt(fx.ea, -1000000, 1000000) || !isInt(fx.sn, 0, 8) || !fx.rp || typeof fx.rp !== 'object') return null;
+                    var fks = Object.keys(fx.rp);
+                    if (fks.length > C.MAX_PLAYERS) return null;
+                    var frep = {};
+                    for (var fi = 0; fi < fks.length; fi++) {
+                        var fa = fx.rp[fks[fi]];
+                        if (!Array.isArray(fa) || fa.length !== 4 || !isInt(fa[0], 0, KRules.GOAL_ROW) || !isInt(fa[1], 0, KRules.COLS - 1) || !isInt(fa[2], 0, 100000) || !isInt(fa[3], -1, 10000000)) return null;
+                        // n/at: lider devrinde ilk rapor için cömert zaman bütçesi (oyun başlangıcından beri)
+                        frep[fks[fi]] = { r: fa[0], c: fa[1], d: fa[2], f: fa[3], n: -1, at: t + fx.st, seen: 1 };
+                    }
+                    mff = { stAt: t + fx.st, endAt: t + fx.ea, sn: fx.sn, rep: frep };
+                }
                 mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm,
-                    pm: mpm, ex: typeof msg.mn.ex === 'string' ? msg.mn.ex : null, nFirst: isInt(msg.mn.nf, 0, 8) ? msg.mn.nf : mpm.length, oc: moc };
+                    pm: mpm, ex: typeof msg.mn.ex === 'string' ? msg.mn.ex : null, nFirst: isInt(msg.mn.nf, 0, 8) ? msg.mn.nf : mpm.length, oc: moc, ff: mff };
             }
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
@@ -363,6 +390,20 @@
                 token.pm = prs.map(function (pr) { return newPair(token.gm, pr, 0); });
                 token.nFirst = token.pm.length;
                 token.ex = spec.extra || null;
+                return;
+            }
+            var ent = spec.type === 'ffa' && spec.game ? C.MINI.get(spec.game) : null;
+            if (ent && ent.kind === 'ffa') {
+                // Kurbağa (ffa): tüm insan istemcilerde yerel oturum (syncMini), lider raporlardan sonucu hesaplar (ffaWatch)
+                var t0 = now();
+                var rep = {};
+                spec.players.forEach(function (id) {
+                    var st = seatOf(id);
+                    if (st && !st.b) rep[id] = { r: 0, c: Math.floor(KRules.COLS / 2), d: 0, f: -1, n: -1, at: t0 + C.KURBAGA_COUNTDOWN_MS, seen: 0 };
+                });
+                token.gm = spec.game;
+                token.pl = spec.players.slice();
+                token.ff = { stAt: t0 + C.KURBAGA_COUNTDOWN_MS, endAt: t0 + C.KURBAGA_COUNTDOWN_MS + C.KURBAGA_MS, sn: 0, rep: rep, pubAt: 0, dirty: false };
                 return;
             }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
@@ -728,6 +769,9 @@
                     x.off = {};
                     if (!x.out) x.actAt = now();          // yeni lider boşta sayacını sıfırdan başlatır
                 });
+            } else if (M.mn && M.mn.ff && !M.mn.applyAt) {
+                // Kurbağa: rapor durumu pt_state ile geldi; istemciler son durumu kalp atışıyla yeniden gönderir
+                Object.keys(M.mn.ff.rep).forEach(function (id) { M.mn.ff.rep[id].n = -1; M.mn.ff.rep[id].at = M.mn.ff.stAt; });
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -767,6 +811,15 @@
                     // Yalnızca eşleşen oturumun jetonuyla; gönderen o maçın oyuncusu ya da lider (reset/catchup/result)
                     if (!M || !M.mn || !M.mn.pm || typeof data.mg !== 'string' || typeof data.from !== 'string' || data.from === me.id) return;
                     if (!data.m || typeof data.m !== 'object') return;
+                    if (M.mn.ff) {
+                        // Kurbağa: herkes görüntü için oturumuna besler; güven ve sonuç yalnız liderde
+                        sessions.slice().forEach(function (s) {
+                            if (!s.ffa || s.mg !== data.mg) return;
+                            s.handlers.slice().forEach(function (fn) { fn(data.from, data.m); });
+                        });
+                        if (isLeader() && data.mg === ffaKey(M.mn)) leaderFfaReport(data.from, data.m);
+                        return;
+                    }
                     sessions.slice().forEach(function (s) {
                         if (s.mg !== data.mg) return;
                         var x = M.mn.pm[s.pair];
@@ -882,6 +935,7 @@
                 }
                 return;
             }
+            sessions.forEach(function (s) { if (s.api) s.api.tick(t); });       // Kurbağa oturumları: ağ raporu / kalp atışı
             if (!isLeader()) {
                 if (t - lastSyncAt >= SYNC_RETRY_MS * 4 && !M.S.some(function (s) { return s.i === me.id; })) {
                     lastSyncAt = t;
@@ -906,6 +960,7 @@
             var stage = M.g.stage;
             if (stage === 'mini') {
                 if (M.mn && M.mn.applyAt && t >= M.mn.applyAt) { finishMini(); publish(); }
+                else if (M.mn && M.mn.ff) ffaWatch(t);
                 else if (M.mn && M.mn.gm) duelWatch(t);
                 return;
             }
@@ -959,9 +1014,17 @@
         // ---- Minioyun oturumları (düello) ----
         // Her istemci yalnızca KENDİ maçını oynar (kök/oyun modülü tek örnek); lider ayrıca diğer maçlar için başsız hakem
         // oturumları açar (kendi maçı dahil sonuçları o birleştirir). Anahtar: ep:tohum:oyun:çiftNo (+ :o gözlemci).
+        function ffaKey(mn) { return 'f:' + mn.sd + ':' + mn.gm; }
+
         function wantedSessions() {
             var want = [];
             var mn = M && M.ph === 'play' && M.mn;
+            if (mn && mn.ty === 'ffa' && mn.ff && mn.gm) {
+                // Kurbağa: bağlı her insan koltuğu kendi yerel oturumunu açar. Anahtar ep'siz -> lider devrinde ilerleme sıfırlanmaz.
+                var mine = seatOf(me.id);
+                if (!mn.applyAt && mine && !mine.b && mn.pl.indexOf(me.id) >= 0) want.push({ key: ffaKey(mn) + ':p', mg: ffaKey(mn), ffa: true });
+                return want;
+            }
             if (!mn || mn.ty !== 'duel' || !mn.gm || !mn.pm || !mn.pm.length) return want;
             var t = now();
             var holdAlive = false;
@@ -1003,7 +1066,87 @@
 
         function endAllSessions() { sessions.slice().forEach(endSession); }
 
+        // Kurbağa oturumu: sonuç döndürmez; ilerleme raporu pt_mg ile, lider kendi raporunu yerelde verir
+        function startFfaSession(w) {
+            var token = M.mn;
+            var ff = token.ff;
+            var s = { key: w.key, mg: w.mg, pair: -1, observer: false, ffa: true, sd: token.sd, ac: new AbortController(), handlers: [], api: null };
+            sessions.push(s);
+            var names = {};
+            M.S.forEach(function (st) { names[st.i] = st.n; });
+            var net = {
+                send: function (m) { send({ type: 'pt_mg', mg: w.mg, from: me.id, m: m }); },
+                on: function (fn) {
+                    s.handlers.push(fn);
+                    return function () { var i = s.handlers.indexOf(fn); if (i >= 0) s.handlers.splice(i, 1); };
+                }
+            };
+            var q = ff.rep[me.id];
+            var resume = q && (q.seen || q.f >= 0 || q.r > 0 || q.d > 0) ? { r: q.r, c: q.c, d: q.d, f: q.f } : null;
+            startMinigame({
+                type: 'ffa', game: token.gm, players: token.pl.slice(), bots: token.pl.filter(function (id) { return !ff.rep[id]; }), seed: token.sd,
+                me: { id: me.id, name: me.name }, isLeader: isLeader(), leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, observer: false,
+                net: net, names: names, deadlineMs: 0, signal: s.ac.signal, timers: opts.timers, now: now, startAt: ff.stAt, resume: resume,
+                onReport: function (m) { if (isLeader()) leaderFfaReport(me.id, m); },
+                register: function (api) { s.api = api; }
+            });
+        }
+
+        // Lider (Kurbağa): bir insanın raporunu denetleyip kaydeder. Makul değilse ya da eski sıra noktasıysa yok sayılır.
+        function leaderFfaReport(from, m) {
+            var mn = M.mn;
+            if (!mn || !mn.ff || mn.applyAt || !m || m.k !== 'pos') return;
+            var ff = mn.ff;
+            var q = ff.rep[from];
+            var seat = seatOf(from);
+            if (!q || !seat || seat.b) return;
+            if (!isInt(m.n, 0, 1000000000) || m.n <= q.n) return;
+            var t = now();
+            if (!KRules.plausible({ r: q.r, c: q.c, d: q.d }, { r: m.r, c: m.c, d: m.d }, t - q.at)) return;
+            if (q.f >= 0) { q.n = m.n; return; }              // varmış: sonuç donuk
+            var fin = -1;
+            if (m.r === KRules.GOAL_ROW) {
+                if (!KRules.plausibleFinish(m.e, t - ff.stAt)) return;
+                fin = m.e;
+            }
+            var changed = q.r !== m.r || q.c !== m.c || q.d !== m.d;
+            q.r = m.r; q.c = m.c; q.d = m.d; q.n = m.n; q.at = t;
+            var now1 = false;
+            if (!q.seen) { q.seen = 1; ff.sn = (ff.sn || 0) + 1; now1 = true; }
+            if (fin >= 0) {
+                q.f = fin;
+                // ilk varıştan sonra kalan süre KURBAGA_LAST_CALL_MS'e düşer (min: sonraki varışlar uzatmaz)
+                ff.endAt = Math.min(ff.endAt, t + C.KURBAGA_LAST_CALL_MS);
+                now1 = true;
+            }
+            if (now1) { ff.pubAt = t; ff.dirty = false; publish(); }
+            else if (changed) ff.dirty = true;
+        }
+
+        // Lider (Kurbağa): ilerleme yayınını sınırlar; tüm bağlı insanlar vardı ya da süre dolduysa sonucu hesaplar
+        function ffaWatch(t) {
+            var mn = M.mn;
+            if (!mn || !mn.ff || mn.applyAt) return;
+            var ff = mn.ff;
+            if (ff.dirty && t - (ff.pubAt || 0) >= C.KURBAGA_PUBLISH_MS) { ff.dirty = false; ff.pubAt = t; publish(); }
+            if (t < ff.stAt) return;
+            var live = mn.pl.filter(function (id) { var st = seatOf(id); return !!st && !st.b && st.c && ff.rep[id]; });
+            var allIn = live.length > 0 && live.every(function (id) { return ff.rep[id].f >= 0; });
+            if (!allIn && t < ff.endAt) return;
+            var endMs = Math.max(0, Math.min(t, ff.endAt) - ff.stAt);
+            var ranking;
+            if (!(ff.sn > 0)) {
+                ranking = Mini.wheelRanking({ players: mn.pl, seed: mn.sd });          // hiç rapor yok: acil yedek çark
+            } else {
+                var reports = {};
+                Object.keys(ff.rep).forEach(function (id) { reports[id] = { r: ff.rep[id].r, f: ff.rep[id].f, d: ff.rep[id].d }; });
+                ranking = KRules.rank({ players: mn.pl, bots: mn.pl.filter(function (id) { return !ff.rep[id]; }), seed: mn.sd, reports: reports, endMs: endMs });
+            }
+            applyMiniResult(mn, ranking, mn.pl);
+        }
+
         function startSession(w) {
+            if (w.ffa) { startFfaSession(w); return; }
             var token = M.mn;
             var x = token.pm[w.pair];
             var s = { key: w.key, mg: w.mg, pair: w.pair, observer: w.observer, sd: token.sd, ac: new AbortController(), handlers: [] };
@@ -1089,7 +1232,20 @@
             var mine = -1;
             pairs.forEach(function (x, i) { if (x.players.indexOf(me.id) >= 0 && !x.done && mine < 0) mine = i; });
             var p0 = pairs[0];
-            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, medals: hidden ? null : medalsOf(m), pairs: pairs, extra: m.ex || null, myPair: mine,
+            var ffv = null;
+            if (m.ff) {
+                var el = t - m.ff.stAt;
+                ffv = {
+                    started: el >= 0, countdown: Math.max(0, -el), elapsed: Math.max(0, el), left: Math.max(0, m.ff.endAt - t),
+                    rows: m.pl.map(function (id) {
+                        var q = m.ff.rep[id];
+                        if (q) return { id: id, bot: false, row: q.r, fin: q.f >= 0 ? q.f : null, d: q.d };
+                        var bf = KRules.botFinish(m.sd, id);
+                        return { id: id, bot: true, row: el >= 0 ? KRules.botProgress(m.sd, id, el) : 0, fin: bf !== null && bf <= el ? bf : null, d: 0 };
+                    })
+                };
+            }
+            return { type: m.ty, ff: ffv, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, medals: hidden ? null : medalsOf(m), pairs: pairs, extra: m.ex || null, myPair: mine,
                 live: sessions.some(function (s) { return !s.observer; }),
                 left: m.applyAt && !hidden ? Math.max(0, m.applyAt - t) : -1, duelLeft: p0 && p0.left >= 0 ? p0.left : -1 };
         }
@@ -1141,6 +1297,8 @@
         return {
             onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
             destroy: function () { endAllSessions(); },
+            _session: function () { var s = sessions.filter(function (x) { return x.ffa; })[0]; return s ? s.api : null; },    // test: Kurbağa oturumu
+            _ffaReport: function (from, m) { if (M && isLeader()) leaderFfaReport(from, m); },     // test: lider denetimli rapor girişi
             _state: function () { return M; }, _gone: function () { return gone; }, _publish: function () { if (M && isLeader()) publish(); }
         };
     }

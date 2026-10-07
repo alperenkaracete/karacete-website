@@ -304,11 +304,17 @@ test('botlar sıra kendilerine gelince lider tarafından oynanır; takipçiler g
     assert.ok(r.state('B').fx.length > 0);
 });
 
-// Çark artık yalnız acil yedek; bu testler akışı (sonuç -> ödül -> yeni tur) sınar: ffa oyunu zorlanır, aşama 1'de oyun yok -> çark yedeği
+// Bu testler genel akışı (minioyun -> sonuç -> ödül -> yeni tur) sınar: ffa oyunu (Kurbağa) zorlanır; kimse hamle yapmazsa tüm
+// oyuncular 0. satırda eşit derecede biter. Ayrıntılı Kurbağa senaryoları tests/parti-ffa-flow.test.js içindedir.
 const FFA = { forceMini: { game: 'kurbaga' } };
 
-// GEÇİCİ (aşama 1): Kurbağa oyunu henüz bağlı değil -> ffa seçimi çark yedeğine düşer; aşama 3'te bu testler gerçek ffa akışına geçer
-test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, yeni tur başlar', async () => {
+// Kurbağa süresi dolana dek ilerler (hamle yapan yoksa KURBAGA_MS sonunda), sonuç kaydedilince durur (ödül henüz uygulanmadı)
+function untilRanked(r) {
+    let guard = 0;
+    while (!(r.view('B').mini && r.view('B').mini.ranking.length) && guard++ < 1000) r.advance(250, 250);
+}
+
+test('minioyun: tur sonunda Kurbağa oynanır, sonuç ödül verir, yeni tur başlar', async () => {
     const r2 = started(3, null, FFA);
     let guard = 0;
     while (r2.state('A').g.stage !== 'mini' && guard++ < 200) {
@@ -317,9 +323,11 @@ test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, y
     }
     assert.equal(r2.state('A').g.stage, 'mini');
     await r2.settle();
+    untilRanked(r2);
     const mn = r2.view('B').mini;
-    assert.ok(mn && mn.ranking.length === mn.players.length, 'çark sonucu herkese gitti (ffa: 3, düello: 2)');
-    assert.ok(['ffa', 'duel'].includes(mn.type));
+    assert.ok(mn && mn.ranking.flat().length === mn.players.length, 'sonuç herkese gitti');
+    assert.equal(mn.type, 'ffa');
+    assert.equal(mn.game, 'kurbaga');
     const rd = r2.state('A').g.rd;
     r2.advance(C.MINI_HOLD_MS + 500);
     assert.equal(r2.state('A').g.stage, 'roll');
@@ -582,11 +590,12 @@ test('günlük: minioyun sonucu tek satır (🥇A 🥈B 🥉C), tek tek ödül s
         r.flush();
     }
     await r.settle();
+    untilRanked(r);
     r.advance(C.MINI_HOLD_MS + 500);
     const log = r.view('A').log;
     const lines = log.filter((l) => l.startsWith('🎡'));
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+( 🥉\S+)?$/);          // düelloda iki, ffa'da üç madalya
+    assert.match(lines[0], /^🎡( (🥇|🥈|🥉|▫️)\S+)+$/u);          // tek satır; kimse oynamadıysa hepsi eşit derece
     assert.ok(!log.some((l) => /minioyunda \d\. oldu/.test(l) || /\(minioyun\)/.test(l)));
 });
 
@@ -815,6 +824,7 @@ async function stepWorld(r, idle) {
     const g = r.state('A').g;
     if (g.stage === 'mini') {
         await r.settle();
+        untilRanked(r);
         r.advance(C.MINI_HOLD_MS + 300, 300);
         return;
     }

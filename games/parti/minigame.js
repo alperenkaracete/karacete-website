@@ -2,6 +2,9 @@
 //
 //   startMinigame({ type, players, seed, ... }) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
 //
+// ffa oyunları (mini/registry.js, kind 'ffa'; bugün Kurbağa): game, me, isLeader, leader, root, observer, net, names, deadlineMs, signal, now/timers
+// düelloyla aynı alanlardır; ek olarak startAt (oyunun t=0 anı, yerel ms), bots ([id]), resume ({r,c,d,f}), onReport(m) (lider kendi raporunu
+// yerelde verir), register(api) (makine her tick'te api.tick çağırır). 8 kişi AYNI ANDA oynar; sonucu lider raporlardan hesaplar.
 // Zorunlu alanlar: type ('ffa' | 'duel'), players ([id]), seed (sayı). Geriye uyumlu isteğe bağlı alanlar (düello):
 //   game        düello oyunu ('xox' | 'connect4' ...); PartiDuelAdapter.supports(game) olmalı
 //   me          { id, name }  bu istemcideki oyuncu
@@ -23,9 +26,9 @@
 // Ödüller (config REWARDS) dereceye göredir: [[a,b]] -> ikisi de 1.; [[w],[l]] -> 1. ve 2. DÜELLODA OLMAYAN oyuncular ranking'de
 // yer almaz; ödül yerine teselli (+25 can, config MINI_CONSOLATION) alır (ffa'da herkes sıralanır). Kopan insanlar finishMini'de sona yazılır.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./mini/duel-adapter.js'));
-    else root.PartiMinigame = factory(root.PartiDuelAdapter);
-})(typeof self !== 'undefined' ? self : this, function (Adapter) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./mini/duel-adapter.js'), { kurbaga: require('./mini/kurbaga-session.js') });
+    else root.PartiMinigame = factory(root.PartiDuelAdapter, { kurbaga: root.PartiKurbagaSession });
+})(typeof self !== 'undefined' ? self : this, function (Adapter, FFA) {
     'use strict';
 
     function seeded(seed) {
@@ -55,6 +58,9 @@
     }
 
     function startMinigame(spec) {
+        // ffa (Kurbağa): herkes aynı anda oynar; sonucu lider raporlardan hesaplar (oturum Promise'i sonuç taşımaz)
+        var ffa = spec.type === 'ffa' && spec.game && FFA && FFA[spec.game] && spec.me && spec.net && spec.players && typeof spec.startAt === 'number';
+        if (ffa) return FFA[spec.game].run(spec).then(null, function () { return wheel(spec); });
         var playable = spec.type === 'duel' && spec.game && Adapter && Adapter.supports(spec.game) &&
             (spec.root || spec.observer) && spec.net && spec.me && spec.players && spec.players.length === 2;
         if (!playable) return Promise.resolve(wheel(spec));

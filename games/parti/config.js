@@ -130,6 +130,13 @@
         },
         DUEL_RECONNECT_MS: 25000,    // düello oyuncusu koparsa dönmesi için bekleme; dönmezse kopan kaybeder
         MINI: Registry,             // minioyun kaydı: oyun listesi, tür, uygunluk (mini/registry.js)
+        // Kurbağa (ffa): toplam süre, ilk varıştan sonra kalan süre, geri sayım payı, ağ raporu aralıkları, lider yayını sınırı
+        KURBAGA_MS: 120000,
+        KURBAGA_LAST_CALL_MS: 20000,
+        KURBAGA_COUNTDOWN_MS: 4000,       // 3-2-1 + ağ payı: oyun t=0 bu kadar sonra (herkes aynı yayından hizalanır)
+        KURBAGA_SEND_MS: 250,             // sıçrama raporlarını birleştirme aralığı (ölüm/varış anında hemen)
+        KURBAGA_HEARTBEAT_MS: 2000,       // değişiklik olmasa da son durumu yeniden gönderme (lider devri / kayıp mesaj)
+        KURBAGA_PUBLISH_MS: 500,          // lider ilerleme çubuğu yayınlarının alt aralığı (varış/ilk rapor hemen)
         DUEL_GAMES: Registry.ids('duel'),   // geriye uyum: düello oyunları registry'den türer (mini/registry.js)
         GOALS: [5, 10, 15, 20, 25],
         GOAL_AUTO: 0,                // 0 = otomatik: 2-3 kişide 15, 4-8 kişide 10
