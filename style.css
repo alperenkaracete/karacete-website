@@ -1078,8 +1078,8 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-bar { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.4); font-size: 14px; font-weight: 700; }
 .pt-bar-mid.mine { color: #ffd24a; }
 .pt-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
-.pt-boardcol { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; max-height: 66%; }
-.pt-board { flex: 0 0 auto; width: 100%; aspect-ratio: 10 / 7; max-height: 58vh; display: flex; align-items: center; justify-content: center; }
+.pt-boardcol { flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; }
+.pt-board { flex: 0 0 auto; width: 100%; aspect-ratio: 10 / 7; display: flex; align-items: center; justify-content: center; }
 .pt-strip { flex: 0 0 auto; min-height: 34px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); font-size: 13px; line-height: 1.25; }
 .pt-strip-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-strip-line:last-child { font-weight: 700; }
@@ -1087,7 +1087,7 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-side { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .pt-players { display: flex; flex-direction: column; gap: 4px; }
 .pt-teams { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-.pt-pgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pt-pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 4px; }
 .pt-pcard { position: relative; padding: 3px 5px; border-radius: 9px; background: rgba(0, 0, 0, 0.4); border: 2px solid transparent; min-width: 0; }
 .pt-pcard.current { background: rgba(255, 180, 0, 0.35); }
 .pt-pcard.me { box-shadow: inset 0 0 0 2px #ffd24a; }
@@ -1170,3 +1170,15 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 }
 .pt-legend { text-align: left; }
 .pt-legend-title { text-align: left; }
+
+/* kompakt oyuncu kartları */
+.pt-pgrid { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
+.pt-pcard { cursor: pointer; padding: 2px 4px; }
+.pt-ptop { display: flex; align-items: center; gap: 3px; }
+.pt-pav { font-size: 18px; line-height: 1; }
+.pt-pstar { font-size: 12px; font-weight: 800; white-space: nowrap; }
+.pt-pstatus { margin-left: auto; font-size: 10px; line-height: 1; white-space: nowrap; }
+.pt-pname { font-size: 11px; line-height: 1.15; font-weight: 700; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.pt-pcard.open { outline: 2px solid #ffd24a; }
+.pt-pdetail { padding: 6px 8px; border-radius: 9px; background: rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.4; text-align: left; }
+.pt-until { font-weight: 800; color: #ffd24a; }

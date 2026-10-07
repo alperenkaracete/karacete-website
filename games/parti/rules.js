@@ -586,6 +586,30 @@
         return { ok: true, state: state, events: evts, error: null };
     }
 
+    // Kaç sıra sonra oyuncunun turu: 0 = şu an sırada. Bu turun kalanı (atlanacaklar sayılmaz), sonra bir sonraki turun
+    // (sıra bir kaymış) sırası izlenir. Bulunamazsa (oyun/minioyun bitti, koltuk yok) null.
+    function turnsUntil(state, id) {
+        if (!state || state.stage === 'over' || state.stage === 'mini' || !state.P || !Object.prototype.hasOwnProperty.call(state.P, id)) return null;
+        var n = state.order.length;
+        if (n < 1 || state.order.indexOf(id) < 0) return null;
+        var count = 0;
+        if (state.order[state.turn] === id) return 0;
+        for (var i = state.turn + 1; i < n; i++) {
+            var q = state.P[state.order[i]];
+            if (q.sk > 0) continue;                       // atlanacak: sıra sayılmaz
+            count++;
+            if (state.order[i] === id) return count;
+        }
+        var next = n > 1 ? state.order.slice(1).concat(state.order[0]) : state.order.slice();      // sonraki turda sıra bir kayar
+        for (var j = 0; j < next.length; j++) {
+            var r = state.P[next[j]];
+            if (r.sk > 1) continue;
+            count++;
+            if (next[j] === id) return count;
+        }
+        return null;
+    }
+
     // Oyun sonu sıralaması
     function standings(state) {
         if (state.mode === 'team') {
@@ -605,7 +629,7 @@
     return {
         createGame: createGame, reduce: reduce, autoAction: autoAction, botAction: botAction, attackOptions: attackOptions,
         minigameSpec: minigameSpec, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
-        standings: standings, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
+        standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
         checkWin: checkWin, clone: clone, nextRand: nextRand
     };
 });

@@ -1265,3 +1265,54 @@ test('lejant: silah açıklamaları sayıları tablodan alır (tablo değişince
     C.WEAPONS.bow.range = 7;
     try { assert.match(d('bow'), /0–7/); } finally { C.WEAPONS.bow.range = savedRange; }
 });
+
+// ---- "N sıra sonra sen" ----
+test('turnsUntil: sıradaki 0; bu turun kalanı; sonraki turda sıra bir kaymış sayılır', () => {
+    const s = game(3);
+    s.order = ['p0', 'p1', 'p2'];
+    s.turn = 0;
+    assert.deepEqual(['p0', 'p1', 'p2'].map((id) => R.turnsUntil(s, id)), [0, 1, 2]);
+    s.turn = 1;
+    assert.deepEqual(['p0', 'p1', 'p2'].map((id) => R.turnsUntil(s, id)), [4, 0, 1], 'p0 bu tur oynadı; sonraki turda p1,p2,p0 → 4. sıra');
+    s.turn = 2;
+    assert.deepEqual(['p0', 'p1', 'p2'].map((id) => R.turnsUntil(s, id)), [3, 1, 0]);
+    // gerçek akışla tutarlı: öngörülen sıra sayısı kadar yeni tur başladıktan sonra o oyuncunun turu gelir
+    for (const players of [2, 3, 4]) {
+        for (let t = 0; t < players; t++) {
+            const base = game(players);
+            base.order = base.order.slice(); base.turn = t;
+            for (const id of base.order) {
+                const predicted = R.turnsUntil(base, id);
+                let x = JSON.parse(JSON.stringify(base));
+                x.chests = {};
+                let turns = 0;
+                let key = x.rd + ':' + x.turn;
+                let guard = 0;
+                while (!(R.current(x) === id && x.stage === 'roll' && turns > 0) && !(predicted === 0)) {
+                    if (guard++ > 300) throw new Error('bulunamadı');
+                    if (x.stage === 'mini') { x = R.applyMinigame(x, { ranking: [x.order.slice()] }, ctx()).state; x.chests = {}; }
+                    else x = apply(x, R.autoAction(x, ctx()), { dice: () => 1 }).state;
+                    if (x.stage === 'roll' && x.rd + ':' + x.turn !== key) { key = x.rd + ':' + x.turn; turns++; }
+                    if (R.current(x) === id && x.stage === 'roll' && turns > 0) break;
+                }
+                assert.equal(predicted === 0 ? 0 : turns, predicted, players + ' oyuncu, turn ' + t + ', ' + id);
+            }
+        }
+    }
+});
+
+test('turnsUntil: atlanacak oyuncular sayılmaz; minioyun/oyun sonu/bilinmeyen oyuncu null', () => {
+    const s = game(4);
+    s.order = ['p0', 'p1', 'p2', 'p3']; s.turn = 0;
+    s.P.p1.sk = 1;
+    assert.equal(R.turnsUntil(s, 'p2'), 1, 'p1 atlanacak');
+    assert.equal(R.turnsUntil(s, 'p3'), 2);
+    s.stage = 'mini';
+    assert.equal(R.turnsUntil(s, 'p0'), null);
+    s.stage = 'over';
+    assert.equal(R.turnsUntil(s, 'p0'), null);
+    s.stage = 'roll';
+    assert.equal(R.turnsUntil(s, 'yok'), null);
+    assert.equal(R.turnsUntil(s, '__proto__'), null);
+    assert.equal(R.turnsUntil(null, 'p0'), null);
+});

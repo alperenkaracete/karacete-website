@@ -33,6 +33,7 @@
     var logOpen = false;
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
+    var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
     var tickTimer = null;
     var TICK_MS = 250;
 
@@ -133,7 +134,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
         return parts.join(':');
     }
 
@@ -277,6 +278,15 @@
         return C.WEAPON_IDS.filter(function (w) { return p.w[w] > 0; }).map(function (w) { return [w, p.w[w]]; });
     }
 
+    function shortName(n) { return n.length > 6 ? n.slice(0, 6) : n; }
+
+    // "N sıra sonra sen" metni (bekleyenler için; sıra sendeyse boş)
+    function untilText(v) {
+        var n = v.game && v.me ? R.turnsUntil(v.game, v.me.id) : null;
+        if (n === null || n === 0) return '';
+        return n === 1 ? '⏳ Sıradaki sensin' : '⏳ ' + n + ' sıra sonra sen';
+    }
+
     function nameOf(v, id) {
         var s = seatById(v, id);
         if (s) return s.a + ' ' + s.n;
@@ -373,7 +383,7 @@
         var mid = '';
         if (g.stage === 'mini') mid = '🎡 Minioyun';
         else if (g.stage === 'over') mid = '🏆 Oyun bitti';
-        else if (v.cur) mid = (v.cur === v.me.id ? 'Sıra sende!' : nameOf(v, v.cur) + ' oynuyor');
+        else if (v.cur) mid = (v.cur === v.me.id ? 'Sıra sende!' : nameOf(v, v.cur) + ' oynuyor' + (untilText(v) ? ' · ' + untilText(v) : ''));
         els.barMid.textContent = mid;
         els.barMid.classList.toggle('mine', v.cur === v.me.id);
         timerEls.push({ node: els.barTime, fn: function (vv) { return vv.game && vv.game.stage !== 'mini' && vv.game.stage !== 'over' ? (vv.paused ? '⏸ ' : '⏱ ') + fmtTime(vv.dlLeft) : ''; } });
@@ -405,39 +415,55 @@
             turnStrip.appendChild(chipT);
         });
         P.appendChild(turnStrip);
+        var detail = null;
         var grid = el('div', 'pt-pgrid');
         var seatOrder = v.seats.map(function (sx) { return sx.i; }).filter(function (id) { return g.P[id]; });
         g.order.forEach(function (id) { if (seatOrder.indexOf(id) < 0) seatOrder.push(id); });
         seatOrder.forEach(function (id) {
             var p = g.P[id];
             var seat = seatById(v, id);
-            var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : ''));
+            var open = openCard === id;
+            var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : '') + (open ? ' open' : ''));
             cardEl.style.borderColor = g.mode === 'team' ? teamColor(p.t) : '';
+            cardEl.title = p.n;
+            // kompakt iki satır: [avatar ⭐N rozetler] / [ad (ilk 6 harf)] + ❤️ çubuğu; ayrıntı dokununca alttaki panelde açılır
             var top = el('div', 'pt-ptop');
             top.appendChild(el('span', 'pt-pav', p.av));
-            top.appendChild(el('span', 'pt-pname', p.n + (p.bot ? ' 🤖' : '') + (v.leader === id ? '👑' : '')));
+            top.appendChild(el('span', 'pt-pstar', '⭐' + p.s));
+            var status = '';
+            if (seat && !seat.b && !seat.c) status += '📵';
+            if (p.sk > 0) status += '💤';
+            if (p.afk) status += '😴';
+            if (p.shield) status += '🛡️';
+            var until = R.turnsUntil(g, id);
+            if (until > 0) status += '⏳' + until;
+            top.appendChild(el('span', 'pt-pstatus', status));
             cardEl.appendChild(top);
+            cardEl.appendChild(el('div', 'pt-pname', shortName(p.n) + (p.bot ? '🤖' : '') + (v.leader === id ? '👑' : '')));
             var hp = el('div', 'pt-hp');
             var fill = el('i');
             fill.style.width = Math.max(0, p.hp) + '%';
             fill.style.background = p.hp > 60 ? '#37c46b' : (p.hp > 30 ? '#f1b72d' : '#e5484d');
             hp.appendChild(fill);
             cardEl.appendChild(hp);
-            var stats = el('div', 'pt-pstats');
-            stats.appendChild(el('span', '', '❤️' + p.hp + ' ⭐' + p.s));
-            var items = '';
-            invList(p).forEach(function (e) { items += C.WEAPONS[e[0]].emoji + (e[1] > 1 ? '×' + e[1] : ''); });
-            if (p.shield) items += '🛡️' + (p.shl > 0 ? p.shl : '');
-            stats.appendChild(el('span', 'pt-items', items || '·'));
-            cardEl.appendChild(stats);
-            var status = '';
-            if (seat && !seat.b && !seat.c) status += '📵';
-            if (p.sk > 0) status += '💤';
-            if (p.afk) status += '😴';
-            if (status) cardEl.appendChild(el('span', 'pt-pstatus', status));
+            if (open) detail = { id: id, p: p, until: until };
+            cardEl.addEventListener('click', function () { openCard = openCard === id ? null : id; sig = ''; render(); });
             grid.appendChild(cardEl);
         });
         P.appendChild(grid);
+        if (detail) {
+            var dp = detail.p;
+            var det = el('div', 'pt-pdetail');
+            det.appendChild(el('div', '', dp.av + ' ' + dp.n + (dp.bot ? ' (bot)' : '') + (g.mode === 'team' ? ' · ' + C.TEAMS[dp.t].name : '')));
+            det.appendChild(el('div', '', '❤️ ' + dp.hp + '   ⭐ ' + dp.s));
+            var items = invList(dp).map(function (e) { return C.WEAPONS[e[0]].emoji + (e[1] > 1 ? '×' + e[1] : ''); }).join(' ');
+            det.appendChild(el('div', '', 'Envanter: ' + (items || 'boş')));
+            if (dp.shield) det.appendChild(el('div', '', '🛡️ kalkan kurulu (' + dp.shl + ' tur)'));
+            else if (dp.scd > 0) det.appendChild(el('div', '', '🛡️ kalkan bekleme: ' + Math.max(0, dp.scd - 1) + ' tur'));
+            if (detail.until === 0) det.appendChild(el('div', '', 'Şu an oynuyor'));
+            else if (detail.until > 0) det.appendChild(el('div', '', '⏳ ' + detail.until + ' sıra sonra oynar'));
+            P.appendChild(det);
+        }
     }
 
     function renderControls(v) {
@@ -449,6 +475,7 @@
         var mine = v.cur === v.me.id;
         if (!mine) {
             Ctl.appendChild(el('span', 'pt-hint pt-wait-text', v.cur ? nameOf(v, v.cur) + ' oynuyor…' : ''));
+            if (untilText(v)) Ctl.appendChild(el('span', 'pt-until', untilText(v)));
             appendWeaponPreview(Ctl, v);
             return;
         }
@@ -1032,7 +1059,7 @@
         els = buildDom();
         view = null;
         sig = '';
-        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; lastFq = -1; targeting = null; logOpen = false;
+        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; openCard = null; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
         var creator = ctx.isHost() && ctx.players.length <= 1;
