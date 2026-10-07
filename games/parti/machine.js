@@ -118,6 +118,11 @@
                 if (!p || typeof p !== 'object') return false;
                 if (typeof p.hp !== 'number' || !isFinite(p.hp) || p.hp < 0 || p.hp > C.MAX_HP) return false;
                 if (!isInt(p.s, 0, 999) || !isInt(p.pos, 0, 999) || !isInt(p.home, 0, 999)) return false;
+                if (!Array.isArray(p.w) && (!p.w || typeof p.w !== 'object')) return false;
+                if (!Array.isArray(p.w)) {
+                    var wk = Object.keys(p.w);
+                    for (var k = 0; k < wk.length; k++) if (!C.WEAPONS[wk[k]] || !isInt(p.w[wk[k]], 1, 9)) return false;
+                }
             }
             return true;
         }
@@ -133,6 +138,13 @@
             }
             g.order.forEach(function (id) {
                 var p = g.P[id];
+                // eski biçim: silah dizisi ['fist','bow'] -> sayaç nesnesi {fist:1, bow:1}; seçim bekleyen öğeler atılır
+                if (Array.isArray(p.w)) {
+                    var counts = {};
+                    p.w.forEach(function (w) { if (C.WEAPONS[w]) counts[w] = (counts[w] || 0) + 1; });
+                    p.w = counts;
+                }
+                delete p.offers;
                 if (!Object.prototype.hasOwnProperty.call(gr.byId, p.pos)) p.pos = start;
                 if (!Object.prototype.hasOwnProperty.call(gr.byId, p.home)) p.home = start;
             });
@@ -187,8 +199,6 @@
                 case 'star': return e.why === 'chest' || e.why === 'mini' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
                 case 'item': return nm(e.id) + ' aldı: ' + wn(e.w);
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
-                case 'swap': return nm(e.id) + ' ' + wn(e.old) + ' yerine ' + wn(e.w) + ' aldı';
-                case 'decline': return nm(e.id) + ' ' + wn(e.w) + ' almadı';
                 case 'attack': return nm(e.id) + ' ' + wn(e.w) + ' kullandı' + (e.target ? ' → ' + nm(e.target) : '');
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
                 case 'block': return nm(e.id) + ' kalkanla korundu';
@@ -197,7 +207,7 @@
                 case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;
                 case 'death': return nm(e.id) + ' düştü' + (e.lost ? ' (' + e.lost + ' ⭐ kaybetti)' : '');
                 case 'skip': return nm(e.id) + ' turunu atladı';
-                case 'lost': return nm(e.id) + ' envanteri dolu: ' + wn(e.w) + ' kaçtı';
+                case 'lost': return nm(e.id) + ' envanteri doldu: ' + wn(e.w) + ' kaçtı';
                 case 'event': {
                     var found = null;
                     C.EVENTS.forEach(function (ev) { if (ev.id === e.e) found = ev; });
@@ -480,12 +490,13 @@
                 if (M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === by) setDeadline();
                 return true;
             }
-            var allowed = { roll: 1, dir: 1, swap: 1, use: 1, end: 1 };
+            var allowed = { roll: 1, dir: 1, use: 1, end: 1 };
             if (!allowed[a.type]) return false;
             var act = { type: a.type, by: by };
             if (a.type === 'dir') act.to = a.to;
-            if (a.type === 'swap') act.drop = a.drop;
-            if (a.type === 'use') { act.item = a.item; act.target = a.target; act.node = a.node; }
+            if (a.type === 'use') { act.w = a.w; act.target = a.target; act.node = a.node; }
+            // çift dokunuş koruması: eylem, istemcinin gördüğü oyun revizyonunu (rv) taşır; eşleşmezse reddedilir (rv yoksa eski davranış)
+            if (a.rv !== undefined && a.rv !== M.g.rev) return false;
             // duraklatılmış (kopan oyuncu bekleniyor) turda yalnızca o oyuncu dışındakiler işlem yapamaz zaten
             var r = R.reduce(M.g, act, rctx());
             if (!r.ok) return false;
@@ -527,6 +538,8 @@
         function dispatch(a) {
             if (!M) return false;
             if (isLeader()) return handle(a, me.id);
+            // oyun eylemleri istemcinin gördüğü oyun revizyonunu taşır (lider eski görünümden gelen çift dokunuşu reddeder)
+            if (M.g && M.ph === 'play' && (a.type === 'roll' || a.type === 'dir' || a.type === 'use' || a.type === 'end')) a = Object.assign({}, a, { rv: M.g.rev });
             send({ type: 'pt_action', id: me.id, a: a });
             return true;
         }

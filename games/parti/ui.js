@@ -29,7 +29,7 @@
     var EMOTE_MS = 2200;
     var lastFq = -1;
     var sig = '';
-    var targeting = null;    // { item, kind, range }
+    var targeting = null;    // { w: silah kimliği, kind, range }
     var logOpen = false;
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
@@ -131,7 +131,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
         return parts.join(':');
     }
 
@@ -171,7 +171,6 @@
         if (v.afk && v.mode === 'play') cards.push(afkCard());
         if (v.game && v.game.stage === 'mini' && v.mini) cards.push(miniCard(v));
         if (v.mode === 'over' && v.game) cards.push(overCard(v));
-        if (v.mode !== 'lobby' && v.game && v.game.stage === 'swap' && v.cur === v.me.id) cards.push(swapCard(v));
         o.classList.toggle('hidden', !cards.length);
         cards.forEach(function (c) { o.appendChild(c); });
     }
@@ -271,16 +270,9 @@
         return c;
     }
 
-    function swapCard(v) {
-        var p = v.game.P[v.me.id];
-        var c = el('div', 'pt-card pt-swap');
-        c.appendChild(el('strong', 'pt-card-title', 'Envanter dolu'));
-        c.appendChild(el('span', 'pt-hint', 'Yeni: ' + weaponLabel(p.offers[0]) + ' — hangisini bırakmak istersin?'));
-        var row = el('div', 'pt-row');
-        p.w.forEach(function (w, i) { row.appendChild(btn(weaponLabel(w), '', function () { act({ type: 'swap', drop: i }); })); });
-        c.appendChild(row);
-        c.appendChild(btn('Vazgeç (yenisini alma)', 'primary', function () { act({ type: 'swap', drop: -1 }); }));
-        return c;
+    // Envanter sayaç nesnesi {silahId: adet}: sabit silah sırasıyla [[id, adet], ...]
+    function invList(p) {
+        return C.WEAPON_IDS.filter(function (w) { return p.w[w] > 0; }).map(function (w) { return [w, p.w[w]]; });
     }
 
     function nameOf(v, id) {
@@ -432,7 +424,7 @@
             var stats = el('div', 'pt-pstats');
             stats.appendChild(el('span', '', '❤️' + p.hp + ' ⭐' + p.s));
             var items = '';
-            p.w.forEach(function (w) { items += C.WEAPONS[w].emoji; });
+            invList(p).forEach(function (e) { items += C.WEAPONS[e[0]].emoji + (e[1] > 1 ? '×' + e[1] : ''); });
             if (p.shield) items += '🛡️';
             stats.appendChild(el('span', 'pt-items', items || '·'));
             cardEl.appendChild(stats);
@@ -470,8 +462,6 @@
                 row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol'), 'primary', function () { act({ type: 'dir', to: to }); }));
             });
             Ctl.appendChild(row);
-        } else if (g.stage === 'swap') {
-            Ctl.appendChild(el('span', 'pt-hint', 'Envanter dolu: bir seçim yap.'));
         } else if (g.stage === 'act') {
             renderActControls(Ctl, v, p);
         }
@@ -479,9 +469,9 @@
 
     function appendWeaponPreview(Ctl, v) {
         var p = v.game.P[v.me.id];
-        if (!p || !p.w.length) return;
+        if (!p || !invList(p).length) return;
         var row = el('div', 'pt-row');
-        p.w.forEach(function (w) { row.appendChild(el('span', 'pt-chip', weaponLabel(w))); });
+        invList(p).forEach(function (e) { row.appendChild(el('span', 'pt-chip', weaponLabel(e[0]) + (e[1] > 1 ? ' ×' + e[1] : ''))); });
         Ctl.appendChild(row);
     }
 
@@ -498,12 +488,13 @@
         var opts = R.attackOptions(g, rctx);
         Ctl.appendChild(el('span', 'pt-hint', targeting ? targetingHint(targeting) : 'İstersen bir silah kullan, sonra turu bitir.'));
         var row = el('div', 'pt-row');
-        p.w.forEach(function (w, i) {
+        invList(p).forEach(function (e) {
+            var w = e[0];
             var def = C.WEAPONS[w];
-            var usable = def.kind === 'shield' ? !p.shield : (def.kind === 'area' ? true : opts.some(function (o) { return o.item === i; }));
-            var b = btn(def.emoji + ' ' + def.name, targeting && targeting.item === i ? 'primary' : '', function () {
-                if (def.kind === 'shield') { act({ type: 'use', item: i }); return; }
-                targeting = targeting && targeting.item === i ? null : { item: i, kind: def.kind, range: def.range, w: w };
+            var usable = def.kind === 'shield' ? !p.shield : (def.kind === 'area' ? true : opts.some(function (o) { return o.w === w; }));
+            var b = btn(def.emoji + ' ' + def.name + (e[1] > 1 ? ' ×' + e[1] : ''), targeting && targeting.w === w ? 'primary' : '', function () {
+                if (def.kind === 'shield') { act({ type: 'use', w: w }); return; }
+                targeting = targeting && targeting.w === w ? null : { kind: def.kind, range: def.range, w: w };
                 sig = ''; render();
             }, !usable);
             row.appendChild(b);
@@ -513,14 +504,14 @@
             var tray = el('div', 'pt-row');
             var def2 = C.WEAPONS[targeting.w];
             if (def2.kind === 'target') {
-                opts.filter(function (o) { return o.item === targeting.item; }).forEach(function (o) {
+                opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
                     var d = G.distance(graph, p.pos, g.P[o.target].pos);
-                    tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + ' (−' + def2.dmg[d] + ')', 'danger', function () { targeting = null; act({ type: 'use', item: o.item, target: o.target }); }));
+                    tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + ' (−' + def2.dmg[d] + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, target: o.target }); }));
                 });
             } else {
-                opts.filter(function (o) { return o.item === targeting.item; }).forEach(function (o) {
+                opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
                     var names = g.order.filter(function (id) { return g.P[id].pos === o.node; }).map(function (id) { return g.P[id].av; }).join('');
-                    tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', item: o.item, node: o.node }); }));
+                    tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, node: o.node }); }));
                 });
             }
             tray.appendChild(btn('İptal', 'small', function () { targeting = null; sig = ''; render(); }));
@@ -931,7 +922,7 @@
             var me = g.P[view.me.id];
             var inRange = graph.map.nodes.filter(function (n) { return G.distance(graph, me.pos, n.id) <= targeting.range; }).map(function (n) { return n.id; });
             var node = nearest(inRange);
-            if (node !== null) { var item = targeting.item; targeting = null; act({ type: 'use', item: item, node: node }); }
+            if (node !== null) { var wid = targeting.w; targeting = null; act({ type: 'use', w: wid, node: node }); }
         }
     }
 

@@ -63,7 +63,9 @@
 
     return {
         MAX_HP: 100,
-        INVENTORY: 3,
+        INVENTORY_PER_TYPE: 3,       // sınırsız envanter: tür başına en çok 3
+        INVENTORY_TOTAL: 6,          // toplam en çok 6 (fazlası 'kaçtı')
+        SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
         STAGE_MS: { roll: 15000, choose: 8000, act: 15000, swap: 15000 },   // aşama başına süre
