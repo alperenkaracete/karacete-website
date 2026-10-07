@@ -325,13 +325,16 @@ süreler ve sandık sayıları da aynı dosyadadır.
 
 ### Mobil tam ekran (⛶)
 
-Parti çubuğundaki **⛶** düğmesi (yalnız dokunmatik cihazda ve destek varsa görünür) `core/fullscreen.js` ile çalışır; yardımcı oyuna
-özgü değildir (`Fullscreen.create({ target, onChange })`: `mode()`, `toggle()`, `hint()`, `destroy()`).
+Oda çubuğundaki **⛶** düğmesi (yalnız dokunmatik cihazda ve destek varsa görünür) **tüm oyunlarda** çalışır; `core/main.js` oyun başlayınca
+`core/fullscreen.js` denetleyicisini kurar, oyundan çıkınca yıkar. Yardımcı oyuna özgü değildir (`Fullscreen.create({ target, onChange })`:
+`mode()`, `toggle()`, `hint()`, `destroy()`). Etkinken `<html>`e `fs-active` (iPhone'da ayrıca `fs-fake`) sınıfı eklenir; düzen `style.css`'te:
+başlık gizlenir, `#game-container` dolgu/kenarlık/gölge olmadan `100dvh` doldurur (güvenli alan dolgularıyla), mobilde Bomberman tuvali ekranın
+tamamına yayılır. Parti ve Kafa Topu zaten tam sayfa düzen kullanır.
 
 - **Android (Chrome vb.):** `requestFullscreen({ navigationUI: 'hide' })` + `screen.orientation.lock('landscape')` (kilit desteklenmezse
   sessizce atlanır). Geri hareketi/Esc ile çıkış dinlenir ve düğme eşitlenir.
-- **iPhone/iPod Safari:** element tam ekranı yoktur → **sahte tam ekran**: `<html>`e `fs-active fs-fake` sınıfları eklenir (`100dvh`, güvenli alan
-  dolguları). Adres çubuğu koddan gizlenemez; ilk girişte ipucu çıkar: **Paylaş → Ana Ekrana Ekle** ile açılırsa uygulama gerçekten tam ekrandır.
+- **iPhone/iPod Safari:** element tam ekranı yoktur → **sahte tam ekran**: yukarıdaki düzen uygulanır ve eldeki alan en çok açılır. **Safari'nin
+  adres çubuğu koddan gizlenemez** (iOS kısıtı); tam ekran için **Paylaş → Ana Ekrana Ekle** ile açılmalıdır. İlk girişte bu ipucu gösterilir.
 - **Ana ekrandan açılmış uygulama** (`display-mode: standalone|fullscreen` / `navigator.standalone`): zaten tam ekran, düğme gizlenir.
 - **Ana ekrana ekle:** `manifest.webmanifest` (`display: fullscreen`, yönelim kilitsiz) + iOS meta etiketleri (`apple-mobile-web-app-capable`,
   `status-bar-style: black`) ve `assets/icons/` (yer tutucu "K" simgeleri; istenirse aynı adlarla değiştirilebilir). **Servis çalışanı yoktur.**

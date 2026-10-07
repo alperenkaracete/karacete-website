@@ -36,8 +36,6 @@
     var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
     var ticker = null;
     var TICK_MS = 250;
-    var fsCtl = null;          // tam ekran denetleyicisi (core/fullscreen.js); destek yoksa düğme gizli
-    var fsHintTimer = null;
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
     var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
 
@@ -106,9 +104,7 @@
         main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
         var legendBtn = btn('ⓘ', 'pt-legendbtn small', function () { els.legend.classList.toggle('open'); });
-        var fsBtn = btn('⛶', 'pt-fsbtn small', onFullscreenClick);
-        fsBtn.style.display = 'none';
-        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(legendBtn); bar.appendChild(logBtn); bar.appendChild(fsBtn);
+        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(legendBtn); bar.appendChild(logBtn);
         var logPanel = el('div', 'pt-log hidden');
         var overlay = el('div', 'pt-overlay hidden');
         var toast = el('div', 'pt-toast hidden');
@@ -116,7 +112,7 @@
         rootEl.appendChild(lobby); rootEl.appendChild(game); rootEl.appendChild(overlay);
         root.appendChild(rootEl);
         return {
-            root: rootEl, lobby: lobby, game: game, fsBtn: fsBtn, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
+            root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
             canvas: canvas, strip: strip, emotes: emotes, legend: legend, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
@@ -433,35 +429,6 @@
     }
 
     // ---- Oyun: üst çubuk, oyuncular, kontroller, günlük ----
-    // ---- Tam ekran (⛶): Android'de gerçek tam ekran + yatay kilit, iPhone'da sahte tam ekran (core/fullscreen.js) ----
-    function updateFsBtn() {
-        if (!els || !els.fsBtn) return;
-        var on = !!fsCtl && fsCtl.supported();
-        els.fsBtn.style.display = on ? '' : 'none';
-        var active = on && fsCtl.isActive();
-        els.fsBtn.textContent = active ? '🗗' : '⛶';
-        els.fsBtn.setAttribute('aria-label', active ? 'Tam ekrandan çık' : 'Tam ekran');
-        els.fsBtn.title = active ? 'Tam ekrandan çık' : 'Tam ekran';
-    }
-
-    function showFsHint(text) {
-        if (!els || !els.game || !text) return;
-        var old = els.game.querySelector('.pt-fshint');
-        if (old) old.remove();
-        var h = el('div', 'pt-fshint', text);
-        els.game.appendChild(h);
-        if (fsHintTimer) clearTimeout(fsHintTimer);
-        fsHintTimer = setTimeout(function () { fsHintTimer = null; if (h.parentNode) h.remove(); }, 8000);
-    }
-
-    function onFullscreenClick() {
-        if (!fsCtl) return;
-        var entering = !fsCtl.isActive();
-        fsCtl.toggle().then(function () {
-            if (entering && fsCtl && fsCtl.isActive()) showFsHint(fsCtl.hint());
-        });
-    }
-
     function renderBar(v) {
         var g = v.game;
         els.barLeft.textContent = 'Tur ' + g.rd + ' · Hedef ' + g.goal + ' ⭐';
@@ -1144,8 +1111,6 @@
         document.body.classList.add('parti-active');
         els = buildDom();
         miniRoot = el('div', 'pt-duel-root');
-        fsCtl = window.Fullscreen ? Fullscreen.create({ target: document.documentElement, onChange: function () { updateFsBtn(); window.requestAnimationFrame(resize); } }) : null;
-        updateFsBtn();
         view = null;
         sig = '';
         shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; openCard = null; lastFq = -1; targeting = null; logOpen = false;
@@ -1191,8 +1156,6 @@
         ticker = null;
         if (machine) machine.destroy();         // düello oturumu: oyunu yık, dinleyicileri/zamanlayıcıları bırak
         miniRoot = null;
-        if (fsHintTimer) { clearTimeout(fsHintTimer); fsHintTimer = null; }
-        if (fsCtl) { fsCtl.destroy(); fsCtl = null; }
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');
