@@ -502,9 +502,11 @@
     }
 
     // ---- Minioyun ----
-    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game? }
-    // Düello: yalnızca insanlar arasında (botlar seçilmez); oyun tohumdan seçilir (rng'ye ek çekiliş yok, eski
-    // tohumlu oyunlar aynı kalır): game = C.DUEL_GAMES[seed % n]. players[0] oyunun ev sahibi (isHost) olur.
+    // Tur sonunda çalışacak minioyunun belirtimi: { type: 'ffa'|'duel', players: [id], seed, game?, pairs?, extra? }
+    // Düello: yalnızca insanlar (botlar seçilmez) tohumlu karıştırılıp ardışık ÇİFTLERE bölünür; hepsi aynı oyunu aynı anda
+    // oynar (game = C.DUEL_GAMES[seed % n]). Tek sayıda insanda sondaki kişi `extra`dır (ilk biten maçın kaybedeniyle ikinci
+    // şans maçı oynar). pairs[k][0] o maçın ev sahibi (isHost). `players` = ilk çift (geri uyum). rng çekimi eskisiyle aynı
+    // (2 insanda spec birebir aynı), eski tohumlu oyunlar değişmez. 1 insan -> çark (ffa).
     function minigameSpec(state, ctx) {
         var rng = Rng(state, ctx);
         var humans = state.order.filter(function (id) { return !state.P[id].bot; });
@@ -514,9 +516,11 @@
             // aynı sırada kalır, bayrak yokken davranış (%30) değişmez.
             var roll = rng.f();
             if (ctx.mini || roll < 0.3) {
-                var pair = rng.shuffle(humans).slice(0, 2);
+                var shuffled = rng.shuffle(humans);
+                var pairs = [];
+                for (var i = 0; i + 1 < shuffled.length; i += 2) pairs.push([shuffled[i], shuffled[i + 1]]);
                 var game = ctx.mini && ctx.mini.game ? ctx.mini.game : C.DUEL_GAMES[seed % C.DUEL_GAMES.length];
-                return { type: 'duel', game: game, players: pair, seed: seed };
+                return { type: 'duel', game: game, players: pairs[0].slice(), pairs: pairs, extra: shuffled.length % 2 ? shuffled[shuffled.length - 1] : null, seed: seed };
             }
         }
         return { type: 'ffa', players: state.order.slice(), seed: seed };
