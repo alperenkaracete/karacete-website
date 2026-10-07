@@ -46,7 +46,7 @@ function room(seed, extra) {
                 const info = RULES[spec.game];
                 if (!info) return Mini.startMinigame(spec);        // ffa / çark
                 const defs = makeDefs(info.prefix, info.rules);
-                node.defs.push(defs);
+                if (!spec.observer) node.defs.push(defs);        // başsız hakem oturumları oyun kurmaz
                 return Mini.startMinigame(Object.assign({}, spec, { defs }));
             },
             send: (msg) => {
@@ -135,8 +135,10 @@ async function reachDuel(game, opts) {
         r.m('A').dispatch({ type: 'start' });
         r.flush();
         let guard = 0;
-        while (r.state('A').g.stage !== 'mini' && guard++ < 300) {
-            r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: gp }));
+        while (r.state('A').g.stage !== 'mini' && guard++ < 400) {
+            const cur = curId(r);
+            if (r.nodes[cur]) r.m(cur).dispatch(R.autoAction(r.state('A').g, { g: gp }));
+            else r.advance(1000);                    // bot sırası: lider oynatır
             r.flush();
         }
         const mn = r.state('A').mn;
