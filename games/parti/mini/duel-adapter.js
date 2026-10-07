@@ -12,11 +12,13 @@
 //   { k:'catchup', to, msgs }    lider: kaçan rakip mesajlarını bir oyuncuya yeniden gönderir
 //   { k:'reset', r }             lider: düello yeniden kurulur (oyuncu örneği yenilenmiş; durum kurtarılamaz)
 // Hakem (duel-referee.js) yalnızca lider oturumunda çalışır; sonucu lider belirler.
+// İzleme: spec.onWatch(snap|null) verilirse (yalnız lider) hakem durumu her değiştiğinde duel-watch.js anlık görüntüsü verilir;
+// makine bunu pt_state ile yayınlar ve oynamayanlar salt-okunur tahtayı görür.
 // Sonuç: kazanan [[k],[k]], beraberlik [[a,b]]; süre dolunca bitmemiş oyun beraberlik sayılır.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true, require('../config.js'));
-    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false, root.PartiConfig);
-})(typeof self !== 'undefined' ? self : this, function (Referee, isNode, Config) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true, require('../config.js'), require('./duel-watch.js'));
+    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false, root.PartiConfig, root.PartiDuelWatch);
+})(typeof self !== 'undefined' ? self : this, function (Referee, isNode, Config, Watch) {
     'use strict';
 
     var GLOBAL = typeof self !== 'undefined' ? self : this;
@@ -136,7 +138,7 @@
             // Hakem: lider her zaman (sonucu o belirler); atış sınırı olan oyunlarda oyuncular da (yalnız şerit/kilit
             // için; sonucu çözmez, zamanlayıcı kurmaz).
             var referee = (spec.isLeader || (info.limit && isPlayer))
-                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: onLimit })
+                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: onLimit, onUpdate: function () { emitWatch(); } })
                 : null;
             var stripEl = null;
             var stripTimer = null;
@@ -161,6 +163,14 @@
                 return bannerMs(info.anim(referee.board(), rules));
             }
 
+            // İzleme anlık görüntüsü (yalnız onWatch verilen lider oturumu). ranking: hakem dışı sonuçlar (süre/hükmen) için.
+            function emitWatch(ranking) {
+                if (!spec.onWatch || !referee || torn) return;
+                var st = referee.state();
+                if (ranking) st.result = { ranking: ranking, reason: '' };
+                spec.onWatch(Watch.snapshot(spec.game, st, rules));
+            }
+
             function finish(ranking, reason) {
                 if (resolved) return;
                 resolved = true;
@@ -171,6 +181,7 @@
                 var msg = { k: 'result', r: ranking, why: reason };
                 if (bm > 0) { res.bm = bm; msg.bm = bm; }
                 resolve(res);
+                emitWatch(ranking);
                 // Sonucu oyunculara bildir (şerit); lider oyuncuysa kendisi de gösterir
                 net.send(msg);
                 presentResult(ranking, reason, bm);

@@ -250,6 +250,13 @@
             st.textContent = stText(v);
             timerEls.push({ node: st, fn: stText });
             li.appendChild(st);
+            // Canlı izleme: liderin yayınladığı kompakt tahta anlık görüntüsü (salt-okunur; her hamlede rv ile yeniden çizilir)
+            if (p.watch && window.PartiDuelWatch) {
+                var names = {};
+                p.players.forEach(function (id) { names[id] = nameOf(v, id); });
+                var board = PartiDuelWatch.render(document, p.watch, names);
+                if (board) li.appendChild(board);
+            }
             list.appendChild(li);
         });
         c.appendChild(list);

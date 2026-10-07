@@ -271,6 +271,11 @@ startMinigame({
   Sonuç bannerı gelene kadar `getView().mini.pairs[i].done/winner/draw` ve sıralama gizlidir. Testler: `tests/parti-duel-banner.test.js`
   (`catdog.js` sayılarıyla ayrışmayı da yakalar). Hold sırasında lider devri oturumu yeniden
   başlatmaz. Lider sonucu `{k:'result'}` yüküyle oyunculara bildirir (yalnız lider kabul edilir).
+- **Canlı izleme:** düelloda olmayanlar (ikinci şans bekleyen, botlar dışındaki herkes) ve maçı biten oyuncular, süren **tüm maçların** salt-okunur
+  canlı tahtasını görür (`duelPairsCard`: XOX 3×3, Dörtlü 7×6, Kedi-Köpek can çubukları + son atış özeti; canvas/animasyon yok). Yeni yük ya da oturum
+  yoktur: lider zaten çalışan hakemlerinden her kabul edilen hamlede (`referee.onUpdate`) kompakt bir **anlık görüntü** üretir (`mini/duel-watch.js`
+  `snapshot`), `pm[i].wb` olarak `pt_state` ile yayınlar (değişmediyse yayınlamaz); alıcı `sanitize` ile doğrular (geçersiz = `null`, oyunu bozmaz).
+  Geç katılan/yeniden bağlanan istemci anlık görüntüyü hazır alır; ikinci şans maçı boş başlar. `getView().mini.pairs[i].watch` arayüze verilir.
 - **Süre/takılma:** süre dolunca (XOX/Dörtlü 90 sn, Kedi-Köpek 120 sn: `DUEL_MS_BY_GAME`) bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
   Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer
   (lider kaçan rakip hamlelerini `catchup` ile yeniden gönderir). Sayfası yenilenen oyuncu için durum kurtarılamaz: düello iki tarafta
