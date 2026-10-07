@@ -73,6 +73,11 @@
         };
     }
 
+    // "Atışlar bitti" katmanı metni (saf)
+    function limitInfo() {
+        return { title: 'Atışlar bitti', hint: 'Sonuç hesaplanıyor…' };
+    }
+
     function defaultTimers() {
         return {
             set: function (f, ms) { return setTimeout(f, ms); },
@@ -99,7 +104,11 @@
         return new Promise(function (resolve, reject) {
             var resolved = false;
             var torn = false;
-            var referee = spec.isLeader ? Referee.create({ prefix: info.prefix, rules: rules, players: players }) : null;
+            // Hakem: lider her zaman (sonucu o belirler); atış sınırı olan oyunlarda oyuncular da (yalnız "Atışlar bitti"
+            // katmanı için; sonucu çözmez, zamanlayıcı kurmaz).
+            var referee = (spec.isLeader || (info.limit && isPlayer))
+                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: showLimit })
+                : null;
             var offNet = null;
             var deadlineTimer = null;
             var tickTimer = null;
@@ -116,8 +125,24 @@
                 resolve({ ranking: ranking, reason: reason });
             }
 
+            // Atış sınırı doldu: oyunun kendi arayüzü bitmez; üstüne katman biner, sonucu hakem (lider) belirler.
+            function showLimit() {
+                if (!isPlayer || !spec.root || torn) return;
+                var doc = spec.root.ownerDocument;
+                var info2 = limitInfo();
+                var layer = doc.createElement('div');
+                layer.className = 'pt-duel-limit';
+                var t1 = doc.createElement('strong');
+                var t2 = doc.createElement('span');
+                t1.textContent = info2.title;
+                t2.textContent = info2.hint;
+                layer.appendChild(t1);
+                layer.appendChild(t2);
+                spec.root.appendChild(layer);
+            }
+
             function check() {
-                if (!referee || resolved) return;
+                if (!referee || !spec.isLeader || resolved) return;
                 var out = referee.outcome();
                 if (out) finish(out.ranking, out.reason);
             }
@@ -193,6 +218,7 @@
                     if (!isPlayer || from !== spec.leader || m.to !== meId || !Array.isArray(m.msgs) || !def) return;
                     m.msgs.forEach(function (e) {
                         if (e && e.f === oppId && e.m && typeof e.m.type === 'string' && !/_rematch$/.test(e.m.type)) {
+                            if (referee) referee.feed(oppId, e.m);
                             oppSeen++;
                             def.onMessage(e.m);
                         }
@@ -227,7 +253,7 @@
             offNet = net.on(onNet);
             if (spec.root && spec.root.classList) spec.root.classList.add('pt-duel');
 
-            if (referee && spec.deadlineMs > 0) {
+            if (referee && spec.isLeader && spec.deadlineMs > 0) {
                 deadlineTimer = timers.set(function () {
                     deadlineTimer = null;
                     finish(referee.timeout(), 'timeout');
@@ -260,5 +286,5 @@
         });
     }
 
-    return { run: run, supports: supports, spectatorInfo: spectatorInfo, GAMES: GAMES, fmtTime: fmtTime };
+    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, GAMES: GAMES, fmtTime: fmtTime };
 });

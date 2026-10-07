@@ -65,7 +65,7 @@ test('minigameSpec: düello yalnız insanlar arasında, hazır oyunlardan, deter
             assert.equal(spec.game, undefined);
         }
     }
-    assert.deepEqual(Object.keys(seen).sort(), ['connect4', 'xox'].sort(), 'iki oyun da seçilebiliyor');
+    assert.deepEqual(Object.keys(seen).sort(), ['catdog', 'connect4', 'xox'], 'üç oyun da seçilebiliyor');
 });
 
 test('minigameSpec: tek insan + botlar -> düello yok', () => {

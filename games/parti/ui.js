@@ -37,7 +37,7 @@
     var ticker = null;
     var TICK_MS = 250;
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
-    var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla' };
+    var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);

@@ -9,7 +9,13 @@ const Machine = require('../games/parti/machine.js');
 const Mini = require('../games/parti/minigame.js');
 const { fakeRoot, makeDefs } = require('./duel-fakes.js');
 const maps = { pirate: require('../games/parti/maps/pirate.js'), space: require('../games/parti/maps/space.js') };
-const RULES = { xox: { prefix: 'xox', rules: require('../games/xox-rules.js') }, connect4: { prefix: 'c4', rules: require('../games/connect4-rules.js') } };
+const Adapter = require('../games/parti/mini/duel-adapter.js');
+const CDR = Adapter.GAMES.catdog.rules();
+const RULES = {
+    xox: { prefix: 'xox', rules: require('../games/xox-rules.js') },
+    connect4: { prefix: 'c4', rules: require('../games/connect4-rules.js') },
+    catdog: { prefix: 'cd', rules: CDR }
+};
 const gp = G.index(maps.pirate);
 
 function room(seed) {
@@ -371,4 +377,86 @@ test('düello: sayfası yenilenen oyuncu geri gelince düello iki tarafta sıfı
     playToWin(r, 'xox');
     await r.settle();
     assert.ok(r.state('A').mn.applyAt, 'yenilemeden sonra düello bitti');
+});
+
+// ---- Kedi - Köpek: 3 atış sınırı ----
+// Sıradaki oyuncu için (isabet / iki taraf da hasarsız) bir atış bulup oynatır.
+function cdShoot(r, wantHit) {
+    const [p1, p2] = r.state('A').mn.pl;
+    const d = r.lastDefs(p1).view.myTurn ? r.lastDefs(p1) : r.lastDefs(p2);
+    const v = d.view;
+    for (let a = 0; a <= 180; a += 3) {
+        for (let p = 0; p <= 100; p += 3) {
+            const mv = { kind: 'shot', turn: v.board.turn, angle: a, power: p, powerUp: null };
+            const n = CDR.apply(v.board, mv, v.myIndex).board;
+            const dmg = [v.board.players[0].hp - n.players[0].hp, v.board.players[1].hp - n.players[1].hp];
+            if (wantHit ? dmg[1 - v.myIndex] > 0 && dmg[v.myIndex] === 0 : dmg[0] === 0 && dmg[1] === 0) {
+                assert.equal(d.duel.move(mv), true);
+                r.flush();
+                return;
+            }
+        }
+    }
+    throw new Error('atış bulunamadı');
+}
+
+for (const leaderPlays of [true, false]) {
+    test(`düello akışı (catdog, lider ${leaderPlays ? 'oynuyor' : 'izliyor'}): 3 atış sonunda kalan cana göre sonuç, "Atışlar bitti" katmanı`, async () => {
+        const r = await reachDuel('catdog', leaderPlays);
+        const pl = r.state('A').mn.pl;
+        const spectator = ['A', 'B', 'C'].find((id) => !pl.includes(id));
+        pl.forEach((id) => assert.equal(r.lastDefs(id).view.phase, 'playing'));
+        const { first, second } = mover(r);
+        cdShoot(r, true);                                  // ilk başlayan isabet ettirir
+        for (let i = 0; i < 4; i++) cdShoot(r, false);
+        await r.settle();
+        assert.ok(!r.state('A').mn.applyAt, '5 atıştan sonra sonuç yok');
+        pl.forEach((id) => assert.ok(!r.nodes[id].root.textContent.includes('Atışlar bitti')));
+        cdShoot(r, false);                                 // 6. atış
+        await r.settle();
+        const mn = r.state('A').mn;
+        assert.deepEqual(mn.rk, [[first], [second]]);
+        assert.ok(mn.applyAt);
+        assert.equal(r.nodes[spectator].root.textContent, '', 'oturum kapandı');
+        r.advance(C.MINI_HOLD_MS + 200, 50);
+        const rank = {};
+        r.state('A').fx.filter((e) => e.t === 'reward').forEach((e) => { rank[e.id] = e.rank; });
+        assert.deepEqual(rank, { [first]: 1, [second]: 2 });
+    });
+}
+
+test('düello (catdog): atış sınırı dolunca oyuncular katmanı görür, izleyici görmez', async () => {
+    const r = await reachDuel('catdog', true);
+    const pl = r.state('A').mn.pl;
+    const spectator = ['A', 'B', 'C'].find((id) => !pl.includes(id));
+    // sınır dolar dolmaz sonuç uygulanır ve oturum kapanır: katmanı sınırın dolduğu atıştan hemen sonra yakala
+    const seen = {};
+    pl.forEach((id) => {
+        const root = r.nodes[id].root;
+        const orig = root.appendChild.bind(root);
+        root.appendChild = (c) => { if (c.className === 'pt-duel-limit') seen[id] = c.textContent; return orig(c); };
+    });
+    for (let i = 0; i < 6; i++) cdShoot(r, false);
+    await r.settle();
+    assert.deepEqual(Object.keys(seen).sort(), pl.slice().sort());
+    pl.forEach((id) => assert.ok(seen[id].includes('Atışlar bitti')));
+    assert.ok(!r.nodes[spectator].root.textContent.includes('Atışlar bitti'));
+    assert.deepEqual(r.state('A').mn.rk, [pl.slice()], 'iki taraf da ıskaladı: beraberlik');
+});
+
+test('düello (catdog): heal atış sayılmaz; 90 sn dolunca kalan cana göre sonuç', async () => {
+    const r = await reachDuel('catdog', false);
+    const [p1, p2] = r.state('A').mn.pl;
+    const { first, second } = mover(r);
+    const dFirst = r.lastDefs(first);
+    assert.equal(dFirst.duel.move({ kind: 'heal', turn: 0 }), true);
+    r.flush();
+    cdShoot(r, false);                                     // ikinci başlayan
+    cdShoot(r, true);                                      // ilk başlayan isabet (1. atış)
+    cdShoot(r, false);
+    r.advance(C.DUEL_MS + 500);
+    await r.settle();
+    assert.ok(r.state('A').mn.applyAt, 'süre dolunca uygulandı (3 atış bitmedi)');
+    assert.deepEqual(r.state('A').mn.rk, [[first], [second]], 'kalan can fazla olan önde');
+    assert.ok([p1, p2].includes(first));
 });
