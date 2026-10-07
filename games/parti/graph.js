@@ -71,6 +71,29 @@
         return { path: [to].concat(rest.path), pos: rest.pos, remaining: rest.remaining, choices: rest.choices };
     }
 
+    // Yön seçimi önizlemesi: `pos` bir dallanma düğümü, `steps` o noktada kalan adım sayısı. Her çıkış için
+    //   { choice: ilk düğüm, path: seçimden sonra yürünen düğümler (sonraki dallanmaya ya da adım bitimine kadar),
+    //     ends: o yönde olası TÜM bitiş düğümleri (sonraki dallanmalar da dahil, tekil), more: path sonrası yeni bir dallanma var mı }
+    function preview(g, pos, steps) {
+        var node = g.byId[pos];
+        var out = [];
+        if (!node || !(steps >= 1)) return out;
+        node.next.forEach(function (c) {
+            var w = walkVia(g, pos, steps, c);
+            if (!w) return;
+            var ends = {};
+            (function collect(w2, depth) {
+                if (!w2.choices || depth > 8) { ends[w2.pos] = true; return; }
+                w2.choices.forEach(function (c2) {
+                    var nxt = walkVia(g, w2.pos, w2.remaining, c2);
+                    if (nxt) collect(nxt, depth + 1);
+                });
+            })(w, 0);
+            out.push({ choice: c, path: w.path.slice(), ends: Object.keys(ends).map(Number), more: !!w.choices });
+        });
+        return out;
+    }
+
     // Haritayı doğrular; hata mesajları dizisi döner (boş = geçerli).
     function validate(map) {
         var errors = [];
@@ -135,5 +158,5 @@
         return errors;
     }
 
-    return { MAX_START_EDGE: MAX_START_EDGE, MIN_START_GAP: MIN_START_GAP, TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, validate: validate };
+    return { MAX_START_EDGE: MAX_START_EDGE, MIN_START_GAP: MIN_START_GAP, TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, preview: preview, validate: validate };
 });

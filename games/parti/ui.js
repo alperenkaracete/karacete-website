@@ -457,9 +457,12 @@
             Ctl.appendChild(el('span', 'pt-hint', 'Yön seç (' + g.steps + ' adım kaldı) — haritaya da dokunabilirsin:'));
             var row = el('div', 'pt-row');
             var from = graphFor(g.mapId).byId[p.pos];
+            var preview = G.preview(graphFor(g.mapId), p.pos, g.steps);
             g.choices.forEach(function (to) {
                 var n = graphFor(g.mapId).byId[to];
-                row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol'), 'primary', function () { act({ type: 'dir', to: to }); }));
+                var entry = preview.filter(function (pe) { return pe.choice === to; })[0];
+                var mark = entry && entry.path.some(function (id) { return g.chests[id]; }) ? ' 🧰' : '';
+                row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol') + mark, 'primary', function () { act({ type: 'dir', to: to }); }));
             });
             Ctl.appendChild(row);
         }
@@ -762,6 +765,8 @@
                 c.strokeStyle = '#ffffff'; c.lineWidth = 5; c.stroke();
             }
         });
+        // yön seçimi önizlemesi (kendi turumda 'choose'): bitiş kutucukları kırmızı, yoldaki sandıklar sarı/beyaz halka, yön okları
+        if (choices && me) drawPreview(c, g, graph, me, t);
         // sandıklar
         Object.keys(g.chests).forEach(function (id) {
             var n = graph.byId[id];
@@ -835,6 +840,54 @@
                 c.globalAlpha = 1;
             }
         }
+    }
+
+    var previewCache = { key: '', value: [] };
+
+    function previewFor(g, graph, p) {
+        var key = g.rev + ':' + p.pos + ':' + g.steps;
+        if (previewCache.key !== key) previewCache = { key: key, value: G.preview(graph, p.pos, g.steps) };
+        return previewCache.value;
+    }
+
+    function ring(c, n, r, color, width) {
+        c.beginPath();
+        c.arc(n.x, n.y, r, 0, Math.PI * 2);
+        c.strokeStyle = color;
+        c.lineWidth = width;
+        c.stroke();
+    }
+
+    function drawPreview(c, g, graph, me, t) {
+        var from = graph.byId[me.pos];
+        var pv = previewFor(g, graph, me);
+        var pulse = 0.65 + 0.35 * Math.sin(t / 220);
+        pv.forEach(function (entry) {
+            // yön oku: seçilen ilk kenarın ortasında
+            var first = graph.byId[entry.choice];
+            var mx = (from.x + first.x) / 2;
+            var my = (from.y + first.y) / 2;
+            var ang = Math.atan2(first.y - from.y, first.x - from.x);
+            c.save();
+            c.translate(mx, my);
+            c.rotate(ang);
+            c.fillStyle = 'rgba(255,255,255,' + pulse.toFixed(2) + ')';
+            c.strokeStyle = 'rgba(0,0,0,0.55)';
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(11, 0); c.lineTo(-7, -9); c.lineTo(-7, 9); c.closePath();
+            c.stroke();
+            c.fill();
+            c.restore();
+            // yoldaki sandıklar: yıldız sandığı sarı, silah sandığı beyaz halka
+            entry.path.forEach(function (id) {
+                var ch = g.chests[id];
+                if (!ch) return;
+                ring(c, graph.byId[id], NODE_R + 6, ch.k === 'star' ? '#ffd400' : '#ffffff', 4);
+            });
+            // olası bitiş kutucukları: kırmızı halka
+            entry.ends.forEach(function (id) { ring(c, graph.byId[id], NODE_R + 9, '#ff3b3b', 5); });
+        });
     }
 
     // Aynı kutucuktaki piyonların dizilişi: başlangıçta (8 kişiye kadar) çakışmayan daire/yelpaze,
