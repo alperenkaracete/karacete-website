@@ -18,7 +18,7 @@ const RULES = {
 };
 const gp = G.index(maps.pirate);
 
-function room(seed) {
+function room(seed, extra) {
     let clock = 1000;
     let rs = seed || 99;
     const rand = () => { rs = (rs * 1664525 + 1013904223) >>> 0; return rs / 4294967296; };
@@ -39,7 +39,7 @@ function room(seed) {
         node.root = fakeRoot();
         node.defs = [];
         node.m = Machine.create({
-            me: { id: node.id, name: node.name }, players: node.players, now: () => clock, rand, maps, timers, creator: node.creator,
+            me: { id: node.id, name: node.name }, players: node.players, now: () => clock, rand, maps, timers, creator: node.creator, forceMini: extra && extra.forceMini,
             miniRoot: () => node.root,
             startMinigame: (spec) => {
                 const info = RULES[spec.game];
@@ -377,6 +377,27 @@ test('düello: sayfası yenilenen oyuncu geri gelince düello iki tarafta sıfı
     playToWin(r, 'xox');
     await r.settle();
     assert.ok(r.state('A').mn.applyAt, 'yenilemeden sonra düello bitti');
+});
+
+// ---- ?mini= test bayrağı (lider tarayıcısında okunur) ----
+test('?mini bayrağı: lider makinede her tur belirtilen düello oyunu seçilir (3 insan)', async () => {
+    for (const game of ['catdog', 'connect4', 'xox']) {
+        for (let seed = 1; seed < 6; seed++) {
+            const r = room(seed, { forceMini: { game } });
+            r.join('A', 'Ayse'); r.join('B', 'Bora'); r.join('C', 'Cem');
+            r.m('A').dispatch({ type: 'start' });
+            r.flush();
+            let guard = 0;
+            while (r.state('A').g.stage !== 'mini' && guard++ < 300) {
+                r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: gp }));
+                r.flush();
+            }
+            const mn = r.state('A').mn;
+            assert.equal(mn.ty, 'duel');
+            assert.equal(mn.gm, game);
+            assert.equal(mn.pl.length, 2);
+        }
+    }
 });
 
 // ---- Kedi - Köpek: 3 atış sınırı ----
