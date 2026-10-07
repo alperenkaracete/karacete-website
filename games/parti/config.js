@@ -6,9 +6,9 @@
     'use strict';
 
     var WEAPONS = {
-        fist:    { id: 'fist',    name: 'Yumruk',  emoji: '👊', kind: 'target', range: 1, dmg: { 1: 30 } },
-        shotgun: { id: 'shotgun', name: 'Pompalı', emoji: '🔫', kind: 'target', range: 3, dmg: { 1: 45, 2: 30, 3: 15 } },
-        bow:     { id: 'bow',     name: 'Yay',     emoji: '🏹', kind: 'target', range: 5, dmg: { 1: 20, 2: 20, 3: 20, 4: 20, 5: 20 } },
+        fist:    { id: 'fist',    name: 'Yumruk',  emoji: '👊', kind: 'target', range: 1, dmg: { 0: 30, 1: 30 } },        // mesafe 0 = aynı kutucuk
+        shotgun: { id: 'shotgun', name: 'Pompalı', emoji: '🔫', kind: 'target', range: 3, dmg: { 0: 45, 1: 45, 2: 30, 3: 15 } },
+        bow:     { id: 'bow',     name: 'Yay',     emoji: '🏹', kind: 'target', range: 5, dmg: { 0: 20, 1: 20, 2: 20, 3: 20, 4: 20, 5: 20 } },
         bomb:    { id: 'bomb',    name: 'Bomba',   emoji: '💣', kind: 'area',   range: 4, damage: 30 },
         shield:  { id: 'shield',  name: 'Kalkan',  emoji: '🛡️', kind: 'shield' }
     };

@@ -734,3 +734,85 @@ test('Son Çılgınlık: takım modunda takımın toplamı hedefe ≤3 kalınca 
     t.P.p0.s = 6;                                    // tek oyuncu 6 ama takım 6 → 4 kala
     assert.equal(R.applyMinigame(t, { ranking: [['p2'], ['p3']] }, ctx()).state.fr, 0);
 });
+
+// ---- acil hata: aynı kutucukta saldırı (mesafe 0) NaN üretmemeli ----
+test('aynı kutucukta (mesafe 0) yumruk/pompalı/yay vurur: can düşer, NaN yok', () => {
+    const want = { fist: 30, shotgun: 45, bow: 20 };
+    for (const w of ['fist', 'shotgun', 'bow']) {
+        const s = duelSetup(w, 0);
+        assert.equal(s.P.p0.pos, s.P.p1.pos);
+        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        assert.equal(r.state.P.p1.hp, 100 - want[w], w);
+        assert.ok(Number.isFinite(r.state.P.p1.hp));
+        const dmgEv = r.events.find((e) => e.t === 'dmg');
+        assert.ok(dmgEv && Number.isFinite(dmgEv.n) && dmgEv.n === want[w], 'olay hasarı sonlu');
+    }
+});
+
+test('aynı kutucukta hasar 0\'da ölümle biter (NaN ölümsüzlük yok); botlar da saldırır', () => {
+    for (const w of ['fist', 'shotgun', 'bow']) {
+        const s = duelSetup(w, 0);
+        s.P.p1.hp = 10; s.P.p1.s = 4;
+        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'), w + ' öldürdü');
+        assert.equal(r.state.P.p1.hp, 100, 'öldükten sonra can dolar');
+    }
+    const s = duelSetup('fist', 0);
+    const opts = R.attackOptions(s, ctx());
+    assert.ok(opts.some((o) => o.target === 'p1'), 'aynı kutucuktaki hedef sunulur');
+    const act = R.botAction(s, ctx({ rand: () => 0.1 }));
+    assert.equal(act.type, 'use');
+    assert.equal(act.target, 'p1');
+    const r = apply(s, act);
+    assert.ok(Number.isFinite(r.state.P.p1.hp) && r.state.P.p1.hp < 100);
+});
+
+test('hit güvenliği: geçersiz hasar yok sayılır, bozuk (NaN) can onarılır; weaponDamage mesafe 0 = mesafe 1', () => {
+    const s = duelSetup('fist', 0);
+    s.P.p1.hp = NaN;
+    const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+    assert.ok(Number.isFinite(r.state.P.p1.hp), 'NaN can onarıldı');
+    assert.ok(r.state.P.p1.hp <= 100);
+    // doğrudan reduce ile bozuk tablo: hasar tanımsız menzilde reddedilir
+    const bad = duelSetup('fist', 0);
+    const original = C.WEAPONS.fist.dmg;
+    C.WEAPONS.fist.dmg = {};
+    try {
+        assert.equal(R.reduce(bad, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false);
+    } finally { C.WEAPONS.fist.dmg = original; }
+    for (const [w, d1] of [['fist', 30], ['shotgun', 45], ['bow', 20]]) {
+        const a = apply(duelSetup(w, 0), { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        const b = apply(duelSetup(w, 1), { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        assert.equal(100 - a.state.P.p1.hp, d1);
+        assert.equal(100 - b.state.P.p1.hp, d1);
+    }
+});
+
+test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıldız değerleri sonlu tamsayı', () => {
+    let seed = 99;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    let st = R.createGame({ seed: 5, cfg: { mode: 'solo', goal: 25, map: 'pirate' }, seats: seats(4) }, ctx());
+    const nodes = pirate.nodes.filter((n) => n.type !== 'start').slice(0, 6).map((n) => n.id);
+    let attacks = 0;
+    for (let i = 0; i < 300; i++) {
+        if (st.stage === 'over') break;
+        if (st.stage === 'mini') { st = R.applyMinigame(st, { ranking: [st.order.slice()] }, ctx()).state; continue; }
+        // oyuncuları dar bir bölgede topla (sık aynı kutucuk) ve silah ver
+        if (rnd() < 0.5) st.P[st.order[Math.floor(rnd() * st.order.length)]].pos = nodes[Math.floor(rnd() * nodes.length)];
+        const cur = R.current(st);
+        if (st.P[cur].w.length < 3 && rnd() < 0.5) st.P[cur].w.push(C.WEAPON_IDS[Math.floor(rnd() * 4)]);
+        let act;
+        const opts = st.stage === 'act' ? R.attackOptions(st, ctx()) : [];
+        if (opts.length && rnd() < 0.7) { act = opts[Math.floor(rnd() * opts.length)]; attacks++; }
+        else act = R.botAction(st, ctx({ rand: rnd }));
+        const r = R.reduce(st, act, ctx({ rand: rnd }));
+        if (r.ok) st = r.state;
+        for (const id of st.order) {
+            const p = st.P[id];
+            assert.ok(Number.isFinite(p.hp) && Number.isInteger(p.hp) && p.hp > 0 && p.hp <= 100, 'hp ' + p.hp + ' adım ' + i);
+            assert.ok(Number.isInteger(p.s) && p.s >= 0, 'yıldız');
+        }
+        r.events.forEach((e) => { if (e.t === 'dmg') assert.ok(Number.isFinite(e.n) && e.n > 0); });
+    }
+    assert.ok(attacks > 20, 'yeterince saldırı denendi: ' + attacks);
+});

@@ -189,6 +189,12 @@
         });
     }
 
+    // Mesafeye göre hasar: aynı kutucuk (mesafe 0) mesafe 1 hasarıyla aynıdır; tabloda olmayan mesafe null.
+    function weaponDamage(def, d) {
+        var v = def.dmg[Math.max(1, d)];
+        return Number.isFinite(v) ? v : null;
+    }
+
     // ---- Hasar / ölüm ----
     function die(state, id, evts) {
         var p = state.P[id];
@@ -212,6 +218,9 @@
     // attacker: null olabilir (olay/tuzak/kendi bombası)
     function hit(state, victim, amount, attacker, evts) {
         var p = state.P[victim];
+        // NaN/Infinity asla oluşmasın: geçersiz hasar yok sayılır; bozuk (sonlu olmayan) can onarılır.
+        if (!Number.isFinite(p.hp)) p.hp = C.MAX_HP;
+        if (!Number.isFinite(amount) || amount <= 0) return false;
         if (p.shield) {
             p.shield = false;
             evts.push({ t: 'block', id: victim, by: attacker });
@@ -377,9 +386,11 @@
                     if (isTeammate(state, id, action.target)) return fail('takım arkadaşına saldırılamaz');
                     var d = G.distance(g, p.pos, tgt.pos);
                     if (d > def.range) return fail('hedef menzil dışında');
+                    var dmg = weaponDamage(def, d);
+                    if (dmg === null) return fail('hedef menzil dışında');
                     p.w.splice(idx, 1);
                     evts.push({ t: 'attack', id: id, w: def.id, target: action.target });
-                    hit(state, action.target, def.dmg[d], id, evts);
+                    hit(state, action.target, dmg, id, evts);
                 } else {
                     var node = action.node;
                     if (!validNode(g, node)) return fail('geçersiz kutucuk');
