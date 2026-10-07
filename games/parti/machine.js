@@ -282,11 +282,22 @@
         }
 
         // Minioyun sonucu günlükte tek satır: "🥇Ali 🥈Ayşe 🥉Cem"
-        function resultLine(ranking) {
+        // medals: grup başına madalya sırası (0 = 🥇); verilmezse sıralamadan türer. Düelloda beraberlik/kaybeden 2. ödüldür,
+        // bu yüzden "kazananı olmayan" tek grup 🥇 değil 🥈 gösterilir (ödül mantığı ile aynı).
+        function medalsOf(mn) {
+            if (!mn || !mn.oc) return null;
+            var out = [];
+            if (mn.oc.win.length) out.push(0);
+            if (mn.oc.draw.length || mn.oc.lose.length) out.push(1);
+            return out;
+        }
+
+        function resultLine(ranking, medals) {
             var rank = 1;
             var parts = [];
-            ranking.forEach(function (group) {
-                var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '▫️';
+            ranking.forEach(function (group, gi) {
+                var pos = medals && medals[gi] !== undefined ? medals[gi] + 1 : rank;
+                var medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '▫️';
                 group.forEach(function (id) { parts.push(medal + nm(id)); });
                 rank += group.length;
             });
@@ -335,7 +346,7 @@
         }
 
         function newPair(gm, p, stAt) {
-            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, bAt: 0, wb: null, out: null, off: {} };
+            return { p: p.slice(), stAt: stAt || 0, dlAt: 0, actAt: 0, hAt: 0, bAt: 0, wb: null, out: null, off: {} };
         }
 
         function beginMini() {
@@ -461,7 +472,7 @@
                 M.mn = null;
                 var rr = R.applyMinigame(M.g, { duelOutcome: outcome }, rctx());
                 if (rr.ok) {
-                    addLog(resultLine(mn.rk));
+                    addLog(resultLine(mn.rk, medalsOf(mn)));
                     afterRules(rr);
                 }
                 return;
@@ -715,7 +726,7 @@
                 // biten çiftlerin sonucu mn.pm içinde kalır; bitmeyenler yeni süreyle başlar
                 M.mn.pm.forEach(function (x) {
                     x.off = {};
-                    if (!x.out) x.dlAt = Math.max(now(), x.stAt) + C.duelMs(M.mn.gm);
+                    if (!x.out) x.actAt = now();          // yeni lider boşta sayacını sıfırdan başlatır
                 });
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
@@ -1010,11 +1021,12 @@
             var p = startMinigame({
                 type: 'duel', game: token.gm, players: x.p.slice(), seed: (token.sd + w.pair) >>> 0, me: { id: me.id, name: me.name },
                 isLeader: leader, leader: M.ld, root: w.observer ? null : (opts.miniRoot ? opts.miniRoot() : null), observer: w.observer, net: net, names: names,
-                deadlineMs: x.dlAt ? Math.max(0, x.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
+                deadlineMs: 0, signal: s.ac.signal,
                 timers: opts.timers, now: now,
                 // Lider hakem durumundan izleme anlık görüntüsü yayınlar (oynamayanlar salt-okunur izler); değişmediyse yayınlamaz
                 onWatch: leader ? function (snap) {
                     if (M.mn !== token || token.pm[w.pair] !== x) return;
+                    x.actAt = now();                       // hakem her mesajda güncellenir: boşta sayacı sıfırlanır
                     var next = snap || null;
                     if (JSON.stringify(next) === JSON.stringify(x.wb || null)) return;
                     x.wb = next;
@@ -1022,6 +1034,7 @@
                 } : undefined
             });
             if (!leader) return;
+            x.actAt = now();
             Promise.resolve(p).then(function (res) {
                 if (sessions.indexOf(s) < 0 || M.mn !== token || (res && res.aborted)) return;
                 recordPair(token, w.pair, toOutcome(res, x.p));
@@ -1048,9 +1061,16 @@
                     recordPair(mn, i, { w: x.p[0] === gone[0] ? x.p[1] : x.p[0], l: gone[0], d: 0, r: 'forfeit' });
                 } else if (gone.length === 2) {
                     recordPair(mn, i, { w: '', l: '', d: 1, r: 'forfeit' });
-                } else if (x.dlAt && t >= x.dlAt + C.DUEL_GRACE_MS) {
-                    var wr = Mini.wheelRanking({ players: x.p, seed: (mn.sd + i) >>> 0 });
-                    recordPair(mn, i, { w: wr[0][0], l: wr[1][0], d: 0, r: 'fuse' });
+                } else if (x.actAt && t - Math.max(x.actAt, x.stAt) >= C.DUEL_IDLE_MS) {
+                    // Toplam süre yok; yalnız sırası gelen oyuncu çok uzun süre hiç hamle yapmazsa o maçı kaybeder
+                    var idler = x.wb && x.wb.r === -1 ? x.wb.o[x.wb.t] : '';
+                    if (idler && x.p.indexOf(idler) >= 0) {
+                        recordPair(mn, i, { w: x.p[0] === idler ? x.p[1] : x.p[0], l: idler, d: 0, r: 'idle' });
+                    } else {
+                        // oyun hiç başlamadı (başlangıç mesajı yok): tohumdan çark sonucu, oyun takılmaz
+                        var wr = Mini.wheelRanking({ players: x.p, seed: (mn.sd + i) >>> 0 });
+                        recordPair(mn, i, { w: wr[0][0], l: wr[1][0], d: 0, r: 'fuse' });
+                    }
                 }
             });
         }
@@ -1069,7 +1089,7 @@
             var mine = -1;
             pairs.forEach(function (x, i) { if (x.players.indexOf(me.id) >= 0 && !x.done && mine < 0) mine = i; });
             var p0 = pairs[0];
-            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, pairs: pairs, extra: m.ex || null, myPair: mine,
+            return { type: m.ty, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, medals: hidden ? null : medalsOf(m), pairs: pairs, extra: m.ex || null, myPair: mine,
                 live: sessions.some(function (s) { return !s.observer; }),
                 left: m.applyAt && !hidden ? Math.max(0, m.applyAt - t) : -1, duelLeft: p0 && p0.left >= 0 ? p0.left : -1 };
         }

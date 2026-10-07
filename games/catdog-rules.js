@@ -232,6 +232,24 @@
         return { points: traj.slice(0, n), full: n === traj.length, end: shot.end, wind: sim.wind };
     }
 
+    // Güç düğmelerinin durumu (saf; arayüz bunu okur). Seçilen atış gücü BAĞLANIR: seçildikten sonra o tur iptal edilemez,
+    // başka güç seçilemez; yalnız atış kalır. Böylece 🧭 gibi güçler bedava önizleme/açı ayarı için kullanılamaz.
+    //   controlState({ enabled, powerUp, cd }) -> { locked, buttons: { <anahtar>: { disabled, selected, left } } }
+    function controlState(s) {
+        var cd = s.cd || {};
+        var locked = !!s.enabled && !!s.powerUp;
+        var buttons = {};
+        POWER_KEYS.forEach(function (key) {
+            var left = cd[key] > 0 ? cd[key] : 0;
+            buttons[key] = {
+                disabled: !s.enabled || left > 0 || locked,
+                selected: s.powerUp === key,
+                left: left
+            };
+        });
+        return { locked: locked, buttons: buttons };
+    }
+
     // ---- Duel kuralları arayüzü ----
     function initial(start) {
         start = start || {};
@@ -352,7 +370,7 @@
         BODY_OFFSET: BODY_OFFSET, MUZZLE_OFFSET: MUZZLE_OFFSET,
         messageTypes: ['cd_shot', 'cd_heal'],
         mulberry32: mulberry32, generateScene: generateScene, groundAt: groundAt, bodyCenter: bodyCenter,
-        windFor: windFor, shotWind: shotWind, simulateShot: simulateShot, aimPath: aimPath,
+        windFor: windFor, shotWind: shotWind, simulateShot: simulateShot, aimPath: aimPath, controlState: controlState,
         initial: initial, createStart: createStart, parseStart: parseStart,
         parse: parse, toMessage: toMessage, validate: validate, apply: apply, result: result
     };
