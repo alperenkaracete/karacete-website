@@ -299,7 +299,7 @@
             M.dlLeft = 0;
             if (token.gm) {
                 // Düello: tüm istemcilerde oturum açılır (syncMini); lider sonucu o oturumdan alır.
-                token.dlAt = now() + C.DUEL_MS;
+                token.dlAt = now() + C.duelMs(token.gm);
                 return;
             }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
@@ -584,7 +584,7 @@
                 // düello: ep değişti -> herkes oturumu AYNI tohumla yeniden başlatır (yeni lider sonucu o oturumdan alır)
                 M.mn.rk = [];
                 M.mn.offAt = {};
-                M.mn.dlAt = now() + C.DUEL_MS;
+                M.mn.dlAt = now() + C.duelMs(M.mn.gm);
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -846,7 +846,7 @@
             var p = startMinigame({
                 type: 'duel', game: token.gm, players: token.pl.slice(), seed: token.sd, me: { id: me.id, name: me.name },
                 isLeader: leader, leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, net: net, names: names,
-                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.DUEL_MS, signal: s.ac.signal,
+                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
                 timers: opts.timers, now: now
             });
             if (!leader) return;

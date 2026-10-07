@@ -17,6 +17,7 @@ const RULES = {
     catdog: { prefix: 'cd', rules: CDR }
 };
 const gp = G.index(maps.pirate);
+const N = C.DUEL_CATDOG_SHOTS;
 
 function room(seed, extra) {
     let clock = 1000;
@@ -400,7 +401,7 @@ test('?mini bayrağı: lider makinede her tur belirtilen düello oyunu seçilir 
     }
 });
 
-// ---- Kedi - Köpek: 3 atış sınırı ----
+// ---- Kedi - Köpek: 5 atış sınırı ----
 // Sıradaki oyuncu için (isabet / iki taraf da hasarsız) bir atış bulup oynatır.
 function cdShoot(r, wantHit) {
     const [p1, p2] = r.state('A').mn.pl;
@@ -422,18 +423,18 @@ function cdShoot(r, wantHit) {
 }
 
 for (const leaderPlays of [true, false]) {
-    test(`düello akışı (catdog, lider ${leaderPlays ? 'oynuyor' : 'izliyor'}): 3 atış sonunda kalan cana göre sonuç, "Atışlar bitti" katmanı`, async () => {
+    test(`düello akışı (catdog, lider ${leaderPlays ? 'oynuyor' : 'izliyor'}): 5 atış sonunda kalan cana göre sonuç, "Atışlar bitti" katmanı`, async () => {
         const r = await reachDuel('catdog', leaderPlays);
         const pl = r.state('A').mn.pl;
         const spectator = ['A', 'B', 'C'].find((id) => !pl.includes(id));
         pl.forEach((id) => assert.equal(r.lastDefs(id).view.phase, 'playing'));
         const { first, second } = mover(r);
         cdShoot(r, true);                                  // ilk başlayan isabet ettirir
-        for (let i = 0; i < 4; i++) cdShoot(r, false);
+        for (let i = 0; i < 2 * N - 2; i++) cdShoot(r, false);
         await r.settle();
         assert.ok(!r.state('A').mn.applyAt, '5 atıştan sonra sonuç yok');
         pl.forEach((id) => assert.ok(!r.nodes[id].root.textContent.includes('Atışlar bitti')));
-        cdShoot(r, false);                                 // 6. atış
+        cdShoot(r, false);                                 // son atış
         await r.settle();
         const mn = r.state('A').mn;
         assert.deepEqual(mn.rk, [[first], [second]]);
@@ -457,7 +458,7 @@ test('düello (catdog): atış sınırı dolunca oyuncular katmanı görür, izl
         const orig = root.appendChild.bind(root);
         root.appendChild = (c) => { if (c.className === 'pt-duel-limit') seen[id] = c.textContent; return orig(c); };
     });
-    for (let i = 0; i < 6; i++) cdShoot(r, false);
+    for (let i = 0; i < 2 * N; i++) cdShoot(r, false);
     await r.settle();
     assert.deepEqual(Object.keys(seen).sort(), pl.slice().sort());
     pl.forEach((id) => assert.ok(seen[id].includes('Atışlar bitti')));
@@ -465,7 +466,7 @@ test('düello (catdog): atış sınırı dolunca oyuncular katmanı görür, izl
     assert.deepEqual(r.state('A').mn.rk, [pl.slice()], 'iki taraf da ıskaladı: beraberlik');
 });
 
-test('düello (catdog): heal atış sayılmaz; 90 sn dolunca kalan cana göre sonuç', async () => {
+test('düello (catdog): heal atış sayılmaz; süre (120 sn) dolunca kalan cana göre sonuç', async () => {
     const r = await reachDuel('catdog', false);
     const [p1, p2] = r.state('A').mn.pl;
     const { first, second } = mover(r);
@@ -475,9 +476,9 @@ test('düello (catdog): heal atış sayılmaz; 90 sn dolunca kalan cana göre so
     cdShoot(r, false);                                     // ikinci başlayan
     cdShoot(r, true);                                      // ilk başlayan isabet (1. atış)
     cdShoot(r, false);
-    r.advance(C.DUEL_MS + 500);
+    r.advance(C.duelMs("catdog") + 500);
     await r.settle();
-    assert.ok(r.state('A').mn.applyAt, 'süre dolunca uygulandı (3 atış bitmedi)');
+    assert.ok(r.state('A').mn.applyAt, 'süre dolunca uygulandı (5 atış bitmedi)');
     assert.deepEqual(r.state('A').mn.rk, [[first], [second]], 'kalan can fazla olan önde');
     assert.ok([p1, p2].includes(first));
 });

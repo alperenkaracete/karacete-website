@@ -14,9 +14,9 @@
 // Hakem (duel-referee.js) yalnızca lider oturumunda çalışır; sonucu lider belirler.
 // Sonuç: kazanan [[k],[k]], beraberlik [[a,b]]; süre dolunca bitmemiş oyun beraberlik sayılır.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true);
-    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false);
-})(typeof self !== 'undefined' ? self : this, function (Referee, isNode) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true, require('../config.js'));
+    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false, root.PartiConfig);
+})(typeof self !== 'undefined' ? self : this, function (Referee, isNode, Config) {
     'use strict';
 
     var GLOBAL = typeof self !== 'undefined' ? self : this;
@@ -45,7 +45,7 @@
 
     GAMES.catdog = {
         prefix: 'cd', title: 'Kedi - Köpek',
-        limit: { shots: 3, counts: function (move) { return move.kind === 'shot'; } },
+        limit: { shots: Config.DUEL_CATDOG_SHOTS, counts: function (move) { return move.kind === 'shot'; } },
         rules: function () {
             var r = isNode ? require('../../catdog-rules.js') : GLOBAL.CatDogRules;
             return Object.assign({}, r, { partial: catdogPartial });
