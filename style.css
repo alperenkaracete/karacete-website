@@ -1104,6 +1104,16 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-controls .pt-btn.big { width: 100%; }
 
 .pt-logbtn { padding: 2px 8px; min-height: 30px; }
+.pt-fsbtn { padding: 2px 8px; min-height: 30px; }
+.pt-fshint { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 20; padding: 8px 12px; border-radius: 10px; background: rgba(10, 16, 35, 0.95); color: #fff; font-size: 13px; font-weight: 700; text-align: center; pointer-events: none; }
+/* Tam ekran (core/fullscreen.js): iPhone'da sahte mod adres çubuğu payını dinamik viewport ile alır; çentik/güvenli alan dolguları */
+html.fs-fake body.parti-active { height: 100dvh; min-height: 100dvh; }
+html.fs-active body.parti-active #game-container {
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
+}
 .pt-log { position: absolute; right: 8px; top: 44px; bottom: 80px; width: min(300px, 80%); overflow-y: auto; z-index: 4; padding: 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.8); font-size: 13px; touch-action: pan-y; }
 .pt-logline { padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
 

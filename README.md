@@ -43,6 +43,8 @@ core/lobby.js        takma ad, oyun seçimi, oda kur/katıl, paylaşım bağlant
 core/main.js         akış: lobi → bağlantı → oda → oyun; oyuncu listesi ve host takibi
 core/duel.js         sıra tabanlı iki kişilik oyunlar için ortak protokol/durum makinesi (DOM'suz)
 core/duel-ui.js      aynı oyunlar için ortak arayüz kabuğu (skor, sıra, bekleme, rövanş)
+core/fullscreen.js   genel tam ekran yardımcısı (Android Fullscreen API + yatay kilit, iPhone sahte tam ekran; DOM'suz çekirdek)
+manifest.webmanifest ana ekrana ekle (servis çalışanı yok)   assets/icons/  yer tutucu simgeler (192, 512, apple-touch)
 games/bomberman.js   Bomberman
 games/bomberman-joystick.js  mobil joystick yön/adım kararı (saf, DOM'suz; Node'da test edilir)
 games/xox.js         XOX tahtası (çizim)          games/xox-rules.js       XOX kuralları (saf)
@@ -59,6 +61,7 @@ games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım
 games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
 games/parti/mini/duel-adapter.js  XOX/Dörtlü Bağla'yı iki oyunculu sahte ctx ile Parti düellosu olarak çalıştırır
 games/parti/mini/duel-referee.js  düello mesajlarını kurallarla yeniden oynayıp sonucu bulur (saf)
+games/parti/mini/duel-watch.js    oynamayanlar için kompakt canlı tahta anlık görüntüsü + salt-okunur çizici (saf çekirdek)
 games/parti/machine.js   lider/takipçi ağ durum makinesi: pt_state, lider devri, kopma bekleme (DOM'suz)
 games/parti/ui.js        Parti arayüzü (canvas tahta, lobi/ayarlar, paneller)
 tests/               node:test ile birim testleri
@@ -313,6 +316,19 @@ tek başlangıç ve ≥2 çıkışı, başlangıç kenarı ≤200 birim, çakı�
 (`kind: 'target'` + `range`/`dmg` tablosu (mesafe 0 dahil), `'area'` + `damage` ya da `'shield'`), `WEAPON_IDS`'e ve `WEAPON_WEIGHTS`'e yaz;
 kurallar, arayüz ve ⓘ yardımı tabloyu okur (`C.legend()`). Olaylar (`EVENTS`, olasılıklar ağırlıklardan üretilir), ödüller (`REWARDS`),
 süreler ve sandık sayıları da aynı dosyadadır.
+
+### Mobil tam ekran (⛶)
+
+Parti çubuğundaki **⛶** düğmesi (yalnız dokunmatik cihazda ve destek varsa görünür) `core/fullscreen.js` ile çalışır; yardımcı oyuna
+özgü değildir (`Fullscreen.create({ target, onChange })`: `mode()`, `toggle()`, `hint()`, `destroy()`).
+
+- **Android (Chrome vb.):** `requestFullscreen({ navigationUI: 'hide' })` + `screen.orientation.lock('landscape')` (kilit desteklenmezse
+  sessizce atlanır). Geri hareketi/Esc ile çıkış dinlenir ve düğme eşitlenir.
+- **iPhone/iPod Safari:** element tam ekranı yoktur → **sahte tam ekran**: `<html>`e `fs-active fs-fake` sınıfları eklenir (`100dvh`, güvenli alan
+  dolguları). Adres çubuğu koddan gizlenemez; ilk girişte ipucu çıkar: **Paylaş → Ana Ekrana Ekle** ile açılırsa uygulama gerçekten tam ekrandır.
+- **Ana ekrandan açılmış uygulama** (`display-mode: standalone|fullscreen` / `navigator.standalone`): zaten tam ekran, düğme gizlenir.
+- **Ana ekrana ekle:** `manifest.webmanifest` (`display: fullscreen`, yönelim kilitsiz) + iOS meta etiketleri (`apple-mobile-web-app-capable`,
+  `status-bar-style: black`) ve `assets/icons/` (yer tutucu "K" simgeleri; istenirse aynı adlarla değiştirilebilir). **Servis çalışanı yoktur.**
 
 ## Testler
 
