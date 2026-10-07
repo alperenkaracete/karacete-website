@@ -106,6 +106,22 @@
         // ---- Doğrulama (gelen anlık görüntü) ----
         function isInt(x, lo, hi) { return typeof x === 'number' && isFinite(x) && Math.floor(x) === x && x >= lo && x <= hi; }
 
+        // Oyun durumu doğrulaması: sonlu can/yıldız/konum (NaN/undefined arayüze ve kurallara hiç girmesin).
+        function validGame(g) {
+            if (!g || typeof g !== 'object' || !g.P || typeof g.P !== 'object' || !Array.isArray(g.order)) return false;
+            if (g.order.length > C.MAX_PLAYERS) return false;
+            if (!isInt(g.rd, 1, 1e6) || !isInt(g.turn, -1, 64) || !isInt(g.goal, 1, 100)) return false;
+            for (var i = 0; i < g.order.length; i++) {
+                var id = g.order[i];
+                if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(g.P, id)) return false;
+                var p = g.P[id];
+                if (!p || typeof p !== 'object') return false;
+                if (typeof p.hp !== 'number' || !isFinite(p.hp) || p.hp < 0 || p.hp > C.MAX_HP) return false;
+                if (!isInt(p.s, 0, 999) || !isInt(p.pos, 0, 999) || !isInt(p.home, 0, 999)) return false;
+            }
+            return true;
+        }
+
         function unpack(msg) {
             if (!msg || !isInt(msg.ep, 0, 1e6) || !isInt(msg.rv, 0, 1e9)) return null;
             if (typeof msg.ld !== 'string' || PHASES.indexOf(msg.ph) < 0) return null;
@@ -125,7 +141,7 @@
             // Lider, görüntüdeki koltuklarda oturan bir İNSAN olmalı. Bağlı olup olmadığına bakılmaz: alıcı
             // player_disconnect/player_joined'u henüz işlememiş olabilir ve yeni liderin ilk yayını reddedilirdi.
             if (!seats.some(function (x) { return x.i === msg.ld && !x.b; })) return null;
-            if (msg.g !== null && (typeof msg.g !== 'object' || !msg.g.P || !Array.isArray(msg.g.order))) return null;
+            if (msg.g !== null && !validGame(msg.g)) return null;
             if (!isInt(msg.dl, 0, 3600000)) return null;
             var mn = null;
             if (msg.mn) {

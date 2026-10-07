@@ -602,8 +602,8 @@
                 cursor[e.id] = e.path[e.path.length - 1];
             } else if (e.t === 'roll') {
                 banner = { text: '🎲 ' + e.v, sub: nameOf(v, e.id), t0: t };
-            } else if (e.t === 'dmg') pop(e.id, '−' + e.n, '#ff5d5d');
-            else if (e.t === 'star') pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a');
+            } else if (e.t === 'dmg') { if (Number.isFinite(e.n)) pop(e.id, '−' + e.n, '#ff5d5d');
+            } else if (e.t === 'star') { if (Number.isFinite(e.n)) pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a'); }
             else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', e.node);
             else if (e.t === 'death') {
                 pop(e.id, '💀', '#ffffff', e.at);

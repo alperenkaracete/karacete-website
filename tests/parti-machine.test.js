@@ -964,3 +964,33 @@ test('emote: kendine ait bot yok; lobi dahil (durum varsa) koltuklu herkes atabi
     r.flush();
     assert.equal((r.emotes.A || []).length, 1);
 });
+
+test('pt_state: sonlu olmayan/geçersiz can, yıldız ya da konum içeren durum reddedilir (NaN/undefined arayüze girmez)', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const ids = snap.g.order;
+    const before = r.state('B').rv;
+    const mutate = (fn) => {
+        const m = JSON.parse(JSON.stringify(snap));
+        fn(m.g.P[ids[0]], m.g);
+        m.rv = before + 50;
+        r.m('B').onMessage(m);
+        return r.state('B').rv === before;      // true: reddedildi
+    };
+    assert.ok(mutate((p) => { p.hp = null; }), 'hp null (JSON NaN)');
+    assert.ok(mutate((p) => { p.hp = 'x'; }), 'hp metin');
+    assert.ok(mutate((p) => { p.hp = -5; }), 'hp negatif');
+    assert.ok(mutate((p) => { p.hp = 1e9; }), 'hp çok büyük');
+    assert.ok(mutate((p) => { delete p.hp; }), 'hp yok');
+    assert.ok(mutate((p) => { p.s = 1.5; }), 'yıldız kesirli');
+    assert.ok(mutate((p) => { p.s = -1; }), 'yıldız negatif');
+    assert.ok(mutate((p) => { p.pos = 'a'; }), 'konum metin');
+    assert.ok(mutate((p) => { p.home = null; }), 'home null');
+    assert.ok(mutate((p, g) => { g.rd = 0; }), 'tur 0');
+    assert.ok(mutate((p, g) => { g.order = ['__proto__']; }), 'order prototip anahtarı');
+    // geçerli durum kabul edilir
+    const ok = JSON.parse(JSON.stringify(snap));
+    ok.rv = before + 60;
+    r.m('B').onMessage(ok);
+    assert.equal(r.state('B').rv, before + 60);
+});
