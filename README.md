@@ -47,6 +47,7 @@ core/fullscreen.js   genel tam ekran yardımcısı (Android Fullscreen API + yat
 manifest.webmanifest ana ekrana ekle (servis çalışanı yok)   assets/icons/  yer tutucu simgeler (192, 512, apple-touch)
 games/bomberman.js   Bomberman
 games/bomberman-joystick.js  mobil joystick yön/adım kararı (saf, DOM'suz; Node'da test edilir)
+games/bomberman-smooth.js    görsel konum yumuşatması + harita imzası (saf, DOM'suz; Node'da test edilir)
 games/xox.js         XOX tahtası (çizim)          games/xox-rules.js       XOX kuralları (saf)
 games/connect4.js    Dörtlü Bağla tahtası (çizim) games/connect4-rules.js  Dörtlü Bağla kuralları (saf)
 games/catdog.js      Kedi - Köpek sahnesi (çizim) games/catdog-rules.js    Kedi - Köpek kuralları ve atış hesabı (saf)
@@ -429,6 +430,11 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 - Bomberman mobil joystick: tek hareket döngüsü (50 ms) ve `bomberman-joystick.js` denetleyicisi: adımlar arası **en az 150 ms** (yön değişimi, ölü bölgeye
   girip çıkma bu sınırı atlayamaz), çapraz sınırda **histerezis** (mevcut yönün ekseninden diğer eksene geçmek için baskın/diğer oranı ≥ 1,3), 15 px ölü bölge.
   Parmak joystick'teyken (ve 700 ms sonrasına kadar) sentetik mouse olayları yok sayılır. Klavye okları değişmedi. Testler: `tests/bomberman-joystick.test.js`.
+- Bomberman akıcılığı: oyun mantığı 32 px'lik ızgara adımlarıyla (adım başına ≥150 ms) aynı kaldı; ekranda gösterilen konum ise `bomberman-smooth.js` ile
+  mantıksal konumu üstel yaklaşmayla (τ≈50 ms, kare süresinden bağımsız) izler: ~7 adım/sn'lik zıplama yerine ekran hızında kayma, yürüme karesi görsel
+  mesafeye bağlı, uzak sıçrama (yeniden doğma) anında. Uzak oyuncular da yumuşatılır (durum kimlikte tutulur: `sendPosition` oyuncu nesnesini ağa yollar).
+  Statik harita çevrim dışı katmana önbelleklenir (`mapSignature` değişince yenilenir), sprite'lar keskin ölçeklenir (`image-rendering: pixelated`).
+  Testler: `tests/bomberman-smooth.test.js`.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
 - Bomberman: oyun sürerken odaya giren oyuncu haritayı alır ama o ana kadarki bomba durumunu görmez.
 - XOX / Dörtlü Bağla / Kedi - Köpek / Kafa Topu: skor yalnızca açık oturum boyunca tutulur (sayfa yenilenirse sıfırlanır).

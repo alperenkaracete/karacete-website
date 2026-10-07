@@ -171,6 +171,7 @@ body {
 
 #game-canvas {
     display: none;
+    image-rendering: pixelated;      /* 16 px sprite'lar keskin ölçeklensin (Bomberman) */
     border: 3px solid #2c3e50;
     background-color: #2c3e50;
     border-radius: 8px;

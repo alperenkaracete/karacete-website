@@ -73,6 +73,12 @@
     const JOYSTICK_LOOP_MS = 50;   // tek hareket döngüsü; adım aralığını denetleyici (150 ms) belirler
     const SYNTHETIC_MOUSE_MS = 700;
     let moveInterval = null;
+    // Çizim yumuşatması (games/bomberman-smooth.js): mantık 32 px'lik adımlarla, ekran görsel konumla akıcı
+    let lastFrameT = 0;
+    let frameDt = 16.7;
+    let mapLayer = null;           // statik harita katmanı (çevrim dışı canvas); harita imzası değişince yeniden çizilir
+    let mapLayerSig = -1;
+    let visById = {};              // oyuncu kimliği -> görsel konum durumu (oyuncu nesneleri ağdan her mesajda yenilenir ve ağa gider: durum üzerinde tutulmaz)
 
     function later(fn, ms) {
         const id = setTimeout(function () {
@@ -275,7 +281,7 @@
         if (button) button.textContent = `Yeniden Başlat (${restartVotes.size}/${totalPlayers})`;
     }
 
-    function drawMap() {
+    function drawMap(ctx) {
         for (let y = 0; y < MAP_HEIGHT; y++) {
             for (let x = 0; x < MAP_WIDTH; x++) {
                 ctx.drawImage(spriteSheet, SPRITES.GRASS.sx, SPRITES.GRASS.sy, SPRITES.GRASS.width, SPRITES.GRASS.height, x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
@@ -308,8 +314,35 @@
         }
     }
 
+    // Statik harita (zemin, duvar, kutu, güçlendirmeler) çevrim dışı katmana bir kez çizilir; yalnız harita ya da sprite
+    // durumu değişince yenilenir (her karede 475 karo + emoji metni çizmek yerine tek drawImage).
+    function drawMapCached() {
+        const ready = spriteSheet.complete && spriteSheet.naturalWidth > 0;
+        const sig = BombermanSmooth.mapSignature(map, ready ? 1 : 0);
+        if (!mapLayer || sig !== mapLayerSig) {
+            if (!mapLayer) {
+                mapLayer = document.createElement('canvas');
+                mapLayer.width = CANVAS_WIDTH;
+                mapLayer.height = CANVAS_HEIGHT;
+            }
+            const lc = mapLayer.getContext('2d');
+            lc.imageSmoothingEnabled = false;
+            lc.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            drawMap(lc);
+            mapLayerSig = sig;
+        }
+        ctx.drawImage(mapLayer, 0, 0);
+    }
+
     function drawPlayer(p) {
-        if (p.isDead) return;
+        if (p.isDead) { delete visById[p.id]; return; }
+
+        // Görsel konum mantıksal konumu izler (kare süresinden bağımsız); yeniden doğma/ilk görünüm anında oturur
+        const vis = BombermanSmooth.step(visById[p.id], p.x, p.y, frameDt);
+        visById[p.id] = vis;
+        const px = vis.x;
+        const py = vis.y;
+        const animFrame = vis.moving ? BombermanSmooth.walkFrame(vis.phase) : 0;
 
         let baseSx = 0;
         let flip = false;
@@ -318,17 +351,17 @@
         else if (p.direction === 'up') baseSx = 96;
         else if (p.direction === 'left') { baseSx = 48; flip = true; }
 
-        const sx = baseSx + (p.animFrame * 16);
+        const sx = baseSx + (animFrame * 16);
         const cIndex = p.colorIndex !== undefined ? p.colorIndex : 0;
         const sy = 224 + (cIndex * 16);
 
         ctx.save();
         if (flip) {
-            ctx.translate(p.x + GRID_SIZE, p.y);
+            ctx.translate(px + GRID_SIZE, py);
             ctx.scale(-1, 1);
             ctx.drawImage(spriteSheet, sx, sy, 16, 16, 0, 0, GRID_SIZE, GRID_SIZE);
         } else {
-            ctx.drawImage(spriteSheet, sx, sy, 16, 16, p.x, p.y, GRID_SIZE, GRID_SIZE);
+            ctx.drawImage(spriteSheet, sx, sy, 16, 16, px, py, GRID_SIZE, GRID_SIZE);
         }
         ctx.restore();
 
@@ -338,17 +371,21 @@
             ctx.textAlign = 'center';
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 3;
-            ctx.strokeText(p.name, p.x + GRID_SIZE/2, p.y - 5);
-            ctx.fillText(p.name, p.x + GRID_SIZE/2, p.y - 5);
+            ctx.strokeText(p.name, px + GRID_SIZE/2, py - 5);
+            ctx.fillText(p.name, px + GRID_SIZE/2, py - 5);
         }
     }
 
-    function gameLoop() {
+    function gameLoop(t) {
         if (!running) return;
+        // Kare süresi (gizli sekmeden dönüşte sıçramasın diye en çok 50 ms)
+        const nowT = typeof t === 'number' ? t : performance.now();
+        frameDt = lastFrameT ? Math.min(50, Math.max(0, nowT - lastFrameT)) : 16.7;
+        lastFrameT = nowT;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (map.length) {
-            drawMap();
+            drawMapCached();
         } else {
             ctx.fillStyle = 'white';
             ctx.font = '20px Arial';
@@ -723,6 +760,12 @@
         ctx = canvas.getContext('2d');
         canvas.width = CANVAS_WIDTH;
         canvas.height = CANVAS_HEIGHT;
+        ctx.imageSmoothingEnabled = false;      // 16 px sprite'lar keskin (bulanık ölçekleme yok)
+        lastFrameT = 0;
+        frameDt = 16.7;
+        mapLayer = null;
+        mapLayerSig = -1;
+        visById = {};
 
         const spawnPoint = corners[Math.floor(Math.random() * corners.length)];
         player = {
@@ -771,6 +814,8 @@
         running = false;
         if (rafId) cancelAnimationFrame(rafId);
         rafId = null;
+        mapLayer = null;
+        mapLayerSig = -1;
         timers.forEach(clearTimeout);
         timers.clear();
         if (moveInterval) clearInterval(moveInterval);
