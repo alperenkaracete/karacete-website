@@ -4,7 +4,7 @@ const Duel = require('../core/duel.js');
 function fakeNode(doc) {
     const node = {
         ownerDocument: doc, children: [], className: '', _text: '',
-        classList: { set: new Set(), add(c) { this.set.add(c); } },
+        classList: { set: new Set(), add(c) { this.set.add(c); }, remove() { for (let i = 0; i < arguments.length; i++) this.set.delete(arguments[i]); }, contains(c) { return this.set.has(c); } },
         appendChild(c) { node.children.push(c); return c; },
         get textContent() { return node._text + node.children.map((c) => c.textContent).join(''); },
         set textContent(v) { node._text = v; node.children = []; }

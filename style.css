@@ -1156,6 +1156,7 @@ html.fs-active body.parti-active #game-container {
 .pt-watch-who { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
 .pt-watch-who.turn { background: rgba(255, 212, 0, 0.28); }
 .pt-watch-who.win { background: rgba(76, 175, 80, 0.45); }
+.pt-watch-canvas { display: block; width: 100%; max-width: 360px; align-self: center; border-radius: 8px; background: #6ec6ff; }
 .pt-watch-grid { display: grid; gap: 3px; align-self: center; width: 100%; }
 .pt-watch-grid.cols3 { grid-template-columns: repeat(3, 1fr); max-width: 150px; }
 .pt-watch-grid.cols7 { grid-template-columns: repeat(7, 1fr); max-width: 210px; }

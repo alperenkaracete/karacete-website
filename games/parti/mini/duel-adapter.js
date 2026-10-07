@@ -362,6 +362,7 @@
                 if (stripTimer !== null) { timers.clear(stripTimer); stripTimer = null; }
                 if (offNet) offNet();
                 destroyGame();
+                if (spec.root && spec.root.classList && spec.root.classList.remove) spec.root.classList.remove('pt-duel-locked', 'pt-duel');
                 if (!resolved) { resolved = true; resolve({ ranking: null, aborted: true }); }
             }
 
@@ -371,6 +372,9 @@
             }
 
             offNet = net.on(onNet);
+            // Parti kök düğümü minioyunlar arasında KALICI kullanılır: önceki düellonun kilidi (pt-duel-locked: sonuçta/atış sınırında
+            // tahta tıklamaya kapatılır) sonraki düelloya taşınırsa XOX/Dörtlü tahtası tıklanamaz kalırdı (sayfa yenileyince düzelen hata).
+            if (spec.root && spec.root.classList && spec.root.classList.remove) spec.root.classList.remove('pt-duel-locked');
             if (spec.root && spec.root.classList) spec.root.classList.add('pt-duel');
 
             if (referee && spec.isLeader && spec.deadlineMs > 0) {

@@ -36,6 +36,7 @@
     var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
     var ticker = null;
     var TICK_MS = 250;
+    var watchScenes = {};      // çift no -> Kedi-Köpek canlı izleme sahnesi (kalıcı kanvas; overlay yeniden çizilse de animasyon sürer)
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
     var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
 
@@ -254,7 +255,7 @@
             if (p.watch && window.PartiDuelWatch) {
                 var names = {};
                 p.players.forEach(function (id) { names[id] = nameOf(v, id); });
-                var board = PartiDuelWatch.render(document, p.watch, names);
+                var board = PartiDuelWatch.render(document, p.watch, names, { scene: p.watch.g === 'catdog' ? sceneFor(i) : null });
                 if (board) li.appendChild(board);
             }
             list.appendChild(li);
@@ -1093,11 +1094,18 @@
     }
 
     // ---------------- Döngü ----------------
+    // Kedi-Köpek izleme sahnesi: çift başına bir kalıcı denetleyici (animasyon her render'da sıfırlanmasın)
+    function sceneFor(i) {
+        if (!watchScenes[i]) watchScenes[i] = PartiDuelWatch.createScene(document, window.CatDogRules, window.Emoji);
+        return watchScenes[i];
+    }
+
     function frame(t) {
         raf = requestAnimationFrame(frame);
         if (!machine) return;
         machine.tick();
         draw(t);
+        Object.keys(watchScenes).forEach(function (k) { watchScenes[k].tick(t); });
         timerEls.forEach(function (te) { var txt = te.fn(view); if (te.node.textContent !== txt) te.node.textContent = txt; });
     }
 
@@ -1113,6 +1121,7 @@
         miniRoot = el('div', 'pt-duel-root');
         view = null;
         sig = '';
+        watchScenes = {};
         shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; openCard = null; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
@@ -1156,6 +1165,7 @@
         ticker = null;
         if (machine) machine.destroy();         // düello oturumu: oyunu yık, dinleyicileri/zamanlayıcıları bırak
         miniRoot = null;
+        watchScenes = {};
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');

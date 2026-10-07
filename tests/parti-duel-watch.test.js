@@ -55,7 +55,7 @@ test('sanitize: geçerli kabul; kötü biçimler null (oyunu bozmaz)', () => {
     const ok = { g: 'xox', o: ['A', 'B'], t: 0, r: -1, b: new Array(9).fill(-1) };
     assert.deepEqual(Watch.sanitize(ok), ok);
     assert.notEqual(Watch.sanitize(ok), ok, 'kopya döner');
-    const cdOk = { g: 'catdog', o: ['A', 'B'], t: 0, r: -1, c: ['cat', 'dog'], hp: [100, 100], sh: [0, 0], wind: 0, last: null };
+    const cdOk = { g: 'catdog', o: ['A', 'B'], t: 0, r: -1, c: ['cat', 'dog'], hp: [100, 100], sh: [0, 0], wind: 0, last: null, sd: 7, tn: 0, shots: [] };
     const bad = [
         null, 5, 'x', {}, { ...ok, g: 'tank' }, { ...ok, o: ['A'] }, { ...ok, o: ['A', 'x'.repeat(40)] }, { ...ok, t: 2 }, { ...ok, r: 3 },
         { ...ok, b: new Array(8).fill(-1) }, { ...ok, b: new Array(9).fill(2) }, { ...ok, b: new Array(9).fill('a') }, { ...ok, b: undefined },
