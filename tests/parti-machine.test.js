@@ -683,3 +683,43 @@ test('pt_action: from alanı varsa id ile eşleşmeli; yoksa eski davranış; ku
     r.m('A').onMessage({ type: 'pt_action', id: nextCur, a: { type: 'noop' } });
     assert.equal(r.state('A').rv, rv2);
 });
+
+function finishGame(r) {
+    const M = r.state('A');
+    M.g.stage = 'over';
+    M.ph = 'over';
+    M.g.winner = { kind: 'player', id: M.g.order[0] };
+}
+
+test('yeniden oyna: oyun sırasında gelen izleyiciler koltuk alır (8 sınırı); atılanlar ve kopanlar almaz', () => {
+    const r = started(2);
+    r.join('Z', 'Gelen1'); r.join('Y', 'Gelen2');
+    r.flush();
+    assert.equal(r.view('Z').mode, 'spectator');
+    finishGame(r);
+    r.m('A').dispatch({ type: 'again' });
+    r.flush();
+    assert.equal(r.view('A').phase, 'lobby');
+    assert.deepEqual(r.view('A').seats.map((s) => s.i).sort(), ['A', 'B', 'Y', 'Z']);
+    assert.equal(r.view('Z').mode, 'lobby');
+    assert.equal(r.view('Y').mode, 'lobby');
+});
+
+test('yeniden oyna: koltuk sayısı 8\'i geçmez; atılan izleyici koltuk almaz', () => {
+    const r = room();
+    ['A', 'B'].forEach((id) => r.join(id, id));
+    r.m('A').dispatch({ type: 'bot_add' });
+    r.m('A').dispatch({ type: 'start' });
+    r.flush();
+    for (let i = 0; i < 8; i++) r.join('S' + i, 'Izleyici' + i);
+    r.flush();
+    // atılmış izleyici: kk listesine yaz
+    r.state('A').kk.push('S0');
+    finishGame(r);
+    r.m('A').dispatch({ type: 'again' });
+    r.flush();
+    const seats = r.view('A').seats;
+    assert.equal(seats.length, 8, '8 sınırı');
+    assert.ok(!seats.some((s) => s.i === 'S0'), 'atılan koltuk almaz');
+    assert.ok(seats.some((s) => s.b), 'bot korunur');
+});

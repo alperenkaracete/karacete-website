@@ -398,6 +398,11 @@
                     M.mn = null;
                     M.fx = [];
                     M.S = M.S.filter(function (s) { return s.b || s.c; });
+                    // oyun sırasında gelip izleyici kalan (bağlı, koltuksuz, atılmamış) oyunculara 8 sınırına kadar koltuk ver
+                    (opts.players || []).forEach(function (p) {
+                        if (M.S.length >= C.MAX_PLAYERS || seatOf(p.id) || M.kk.indexOf(p.id) >= 0 || gone[p.id]) return;
+                        M.S.push(freshSeat(p.id, p.name, false));
+                    });
                     return true;
                 }
                 return false;
