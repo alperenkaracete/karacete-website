@@ -128,11 +128,12 @@
     // Her bot: başlangıç gecikmesi, adım aralığı, "kazaya düşme" olasılığı (başa dönüş) tohum + kimlikten. Zayıf-orta oyuncu
     // gibi ayarlı: çoğu bot 120 sn dolmadan hedefe varamaz (tests/parti-kurbaga-rules.test.js dağılımı sabitler).
     var BOT_HORIZON_MS = 130000;
-    var botCache = { key: null, tl: null };
+    var botCache = {};
+    var botCacheSize = 0;
 
     function botTimeline(seed, id) {
         var key = (seed >>> 0) + ':' + id;
-        if (botCache.key === key) return botCache.tl;
+        if (botCache[key]) return botCache[key];
         var rand = mulberry(((seed >>> 0) ^ hashStr(String(id)) ^ 0xB07) >>> 0);
         var step = 1.5 + rand() * 1.2;               // sn: adım başına ortalama süre
         var p = 0.28 + rand() * 0.14;                // her adımda kazaya düşme (başa dönüş) olasılığı
@@ -147,7 +148,9 @@
             t += step * (0.55 + rand() * 1.1) * 1000;
         }
         var tl = { ev: ev, fin: fin };
-        botCache = { key: key, tl: tl };
+        if (botCacheSize >= 64) { botCache = {}; botCacheSize = 0; }       // küçük, sınırlı önbellek (bir maçta ≤ 7 bot)
+        botCache[key] = tl;
+        botCacheSize++;
         return tl;
     }
 

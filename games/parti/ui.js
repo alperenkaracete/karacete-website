@@ -336,7 +336,7 @@
         var isDuel = mn.type === 'duel' && !!mn.game && !!DUEL_TITLES[mn.game];
         if (isDuel && mn.left < 0 && mn.pairs && mn.pairs.length) return duelPairsCard(v, c);
         c.appendChild(el('strong', 'pt-card-title', isDuel ? '⚔️ Düello — ' + DUEL_TITLES[mn.game] : (mn.type === 'duel' ? '🎡 Şans Çarkı — Düello' : '🎡 Şans Çarkı')));
-        if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Yer tutucu minioyun: sıralama rastgele belirlenir.'));
+        if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Acil yedek: sıralama rastgele belirlenir.'));
         var wheel = el('div', 'pt-wheel' + (spinning ? ' spinning' : ''), isDuel ? '⚔️' : '🎡');
         c.appendChild(wheel);
         if (spinning) {

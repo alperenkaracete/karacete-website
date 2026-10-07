@@ -60,6 +60,10 @@ games/parti/graph.js     tahta grafı: yürüme, en kısa adım mesafesi, harita
 games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dekor
 games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
 games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
+games/parti/mini/registry.js      minioyun kaydı: { id, name, icon, kind: ffa|duel|grup, min, max, weight }; seçim, config ve arayüz buradan okur
+games/parti/mini/kurbaga-rules.js   Kurbağa saf kurallar: tohumlu araçlar f(t), çarpışma, makullük denetimi, bot ilerleme, sıralama
+games/parti/mini/kurbaga-session.js Kurbağa oyuncu oturumu (DOM'suz): sıçrama sınırı, çarpışma, ağ raporu birleştirme, kalp atışı
+games/parti/mini/kurbaga-ui.js      Kurbağa arayüzü: kanvas, 4 ok düğmesi, klavye, akran yumuşatması
 games/parti/mini/duel-adapter.js  XOX/Dörtlü Bağla'yı iki oyunculu sahte ctx ile Parti düellosu olarak çalıştırır
 games/parti/mini/duel-referee.js  düello mesajlarını kurallarla yeniden oynayıp sonucu bulur (saf)
 games/parti/mini/duel-watch.js    oynamayanlar için kompakt canlı tahta anlık görüntüsü + salt-okunur çizici (saf çekirdek)
@@ -302,17 +306,71 @@ startMinigame({
   sonucu o oturumdan alır.
 - **İptal/temizlik:** `signal.abort()` oyunu yıkar (`destroy`), kökü temizler, Promise `{ ranking: null, aborted: true }` ile biter.
 
-**Test bayrağı `?mini=`:** adreste `?mini=duel` (rastgele düello oyunu) ya da `?mini=duel:xox` / `duel:connect4` / `duel:catdog` varsa ve
-odada en az 2 insan varsa her tur sonunda düello seçilir (geçersiz değer yok sayılır). Minioyunu **lider** seçtiği için bayrak **lider
-tarayıcısında** okunur (diğer sekmelerde etkisizdir); `PartiRules.parseMiniFlag` / `minigameSpec(state, { mini })`. Bayrak yokken davranış
-(%30 ihtimal, tohumdan oyun) ve rng çekim sırası aynıdır.
+### Minioyun havuzu
+
+Seçim `games/parti/mini/registry.js` kaydından yapılır (`rules.minigameSpec`; eski "%30 düello / kalan çark" kuralı kalktı):
+
+- **Uygunluk:** düello (`xox`, `connect4`, `catdog`) en az **2 İNSAN** ister (botlar düelloya girmez; tek insanda havuzdan düşer); ffa (`kurbaga`)
+  en az 1 insanla, botlarla birlikte oynanır. `grup` türü yalnız şemada tanımlıdır, uygulaması yok: hiçbir zaman seçilmez.
+- **Seçim:** uygun oyunlar arasında eşit ağırlık (`weight: 1`), tohumlu (herkes aynı sonucu görür). Havuz **2'den büyükse bir önceki oyun hariç**
+  tutulur (`state.lm`: son OYNANAN oyunun kimliği; `applyMinigame` ödülü uygularken yazar, `pt_state` ile taşınır, lider devrinde kaybolmaz;
+  `minigameSpec` saf kalır, `lm` yazmaz; çark yedeği `lm`'yi değiştirmez).
+- **Şans Çarkı yalnız acil yedektir:** uygun oyun yok (`game: null`), Kurbağa'da hiç rapor gelmedi ya da oyun kurulamadı.
+
+| Odadaki durum | xox | connect4 | catdog | kurbaga |
+|---|---|---|---|---|
+| 2+ insan (bot olsun olmasın) | %25 | %25 | %25 | %25 |
+| 1 insan + botlar | - | - | - | %100 |
+
+(Oranlar `tests/parti-mini-registry.test.js` içinde 8000 çekilişlik süpürmeyle doğrulanır; "bir önceki hariç" kuralı uzun vadede oranı
+değiştirmez, yalnız üst üste tekrarı önler. Havuz ≤ 2 ise hariç tutma yoktur.)
+
+**Test bayrağı `?mini=<oyun-id>`** (`xox` | `connect4` | `catdog` | `kurbaga`): havuzu o oyuna indirir. `?mini=duel` rastgele düello,
+eski `?mini=duel:<oyun>` aynen çalışır. Uygun değilse (ör. tek insanda düello) bayrak **yok sayılır**, normal havuz kullanılır. Minioyunu
+**lider** seçtiği için bayrak yalnız **lider tarayıcısında** okunur (diğer sekmelerde etkisizdir); `PartiRules.parseMiniFlag` /
+`minigameSpec(state, { mini })`.
+
+### Kurbağa (ffa)
+
+8 kişiye kadar **aynı anda** oynanır; `mini/registry.js` kind `ffa`. Izgara 9 sütun × 10 satır: satır 0 başlangıç (güvenli), 1-8 araç şeritleri,
+9 hedef. Oyuncular birbirine çarpmaz. Tek dokunuş = tek sıçrama (`HOP_MS` = 150 ms bekleme; `event.repeat`/basılı tutma yok). Mobil: 4 büyük ok
+düğmesi; klavye: oklar / WASD. Çarpınca başlangıç satırına dönülür (ölüm sayacı artar).
+
+- **Araçlar ağda yok:** şerit başına yön, hız (1,4-3,4 hücre/sn), uzunluk (1-2) ve boşluk (≥ 2,6 hücre) tohumdan; konum saf `f(t)`
+  (`kurbaga-rules.js`). Geri sayım (3-2-1, `KURBAGA_COUNTDOWN_MS` = 4 sn) lider yayınından hizalanır; her istemci kendi saatinde oynar
+  (birkaç yüz ms kayma kabul).
+- **Ağ (`pt_mg`, `mg: f:<tohum>:kurbaga`):** `{ k:'pos', r, c, d, n, e? }` (`n` artan sıra no, `e` varışta istemcinin ölçtüğü süre). Sıçrama
+  raporları en çok 250 ms'de bir **birleştirilir** (ölüm/varış anında hemen), değişiklik olmasa da 2 sn'de bir kalp atışı gider (lider devri/kayıp
+  mesaj). Herkes katılımcıların mesajlarını **görüntü** için de oturumuna besler (`tau` ≈ 90 ms yumuşatma); güven ve sonuç yalnız liderdedir.
+- **Lider denetimi:** gönderen o maçın insan katılımcısı olmalı; `n` artmalı; iki rapor arası **zaman bütçesi** (`⌊dt/150⌋+1` hücre; birleşik/kayıp
+  mesaj için) aşılırsa yok sayılır; ölüm başlangıç satırına dönüşle (`d` artar) tutarlı olmalı; varış süresi ≥ 9×150 ms ve liderin
+  saatinden en çok 1,5 sn ileri. Varınca rapor donar.
+- **Bitiş:** süre 120 sn (`KURBAGA_MS`). İlk (insan) varıştan sonra kalan süre 20 sn'ye düşer (`KURBAGA_LAST_CALL_MS`; sonraki varışlar uzatmaz).
+  Bağlı **tüm insanlar** varınca erken biter (kopanlar sayımdan çıkar). Hiç rapor yoksa çark.
+- **Sıralama:** varanlar varış süresine göre (eşit ms eşit derece), kalanlar ANLIK satıra göre azalan (eşit satır eşit derece); varan her zaman önde.
+  Kopan insanlar en sona yazılır. Ödül `REWARDS` derecesine göre: 1. ⭐+silah, 2. silah, 3. +25 ❤️; **4. ve sonrası ödülsüz** (mevcut tablo).
+- **Botlar:** `botProgress(tohum, id, t)` / `botFinish` saf ve tohumlu; ağda yok. Aynı fonksiyonlar hem hayalet kurbağayı çizer hem sıralamaya girer.
+  Zayıf-orta oyuncu gibi ayarlıdır (çoğu bot 120 sn dolmadan varamaz; `tests/parti-kurbaga-rules.test.js` dağılımı sabitler). Bot varışı
+  son çağrı sayacını tetiklemez.
+- **Lider devri:** raporlar `pt_state.mn.ff` içinde (küçük: ≈ 20 B/oyuncu) taşınır; oturum anahtarı `ep` içermez → oyuncunun ilerlemesi sıfırlanmaz;
+  istemciler kalp atışıyla son durumu yeniden gönderir. Yeniden bağlanan (yeni sayfa) raporlanan satırdan devam eder.
+- **İzleyici / sonradan katılan / oynamayan:** liderin yayınından (≤ 500 ms'de bir; varışta hemen) ilerleme çubukları; botlar tohumdan.
+
+**Yeni minioyun eklemek:**
+
+1. `games/parti/mini/registry.js`'e satır ekle: `{ id, name, icon, kind: 'duel' | 'ffa', min, max, weight: 1 }`. Seçim, `Config.DUEL_GAMES` ve oranlar
+   otomatik güncellenir; `tests/parti-mini-registry.test.js` dağılımını (≈ %100/oyun sayısı) ve şemayı doğrular.
+2. **Düello** ise aşağıdaki "Yeni düello minioyunu eklemek" adımlarını izle. **ffa** ise: saf kural + oturum modülü yaz (`kurbaga-*` örnek), `minigame.js`
+   içindeki `FFA` tablosuna oturumu ekle, `machine.js`'te rapor denetimini oyuna özel yap (şimdi Kurbağa'ya göre), `ui.js`'te `FFA_TITLES` ve
+   izleyici kartını ekle.
+3. Bayrakla (`?mini=<id>`) uçtan uca dene; 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
 **Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı; çoklu düelloda otomatik çalışır, ek adım yok):
 
 1. Oyun `Games.register` ile kayıtlı olsun ve kural modülü (`*-rules.js`) `initial/parse/toMessage/validate/apply/result` arayüzünü sağlasın.
 2. `games/parti/mini/duel-adapter.js` içindeki `GAMES`'a satır ekle: `{ prefix: <Duel öneki>, title: <Türkçe ad>, rules: ... }`.
-3. `games/parti/ui.js` içindeki `DUEL_TITLES`'a ad ekle ve `games/parti/config.js` `DUEL_GAMES` listesine oyun kimliğini yaz
-   (`rules.minigameSpec` buradan, tohumla deterministik seçer; botlar düelloya seçilmez). Kedi - Köpek gibi sınırlı oyunlar için
+3. `games/parti/ui.js` içindeki `DUEL_TITLES`'a ad ekle; oyun kimliğini `mini/registry.js`'e `kind: 'duel'` olarak yaz (`Config.DUEL_GAMES` oradan türer;
+   `rules.minigameSpec` tohumla deterministik seçer; botlar düelloya seçilmez). Kedi - Köpek gibi sınırlı oyunlar için
    `GAMES` girdisine `limit: { shots, counts(move) }` ekle: sınır dolunca hakem biter, "Atışlar bitti" katmanı çıkar.
 4. Atış sayısı gibi bir sınır gerekiyorsa kural modülüne isteğe bağlı `partial(board, order) -> ranking | null` ekle: sınır dolunca hakem bunu kullanır.
 5. `tests/parti-duel-flow.test.js` içindeki `RULES`'a ekleyip akış testlerini çalıştır; Tarayıcıda: 3 sekmeyle (iki oyuncu + izleyici) deneme.
@@ -440,8 +498,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   uzun süre arka planda kalınca sayfayı tamamen dondurabilir; bu durumda lider olan oyuncunun cihazı oyunu durdurur (diğerlerinde
   "lider sessiz" gibi görünür, kopma/lider devri süreci devreye girmez çünkü bağlantı hâlâ açıktır). Test ortamında yalnızca
   `requestAnimationFrame` durdurma + `document.hidden` taklidi doğrulanabildi.
-- Parti: düello minioyunu XOX, Dörtlü Bağla ve Kedi - Köpek; düello sırasında
-  lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
+- Parti: minioyunlar XOX, Dörtlü Bağla, Kedi - Köpek (düello) ve Kurbağa (ffa); düello sırasında
+  lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar (Kurbağa'da ilerleme korunur).
+  **Eski önbellekli JS ile açılan sekme yeni `pt_state`'i (`mn.ff`, `lm`) anlamaz: sert yenile** (Ctrl+F5 / sayfayı yeniden yükle), aksi halde Kurbağa turunda
+  o sekme takılı görünür. Kurbağa ağ yükü (8 oyuncu ≈ 4 mesaj/sn/oyuncu, herkese yayın) gerçek odada ölçülmedi. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
   (oyun dosyaları modül düzeyinde tek örnek tutar): iki oyuncu için iki ayrı sekme gerekir. Sürerken gelen yeni oyuncu yalnızca izleyici
   olur; kopmuş oyuncunun koltuğu 3 dk sonra düşer.
 - Bomberman mobil joystick: tek hareket döngüsü (50 ms) ve `bomberman-joystick.js` denetleyicisi: adımlar arası **en az 150 ms** (yön değişimi, ölü bölgeye
