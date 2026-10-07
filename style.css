@@ -1148,6 +1148,18 @@ html.fs-active body.parti-active #game-container {
 .pt-duel-root .duel-actions,
 .pt-duel-root .duel-actions.show { display: none; }
 .pt-duel-root .duel-title { font-size: 18px; margin: 0 0 4px; }
+/* Kurbağa (ffa) */
+.pt-frog { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+.pt-frog-hud { display: flex; justify-content: space-between; width: 100%; max-width: 360px; font-size: 14px; font-weight: 700; color: #fff; }
+.pt-frog-canvas { display: block; width: 100%; max-width: 360px; height: auto; aspect-ratio: 9 / 10; border-radius: 8px; background: #41454d; touch-action: none; }
+.pt-frog-pad { display: grid; grid-template-columns: repeat(3, 68px); grid-template-areas: ". up ." "left down right"; gap: 6px; margin-top: 2px; }
+.pt-frog-btn { height: 56px; border: 0; border-radius: 12px; font-size: 24px; color: #fff; background: rgba(255, 255, 255, 0.22); touch-action: none; user-select: none; -webkit-user-select: none; }
+.pt-frog-btn:active { background: rgba(255, 255, 255, 0.45); }
+.pt-frog-up { grid-area: up; }
+.pt-frog-left { grid-area: left; }
+.pt-frog-down { grid-area: down; }
+.pt-frog-right { grid-area: right; }
+.pt-frog-bar { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; white-space: nowrap; }
 .pt-duel-pairs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; }
 .pt-duel-pair { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.08); }
 .pt-duel-pair.done { background: rgba(76, 175, 80, 0.22); }

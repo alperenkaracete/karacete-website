@@ -1073,7 +1073,8 @@
             var s = { key: w.key, mg: w.mg, pair: -1, observer: false, ffa: true, sd: token.sd, ac: new AbortController(), handlers: [], api: null };
             sessions.push(s);
             var names = {};
-            M.S.forEach(function (st) { names[st.i] = st.n; });
+            var avatars = {};
+            M.S.forEach(function (st) { names[st.i] = st.n; avatars[st.i] = st.a; });
             var net = {
                 send: function (m) { send({ type: 'pt_mg', mg: w.mg, from: me.id, m: m }); },
                 on: function (fn) {
@@ -1086,7 +1087,8 @@
             startMinigame({
                 type: 'ffa', game: token.gm, players: token.pl.slice(), bots: token.pl.filter(function (id) { return !ff.rep[id]; }), seed: token.sd,
                 me: { id: me.id, name: me.name }, isLeader: isLeader(), leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, observer: false,
-                net: net, names: names, deadlineMs: 0, signal: s.ac.signal, timers: opts.timers, now: now, startAt: ff.stAt, resume: resume,
+                net: net, names: names, avatars: avatars, deadlineMs: 0, signal: s.ac.signal, timers: opts.timers, now: now, startAt: ff.stAt, resume: resume,
+                getEndAt: function () { return M && M.mn && M.mn.ff ? M.mn.ff.endAt : 0; },
                 onReport: function (m) { if (isLeader()) leaderFfaReport(me.id, m); },
                 register: function (api) { s.api = api; }
             });
