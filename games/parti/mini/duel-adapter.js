@@ -21,6 +21,16 @@
 
     var GLOBAL = typeof self !== 'undefined' ? self : this;
 
+    // Kedi - Köpek: kural modülü atış/süre sınırı bilmez (ve değişmez); sınır hakemde, kalan can sıralaması burada.
+    // Atış = kind 'shot' (güçlendirmeli atış dahil); 'heal' atış sayılmaz. Eşit canda null -> hakem beraberlik verir.
+    function catdogPartial(board, order) {
+        var a = board.players[0].hp;
+        var b = board.players[1].hp;
+        if (a === b) return null;
+        var w = a > b ? 0 : 1;
+        return [[order[w]], [order[1 - w]]];
+    }
+
     // Hazır düello oyunları. Yeni oyun: buraya satır ekle (README).
     var GAMES = {
         xox: {
@@ -30,6 +40,15 @@
         connect4: {
             prefix: 'c4', title: 'Dörtlü Bağla',
             rules: function () { return isNode ? require('../../connect4-rules.js') : GLOBAL.Connect4Rules; }
+        }
+    };
+
+    GAMES.catdog = {
+        prefix: 'cd', title: 'Kedi - Köpek',
+        limit: { shots: 3, counts: function (move) { return move.kind === 'shot'; } },
+        rules: function () {
+            var r = isNode ? require('../../catdog-rules.js') : GLOBAL.CatDogRules;
+            return Object.assign({}, r, { partial: catdogPartial });
         }
     };
 
