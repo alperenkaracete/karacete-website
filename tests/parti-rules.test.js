@@ -408,6 +408,33 @@ test('ödüller: eşit 1.ler ikisi de 1. ödülünü alır, sonraki 3. sayılır
     assert.equal(r.state.P.p2.hp, 65);
 });
 
+test('duelOutcome: 3 kazanan + 3 kaybeden — kazananlar REWARDS[1], kaybedenler REWARDS[2], "4. derece" yok', () => {
+    const s = miniState(8);
+    s.order = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
+    ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'].forEach((id, i) => { s.P[id].hp = 40; });
+    const r = R.applyMinigame(s, { duelOutcome: { win: ['p0', 'p2', 'p4'], lose: ['p1', 'p3', 'p5'], draw: [] } }, ctx());
+    assert.ok(r.ok);
+    const rewards = {};
+    r.events.filter((e) => e.t === 'reward').forEach((e) => { rewards[e.id] = e.rank; });
+    assert.deepEqual(rewards, { p0: 1, p2: 1, p4: 1, p1: 2, p3: 2, p5: 2 });
+    ['p0', 'p2', 'p4'].forEach((id) => { assert.equal(r.state.P[id].s, 1, id + ' 1 ⭐'); assert.equal(count(r.state.P[id]), 1, id + ' silah'); });
+    ['p1', 'p3', 'p5'].forEach((id) => { assert.equal(r.state.P[id].s, 0); assert.equal(count(r.state.P[id]), 1, id + ' silah (2.)'); assert.equal(r.state.P[id].hp, 40, 'kaybeden iyileşmez'); });
+    ['p6', 'p7'].forEach((id) => { assert.equal(r.state.P[id].hp, 65, id + ' düello dışı: teselli'); assert.equal(count(r.state.P[id]), 0); });
+});
+
+test('duelOutcome: beraberlik ikisi de REWARDS[1]; ikinci şans zinciri (son maç belirler)', () => {
+    const s = miniState(5);
+    const r = R.applyMinigame(s, { duelOutcome: { win: ['p4'], lose: ['p1'], draw: ['p0', 'p2'] } }, ctx());
+    const rewards = {};
+    r.events.filter((e) => e.t === 'reward').forEach((e) => { rewards[e.id] = e.rank; });
+    assert.deepEqual(rewards, { p0: 1, p2: 1, p4: 1, p1: 2 });
+    assert.equal(r.state.P.p3.hp, 100, 'tam canlı düello dışına heal olayı yok');
+    // ranking yolu ve çark değişmedi: duelOutcome yoksa derece hesabı
+    const r2 = R.applyMinigame(miniState(3), { ranking: [['p0'], ['p1'], ['p2']] }, ctx());
+    assert.deepEqual(r2.events.filter((e) => e.t === 'reward').map((e) => e.rank), [1, 2, 3]);
+    assert.equal(R.applyMinigame(game(2), { duelOutcome: { win: ['p0'], lose: ['p1'] } }, ctx()).ok, false, 'minioyun zamanı değil');
+});
+
 test('teselli: düelloda olmayanlar +25 can alır (üst sınır 100); düellocular almaz; 3. derece ödülüyle çakışmaz', () => {
     const s = miniState(5);
     s.P.p0.hp = 30; s.P.p1.hp = 30; s.P.p2.hp = 90; s.P.p3.hp = 100; s.P.p4.hp = 10;

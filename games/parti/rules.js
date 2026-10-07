@@ -557,9 +557,8 @@
         var rng = Rng(state, ctx);
         var evts = [];
         if (state.stage !== 'mini') return { ok: false, state: prev, events: [], error: 'minioyun zamanı değil' };
-        var ranks = ranksOf(result && result.ranking ? result.ranking : []);
-        state.order.forEach(function (id) {
-            var rank = ranks[id];
+        // Derece 1/2/3 ödülü; derece yoksa (düello dışı) teselli. rank: 1 = kazanç, 2 = kayıp, ...
+        function giveMini(id, rank) {
             if (!rank) {
                 // Sıralamada yok (düelloda olmayan): teselli iyileşmesi
                 var comfort = Math.min(C.MAX_HP, state.P[id].hp + C.MINI_CONSOLATION.heal) - state.P[id].hp;
@@ -580,7 +579,19 @@
                 evts.push({ t: 'heal', id: id, n: healed });
             }
             if (reward.shield) giveItem(state, id, 'shield', evts);
-        });
+        }
+        if (result && result.duelOutcome) {
+            // Çoklu düello: sıralama/derece hesabı yok. Kazananlar ve beraberlikteler REWARDS[1], kaybedenler REWARDS[2],
+            // düelloda olmayan (bot, kopan, düello dışı) herkes MINI_CONSOLATION. 3 kazanan + 3 kaybeden "4. derece" üretmez.
+            var oc = result.duelOutcome;
+            var inList = function (list, id) { return Array.isArray(list) && list.indexOf(id) >= 0; };
+            state.order.forEach(function (id) {
+                giveMini(id, inList(oc.win, id) || inList(oc.draw, id) ? 1 : (inList(oc.lose, id) ? 2 : 0));
+            });
+        } else {
+            var ranks = ranksOf(result && result.ranking ? result.ranking : []);
+            state.order.forEach(function (id) { giveMini(id, ranks[id]); });
+        }
         state.rev = (state.rev || 0) + 1;
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };
         state.rd++;
