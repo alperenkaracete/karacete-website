@@ -184,7 +184,7 @@
                 case 'event': {
                     var found = null;
                     C.EVENTS.forEach(function (ev) { if (ev.id === e.e) found = ev; });
-                    return '🎁 ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
+                    return (found ? found.icon : '❓') + ' ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
                 }
                 case 'reward': return null;          // minioyun sonucu tek satırda yazılır (resultLine)
                 default: return null;

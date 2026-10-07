@@ -10,13 +10,7 @@
     var BOARD_H = 700;
     var STEP_ANIM_MS = 260;
     var NODE_R = 18;
-    var TYPE_STYLE = {
-        normal: { fill: null, icon: '' },
-        start: { fill: '#c9ced6', icon: '🏁' },
-        treasure: { fill: '#ffd24a', icon: '✨' },
-        weapon: { fill: '#ff7a6b', icon: '⚔️' },
-        event: { fill: '#b78cff', icon: '🎁' }
-    };
+    var TYPE_STYLE = C.NODE_TYPES;        // simge/renk tablosu config'te (lejant ile ortak)
     var DIR_ARROWS = ['➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️', '⬆️', '↗️'];
 
     var machine = null;
@@ -617,11 +611,12 @@
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
             else if (e.t === 'event') {
                 if (e.e === 'teleport' && e.at !== undefined) {
-                    pop(e.id, '🌀', '#d6c4ff', e.at);
+                    pop(e.id, eventIcon('teleport'), '#d6c4ff', e.at);
                     flyHome(e.id, e.at, e.to, t);
                     cursor[e.id] = e.to;
-                    announce(v, '🌀 ' + plainName(v, e.id) + ' başlangıca ışınlandı', t);
-                } else pop(e.id, '🎁', '#e3c9ff');
+                } else pop(e.id, eventIcon(e.e), '#e3c9ff');
+                var evText = C.eventAnnounce(e.e, plainName(v, e.id));
+                if (evText) announce(v, evText, t);
             } else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
         });
     }
@@ -630,6 +625,11 @@
     function flyHome(id, from, to, t) {
         if (from === undefined || to === undefined || from === to) return;
         anims[id] = { from: from, path: [to], t0: t + 900, dur: 700 };
+    }
+
+    function eventIcon(id) {
+        for (var i = 0; i < C.EVENTS.length; i++) if (C.EVENTS[i].id === id) return C.EVENTS[i].icon;
+        return '❓';
     }
 
     function announce(v, text, t, life) {

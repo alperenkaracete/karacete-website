@@ -15,13 +15,41 @@
     var WEAPON_IDS = ['fist', 'shotgun', 'bow', 'bomb', 'shield'];
 
     // Olay kutucuğu: ağırlıklı rastgele küçük olay
+    // text: günlük cümlesi; announce: ekrandaki spiker yazısı ({name} = oyuncu adı); label: lejanttaki kısa ad
     var EVENTS = [
-        { id: 'star',     weight: 3, text: 'bir yıldız buldu' },
-        { id: 'damage',   weight: 3, text: 'tuzağa düştü', damage: 15 },
-        { id: 'teleport', weight: 2, text: 'başlangıca ışınlandı' },
-        { id: 'weapon',   weight: 3, text: 'hediye silah buldu' },
-        { id: 'rest',     weight: 2, text: 'dinleniyor (bir tur atlar)' }
+        { id: 'star',     weight: 3, icon: '⭐', label: '+1 yıldız',        text: 'bir yıldız buldu',              announce: '⭐ {name} bir yıldız buldu (+1⭐)' },
+        { id: 'damage',   weight: 3, icon: '💥', label: 'tuzak −15 can',    text: 'tuzağa düştü',                  announce: '💥 {name} tuzağa düştü (−15❤️)', damage: 15 },
+        { id: 'teleport', weight: 2, icon: '🌀', label: 'başlangıca ışınlan', text: 'başlangıca ışınlandı',        announce: '🌀 {name} başlangıca ışınlandı' },
+        { id: 'weapon',   weight: 3, icon: '🎁', label: 'hediye silah',     text: 'hediye silah buldu',            announce: '🎁 {name} hediye silah buldu' },
+        { id: 'rest',     weight: 2, icon: '💤', label: 'bir tur dinlen',   text: 'dinleniyor (bir tur atlar)',    announce: '💤 {name} dinleniyor (bir tur atlar)' }
     ];
+
+    // Olay olasılıkları yüzde (ağırlıklardan; toplam tam 100, en büyük kalan yöntemi)
+    function eventOdds() {
+        var total = 0;
+        EVENTS.forEach(function (e) { total += e.weight; });
+        var rows = EVENTS.map(function (e) {
+            var exact = 100 * e.weight / total;
+            return { id: e.id, icon: e.icon, label: e.label, pct: Math.floor(exact), rem: exact - Math.floor(exact) };
+        });
+        var left = 100 - rows.reduce(function (a, r) { return a + r.pct; }, 0);
+        rows.slice().sort(function (a, b) { return b.rem - a.rem; }).slice(0, left).forEach(function (r) { r.pct++; });
+        return rows.map(function (r) { return { id: r.id, icon: r.icon, label: r.label, pct: r.pct }; });
+    }
+
+    function eventAnnounce(id, name) {
+        for (var i = 0; i < EVENTS.length; i++) if (EVENTS[i].id === id) return EVENTS[i].announce.replace('{name}', name);
+        return null;
+    }
+
+    // Kutucuk türleri (tahta + lejant): 🎁 yalnızca silah sandığı/ödül için kullanılır, olay kutucuğu ❓'dür.
+    var NODE_TYPES = {
+        normal:   { icon: '',   fill: null,      name: 'Yol' },
+        start:    { icon: '🏁', fill: '#c9ced6', name: 'Başlangıç (güvenli bölge)' },
+        treasure: { icon: '✨', fill: '#ffd24a', name: 'Hazine noktası (sandık çıkar)' },
+        weapon:   { icon: '⚔️', fill: '#ff7a6b', name: 'Silah bölgesi (rastgele silah)' },
+        event:    { icon: '❓', fill: '#b78cff', name: 'Olay kutucuğu' }
+    };
 
     // Minioyun ödülü: derece -> { stars, weapon (rastgele silah), shield }
     var REWARDS = {
@@ -61,6 +89,9 @@
         WEAPONS: WEAPONS,
         WEAPON_IDS: WEAPON_IDS,
         EVENTS: EVENTS,
+        eventOdds: eventOdds,
+        eventAnnounce: eventAnnounce,
+        NODE_TYPES: NODE_TYPES,
         REWARDS: REWARDS,
         WEAPON_WEIGHTS: WEAPON_WEIGHTS,
         TEAMS: [

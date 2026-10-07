@@ -816,3 +816,58 @@ test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıld�
     }
     assert.ok(attacks > 20, 'yeterince saldırı denendi: ' + attacks);
 });
+
+// ---- olay kutucuğu: ❓ simgesi, spiker yazıları, olasılıklar ----
+test('olay olasılıkları config ağırlıklarından üretilir; toplam tam %100, oranlar ağırlıkla orantılı', () => {
+    const odds = C.eventOdds();
+    assert.equal(odds.length, C.EVENTS.length);
+    assert.equal(odds.reduce((a, o) => a + o.pct, 0), 100);
+    const total = C.EVENTS.reduce((a, e) => a + e.weight, 0);
+    odds.forEach((o) => {
+        const ev = C.EVENTS.find((e) => e.id === o.id);
+        assert.ok(Math.abs(o.pct - 100 * ev.weight / total) < 1, o.id + ' ' + o.pct);
+        assert.ok(o.icon && o.label);
+    });
+    // ağırlığı değiştirince olasılık değişir (tablodan türer)
+    const saved = C.EVENTS[0].weight;
+    C.EVENTS[0].weight = 100;
+    try { assert.ok(C.eventOdds()[0].pct > 85); } finally { C.EVENTS[0].weight = saved; }
+});
+
+test('her olay için spiker yazısı ve günlük metni var; ad yerine konur; 🎁 yalnızca silah olayında', () => {
+    assert.equal(C.NODE_TYPES.event.icon, '❓');
+    assert.notEqual(C.NODE_TYPES.weapon.icon, '🎁');
+    for (const ev of C.EVENTS) {
+        const text = C.eventAnnounce(ev.id, 'Ayşe');
+        assert.ok(text && text.includes('Ayşe') && !text.includes('{name}'), ev.id);
+        assert.ok(ev.text && ev.icon && ev.label);
+        if (ev.icon === '🎁') assert.equal(ev.id, 'weapon');
+    }
+    assert.equal(C.eventAnnounce('yok', 'x'), null);
+    assert.match(C.eventAnnounce('star', 'Ali'), /\+1/);
+    assert.match(C.eventAnnounce('damage', 'Ali'), /−15/);
+});
+
+test('olay kutucuğu sonuçları: her olay türü bir olay üretir (yıldız, tuzak −15, ışınlanma, silah, dinlenme)', () => {
+    const ev = pirate.nodes.find((n) => n.type === 'event');
+    const pre = pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === ev.id);
+    const total = C.EVENTS.reduce((a, e) => a + e.weight, 0);
+    let acc = 0;
+    const seen = new Set();
+    for (const e of C.EVENTS) {
+        const f = (acc + e.weight / 2) / total;      // bu olayın ağırlık aralığının ortası
+        acc += e.weight;
+        const s = game(2);
+        s.chests = {};
+        s.P.p0.pos = pre.id;
+        const r = apply(s, { type: 'roll', by: 'p0' }, { dice: () => 1, rand: () => f });
+        const got = r.events.find((x) => x.t === 'event');
+        assert.equal(got.e, e.id);
+        seen.add(got.e);
+        if (e.id === 'star') assert.equal(r.state.P.p0.s, 1);
+        if (e.id === 'damage') assert.equal(r.state.P.p0.hp, 85);
+        if (e.id === 'teleport') assert.equal(r.state.P.p0.pos, r.state.P.p0.home);
+        if (e.id === 'rest') assert.equal(r.state.P.p0.sk, 1);
+    }
+    assert.equal(seen.size, C.EVENTS.length);
+});
