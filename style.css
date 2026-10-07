@@ -571,17 +571,6 @@ body {
 .cd-power:disabled { cursor: default; }
 .cd-power:not(:disabled):hover { background: rgba(255, 255, 255, 0.22); }
 
-.cd-cancel {
-    align-self: center;
-    padding: 6px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-}
-
 .cd-fire {
     min-height: 58px;
     border: none;
@@ -608,7 +597,6 @@ body {
 
     .cd-controls .cd-slider { grid-column: 1; }
     .cd-controls .cd-powers { grid-column: 2; grid-row: 1 / span 2; }
-    .cd-controls .cd-cancel { grid-column: 2; grid-row: 3; }
     .cd-controls .cd-fire { grid-column: 1 / -1; }
     .cd-controls .cd-hint { grid-column: 1 / -1; text-align: center; }
 }

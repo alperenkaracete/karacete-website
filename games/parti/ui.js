@@ -292,8 +292,9 @@
         } else {
             var list = el('ol', 'pt-rank');
             var pos = 0;
-            mn.ranking.forEach(function (group) {
-                var medal = ['🥇', '🥈', '🥉'][pos] || '▫️';
+            mn.ranking.forEach(function (group, gi) {
+                // düelloda beraberlik/kaybeden 2. ödül: madalya sırası makineden gelir (yoksa sıralamadan)
+                var medal = ['🥇', '🥈', '🥉'][mn.medals && mn.medals[gi] !== undefined ? mn.medals[gi] : pos] || '▫️';
                 group.forEach(function (id) { list.appendChild(el('li', '', medal + ' ' + nameOf(v, id))); });
                 pos += group.length;
             });
@@ -821,6 +822,7 @@
     }
 
     function drawDecor(c, map, t) {
+        c.fillStyle = '#000';                  // arka plan degradesi sızmasın (iPhone Safari emojiyi degradeyle boyar)
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         map.decor.forEach(function (d, i) {

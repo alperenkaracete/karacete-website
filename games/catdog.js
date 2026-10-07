@@ -126,13 +126,16 @@
         for (var p = 0; p < 2; p++) {
             var pl = b.players[p];
             var ch = CHARS[pl.char];
-            c.font = '34px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
-            c.textAlign = 'center';
-            c.textBaseline = 'alphabetic';
             var dead = shown.hp[p] <= 0;
-            c.globalAlpha = dead ? 0.35 : 1;
-            c.fillText(ch.emoji, pl.x, pl.y + 2);
+            // Açık zemin yuvarlağı: kahverengi toprak/tepe önünde karakter seçilsin. Emoji `Emoji.draw` ile düz fillStyle
+            // kullanır (iPhone Safari toprak degradesini emojiye boyayıp "kahverengi leke" yapıyordu).
+            c.globalAlpha = dead ? 0.2 : 0.38;
+            c.fillStyle = '#ffffff';
+            c.beginPath();
+            c.arc(pl.x, pl.y - 14, 23, 0, Math.PI * 2);
+            c.fill();
             c.globalAlpha = 1;
+            Emoji.draw(c, ch.emoji, pl.x, pl.y + 2, 36, { alpha: dead ? 0.35 : 1 });
             drawHpBar(pl.x, pl.y - 48, shown.hpAnim[p]);
             // sırası olanın üstünde zıplayan ok
             if (latestView.phase === 'playing' && !anim && latestView.turnId !== null) {
@@ -249,10 +252,7 @@
         c.save();
         c.translate(pos.x, pos.y);
         c.rotate(t / 90);
-        c.font = '24px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText(ch.ammo, 0, 0);
+        Emoji.draw(c, ch.ammo, 0, 0, 24, { baseline: 'middle' });
         c.restore();
     }
 
@@ -446,20 +446,20 @@
         els.angleOut.textContent = aim.angle + '°';
         els.powerOut.textContent = String(aim.power);
         els.fire.disabled = !enabled;
+        var cs = R.controlState({ enabled: enabled, powerUp: aim.powerUp, cd: me ? me.cd : null });
         POWER_BUTTONS.forEach(function (def) {
             var btn = els.powers[def.key];
-            var left = me ? me.cd[def.key] : 0;
-            var cooling = left > 0;
-            btn.disabled = !enabled || cooling;
+            var st = cs.buttons[def.key];
+            var cooling = st.left > 0;
+            btn.disabled = st.disabled;
             btn.classList.toggle('cooling', cooling);
-            btn.classList.toggle('selected', aim.powerUp === def.key);
-            btn.setAttribute('aria-pressed', aim.powerUp === def.key ? 'true' : 'false');
-            btn.querySelector('.cd-power-note').textContent = cooling ? left + ' tur bekle' : def.hint;
+            btn.classList.toggle('selected', st.selected);
+            btn.setAttribute('aria-pressed', st.selected ? 'true' : 'false');
+            btn.querySelector('.cd-power-note').textContent = cooling ? st.left + ' tur bekle' : (st.selected && cs.locked ? 'Seçildi' : def.hint);
         });
-        els.cancel.style.display = aim.powerUp ? '' : 'none';
         els.fire.textContent = aim.powerUp === 'wind' ? 'Fırlat! (rüzgâr 0)' : (aim.powerUp === 'double' ? 'Fırlat! ×2' : (aim.powerUp === 'big' ? 'Fırlat! 💥' : (aim.powerUp === 'guide' ? 'Fırlat! 🧭' : 'Fırlat!')));
         els.hint.textContent = enabled
-            ? 'Açı ve gücü kaydırıcılarla ya da sahnede sürükleyerek ayarla.'
+            ? (cs.locked ? 'Güç seçildi, iptal edilemez: açıyı ayarla ve Fırlat!' : 'Açı ve gücü kaydırıcılarla ya da sahnede sürükleyerek ayarla.')
             : (anim ? '' : 'Rakibin sırası…');
     }
 
@@ -593,13 +593,11 @@
             powerBtns[def.key] = btn;
             powersRow.appendChild(btn);
         });
-        var cancel = el('button', 'cd-cancel', 'Seçili gücü iptal et');
-        cancel.type = 'button';
         var fireBtn = el('button', 'cd-fire', 'Fırlat!');
         fireBtn.type = 'button';
         var hint = el('p', 'cd-hint');
 
-        controls.append(angleS.row, powerS.row, powersRow, cancel, fireBtn, hint);
+        controls.append(angleS.row, powerS.row, powersRow, fireBtn, hint);
         wrap.append(hud, canvas, controls);
         root.appendChild(wrap);
 
@@ -609,7 +607,7 @@
             canvas: canvas,
             angle: angleS.input, angleOut: angleS.out,
             power: powerS.input, powerOut: powerS.out,
-            powers: powerBtns, cancel: cancel, fire: fireBtn, hint: hint,
+            powers: powerBtns, fire: fireBtn, hint: hint,
             dpr: dpr
         };
     }
@@ -647,19 +645,17 @@
         POWER_BUTTONS.forEach(function (def) {
             listen(els.powers[def.key], 'click', function () {
                 if (!myTurnNow()) return;
+                var me = myPlayer();
+                var st = R.controlState({ enabled: true, powerUp: aim.powerUp, cd: me ? me.cd : null }).buttons[def.key];
+                if (st.disabled) return;          // bekleme sürüyor ya da başka güç zaten seçildi (seçim bağlanır, iptal yok)
                 if (def.key === 'heal') {
                     heal();
                     return;
                 }
-                aim.powerUp = aim.powerUp === def.key ? null : def.key;
+                aim.powerUp = def.key;
                 renderControls();
                 requestDraw();
             });
-        });
-        listen(els.cancel, 'click', function () {
-            aim.powerUp = null;
-            renderControls();
-            requestDraw();
         });
         listen(els.fire, 'click', fire);
 

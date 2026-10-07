@@ -53,9 +53,6 @@
         event:    { icon: '❓', fill: '#b78cff', name: 'Olay kutucuğu' }
     };
 
-    // Düello süresi oyuna göre (ms); listede olmayan oyun 90 sn
-    var DUEL_MS_BY_GAME = { catdog: 120000 };
-
     var DUEL_HOLD_BY_GAME = { xox: 2500, connect4: 3000, catdog: 4000 };
     var DUEL_LIMIT_STRIP_MS = 2500;
 
@@ -120,18 +117,17 @@
         DISCONNECT_MS: 180000,       // kopan oyuncuyu bekleme
         BOT_DELAY_MS: 900,           // bot eylemleri arası (görünürlük)
         MINI_HOLD_MS: 5000,          // minioyun sonucu ekranda kalma
-        DUEL_MS: 90000,              // düello toplam süresi (dolunca bitmemiş oyun beraberlik / kısmi sonuç)
-        DUEL_MS_BY_GAME: DUEL_MS_BY_GAME,
-        duelMs: function (game) { return DUEL_MS_BY_GAME[game] || 90000; },
+        // Düelloda TOPLAM süre sınırı yoktur (oyunlar yarıda kesilmez). Yalnız kopma (DUEL_RECONNECT_MS) ve hamle başına boşta sınırı:
+        // sırası gelen oyuncu bu kadar hiç hamle yapmazsa o maçı kaybeder.
+        DUEL_IDLE_MS: 180000,
         DUEL_CATDOG_SHOTS: 5,        // Kedi - Köpek: oyuncu başına atış sınırı
         DUEL_LIMIT_STRIP_MS: DUEL_LIMIT_STRIP_MS, // atış sınırı şeridi gecikmesi: yalnız son atışın süresi bilinmiyorsa yedek
         ANIM_NET_PAD_MS: 500,        // banner gecikmesine (son atış animasyonu) eklenen ağ payı; animasyonsuz oyunda eklenmez
         DUEL_RESULT_HOLD_MS: DUEL_HOLD_BY_GAME,   // banner göründükten sonra oyun ekranda kalma (hAt = bAt + bu)
         duelHold: function (game, reason) {
-            if (reason === 'forfeit' || reason === 'fuse') return 0;
+            if (reason === 'forfeit' || reason === 'fuse' || reason === 'idle') return 0;
             return DUEL_HOLD_BY_GAME[game] || 0;
         },
-        DUEL_GRACE_MS: 5000,        // lider sigortası: süre + bu kadar içinde sonuç yoksa çark sonucu
         DUEL_RECONNECT_MS: 25000,    // düello oyuncusu koparsa dönmesi için bekleme; dönmezse kopan kaybeder
         DUEL_GAMES: ['xox', 'connect4', 'catdog'],   // minigameSpec'in seçebildiği hazır düello oyunları
         GOALS: [5, 10, 15, 20, 25],

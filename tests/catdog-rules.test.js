@@ -480,3 +480,30 @@ test('aimPath: rüzgârsız seçiliyse rüzgâr 0 yolu; çok kısa atışta en a
     const tiny = R.aimPath(b, 0, 45, 0, null, 0.3);
     assert.ok(tiny.points.length >= 2);
 });
+
+// ---- güç seçimi bağlanır: bedava önizleme (seç → aç ayarla → iptal) yok ----
+test('controlState: sıra yokken hepsi kapalı; sırada yalnız bekleyenler kapalı', () => {
+    const cd = { heal: 0, wind: 1, double: 0, big: 3, guide: 0 };
+    const off = R.controlState({ enabled: false, powerUp: null, cd });
+    assert.equal(off.locked, false);
+    for (const k of Object.keys(off.buttons)) assert.equal(off.buttons[k].disabled, true, k);
+    const on = R.controlState({ enabled: true, powerUp: null, cd });
+    assert.equal(on.locked, false);
+    assert.deepEqual(Object.keys(on.buttons).filter((k) => on.buttons[k].disabled).sort(), ['big', 'wind']);
+    assert.equal(on.buttons.wind.left, 1); assert.equal(on.buttons.big.left, 3); assert.equal(on.buttons.guide.left, 0);
+    assert.equal(R.controlState({ enabled: true, powerUp: null, cd: null }).buttons.heal.disabled, false, 'cd yoksa açık');
+});
+
+test('controlState: güç seçilince kilitlenir — seçili dahil hiçbir düğme tıklanamaz (iptal/değiştirme yok)', () => {
+    const cd = { heal: 0, wind: 0, double: 0, big: 0, guide: 0 };
+    for (const key of ['wind', 'double', 'big', 'guide']) {
+        const st = R.controlState({ enabled: true, powerUp: key, cd });
+        assert.equal(st.locked, true, key);
+        for (const k of Object.keys(st.buttons)) {
+            assert.equal(st.buttons[k].disabled, true, key + ' seçiliyken ' + k + ' kapalı');
+            assert.equal(st.buttons[k].selected, k === key);
+        }
+    }
+    // sıra rakipteyken kilit durumu gösterilmez (seçim yok sayılır)
+    assert.equal(R.controlState({ enabled: false, powerUp: 'guide', cd }).locked, false);
+});

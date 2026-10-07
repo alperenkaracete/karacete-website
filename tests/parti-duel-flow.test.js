@@ -6,6 +6,11 @@ const C = require('../games/parti/config.js');
 const R = require('../games/parti/rules.js');
 const { room, curId, reachDuel, pairOf, playToWin, mover, cdShoot, rewardsFromFx, gp, N, MAXHOLD } = require('./duel-room.js');
 
+// Sayaç/sonuç anını kaçırmamak için küçük adımlarla ilerler (sonuç gelince durur)
+function advanceUntilOut(r, i, step, max) {
+    for (let t = 0; t < max && !r.state('A').mn.pm[i].out; t += step) r.advance(step, step);
+}
+
 const strip = (r, id) => r.nodes[id].root.children.find((c) => c.className === 'pt-duel-strip');
 const locked = (r, id) => r.nodes[id].root.classList.set.has('pt-duel-locked');
 
@@ -17,7 +22,7 @@ for (const game of ['xox', 'connect4']) {
         assert.equal(mn0.ex, null);
         const pl = pairOf(r, 0);
         assert.equal(r.view('B').mini.game, game);
-        assert.ok(r.view('B').mini.duelLeft > 80000, 'kalan süre');
+        assert.equal(r.view('B').mini.duelLeft, -1, 'toplam süre sınırı yok: kalan süre gösterilmez');
         pl.forEach((id) => assert.equal(r.lastDefs(id).view.phase, 'playing'));
         const rvBefore = r.state('A').rv;
         const { first, second } = mover(r, 0);
@@ -52,16 +57,51 @@ test('düello: beraberlikte [[a,b]] ikisi de 2. ödül (REWARDS[2]), şerit 🤝
     assert.deepEqual(rewardsFromFx(r), { [first]: 2, [second]: 2 });
 });
 
-test('düello: zaman aşımı (90 sn) — bitmemiş oyun beraberlik, oyun takılmaz', async () => {
-    const r = await reachDuel('connect4');
-    r.advance(C.duelMs('connect4') - 500);
-    assert.ok(!r.state('A').mn.applyAt, 'süre dolmadan sonuç yok');
-    r.advance(1000);
+test('düello: toplam süre sınırı yok — hamle yapıldıkça maç dakikalarca sürer, yarıda kesilmez', async () => {
+    assert.equal(C.duelMs, undefined, 'süre tablosu kaldırıldı');
+    const r = await reachDuel('catdog');
+    const { first, second } = mover(r, 0);
+    for (let i = 0; i < 2 * N - 1; i++) {
+        cdShoot(r, i === 0, 0);                              // ilk başlayan bir kez isabet ettirir
+        r.advance(150000, 5000);                             // her hamle arası 2,5 dk (boşta sınırı 3 dk): toplam > 20 dk
+        assert.ok(!r.state('A').mn.applyAt, (i + 1) + '. hamle sonrası sonuç yok');
+        assert.equal(r.state('A').mn.pm[0].out, null);
+    }
+    cdShoot(r, false, 0);
     await r.settle();
-    assert.ok(r.state('A').mn.applyAt, 'süre dolunca lider sonucu uyguladı');
-    assert.deepEqual(r.state('A').mn.rk, [pairOf(r, 0).slice()]);
-    r.advance(MAXHOLD + C.MINI_HOLD_MS + 200);
-    assert.equal(r.view('A').mini, null);
+    assert.equal(r.state('A').mn.pm[0].out.r, 'limit', 'maç atış sınırıyla bitti, süreyle değil');
+    assert.deepEqual(r.state('A').mn.rk, [[first], [second]]);
+});
+
+test('düello: boşta sınırı — sırası gelen 3 dk hiç hamle yapmazsa o maçı kaybeder (hükmen, bekleme yok)', async () => {
+    const r = await reachDuel('xox');
+    const { first, second } = mover(r, 0);
+    r.advance(C.DUEL_IDLE_MS - 5000, 5000);
+    assert.ok(!r.state('A').mn.applyAt, 'sınırdan önce sonuç yok');
+    advanceUntilOut(r, 0, 1000, 20000);
+    await r.settle();
+    const x = r.state('A').mn.pm[0];
+    assert.equal(x.out.r, 'idle');
+    assert.deepEqual(r.state('A').mn.rk, [[second], [first]], 'sırası gelen kaybeder');
+    assert.equal(x.bAt, 0);
+    assert.equal(x.hAt, 0, 'hükmen: tutma yok');
+    r.advance(C.MINI_HOLD_MS + 500, 100);
+    assert.deepEqual(rewardsFromFx(r), { [second]: 1, [first]: 2 });
+});
+
+test('düello: boşta sayacı her hamlede sıfırlanır', async () => {
+    const r = await reachDuel('xox');
+    const { first, second } = mover(r, 0);
+    r.advance(C.DUEL_IDLE_MS - 10000, 5000);
+    assert.equal(r.lastDefs(first).duel.move({ cell: 0 }), true);
+    r.flush();
+    r.advance(C.DUEL_IDLE_MS - 10000, 5000);                 // ilk hamleden beri sınırın altında; oyun başından beri çok uzun
+    await r.settle();
+    assert.ok(!r.state('A').mn.applyAt, 'sayaç hamlede sıfırlandı');
+    advanceUntilOut(r, 0, 1000, 30000);
+    await r.settle();
+    assert.equal(r.state('A').mn.pm[0].out.r, 'idle');
+    assert.deepEqual(r.state('A').mn.rk, [[first], [second]], 'şimdi sırası gelen ikinci oyuncu kaybetti');
 });
 
 test('düello: oyuncu kopar ve 25 sn içinde dönmezse kopan kaybeder (forfeit)', async () => {
@@ -227,21 +267,19 @@ for (const _ of [1]) {
         pairOf(r, 0).forEach((id) => assert.ok(strip(r, id).textContent.includes('Beraberlik')));
     });
 
-    test('düello (catdog): heal atış sayılmaz; süre 120 sn (xox/connect4 90 sn)', async () => {
-        assert.equal(C.duelMs('catdog'), 120000);
-        assert.equal(C.duelMs('xox'), 90000);
+    test('düello (catdog): heal atış sayılmaz; 5 atış sınırı heal sonrası sayılır', async () => {
         const r = await reachDuel('catdog');
         const { first, second } = mover(r, 0);
         assert.equal(r.lastDefs(first).duel.move({ kind: 'heal', turn: 0 }), true);
         r.flush();
         cdShoot(r, false, 0);                                 // ikinci başlayan
         cdShoot(r, true, 0);                                  // ilk başlayan isabet (1. atış)
-        cdShoot(r, false, 0);
-        r.advance(C.duelMs('catdog') - 1000);
-        assert.ok(!r.state('A').mn.applyAt, '119 sn: 5 atış bitmedi, sonuç yok');
-        r.advance(1500);
+        for (let i = 0; i < 2 * N - 3; i++) cdShoot(r, false, 0);   // toplam 2N-1 atış: heal sayılmadı
         await r.settle();
-        assert.ok(r.state('A').mn.applyAt, '120 sn: kalan cana göre');
+        assert.ok(!r.state('A').mn.applyAt, '2N-1 atış: sınır dolmadı');
+        cdShoot(r, false, 0);
+        await r.settle();
+        assert.ok(r.state('A').mn.applyAt, '2N. atış: kalan cana göre');
         assert.deepEqual(r.state('A').mn.rk, [[first], [second]]);
     });
 }

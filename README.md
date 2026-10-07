@@ -103,7 +103,9 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
   - 💥 **Büyük patlama:** hasar alanı yarıçapı 2 katı.
   - 🧭 **Nişan rehberi:** seçilince yolun **tamamı** (çarpma noktası ✕ ile) çizilir; atış fiziği ve hasar normal atışla birebir aynıdır
     (`simulateShot` `null` ile aynı sonucu verir). Atış gücü olarak sayılır; bu atışta başka güçle birlikte kullanılamaz.
-  Atışla kullanılan güçlerden turda en fazla biri seçilir; seçim iptal edilebilir.
+  Atışla kullanılan güçlerden turda en fazla biri seçilir. **Seçim bağlanır:** güç seçildikten sonra o tur iptal edilemez ve başka güç seçilemez
+  (yalnız Fırlat! kalır); böylece 🧭 gibi güçlerle bedava önizleme/açı ayarı yapılamaz (`CatDogRules.controlState`). Canvas'taki emojiler
+  `core/emoji.js` ile düz `fillStyle` ile çizilir: iPhone Safari degrade `fillStyle` varken emojiyi o renkle boyar (kahverengi leke).
 
 **Senkronizasyon:** ağda yalnızca `cd_start` (host: tohum + kedi + ilk sıra), `cd_shot { turn, angle, power, powerUp }`
 ve `cd_heal { turn }` gider. Atış sonucu iki tarafta da `simulateShot` ile (sabit 1/60 sn adım, tam sayı açı/güç,
@@ -222,7 +224,7 @@ startMinigame({
   type: 'ffa' | 'duel', players: [id, ...], seed,          // zorunlu (eski çağrı biçimi aynen çalışır)
   game, me: {id, name}, isLeader, leader, root,            // düello: oyun, bu istemci, lider mi / kimliği, çizim düğümü
   net: { send(m), on(fn(from, m)) -> off }, names,         // ağ: makine pt_mg zarfına sarar, gönderen kimliğini ekler
-  deadlineMs, signal                                        // toplam süre (düello 90 sn, Kedi-Köpek 120 sn); AbortSignal
+  deadlineMs, signal                                        // isteğe bağlı toplam süre (Parti düellosu 0 = süre yok); AbortSignal
 }) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
 ```
 
@@ -244,7 +246,7 @@ startMinigame({
   1 insan → çark; 2 insanda eski tek çift akışı. Her çiftin ayrı oturumu/jetonu (`ep:tohum:oyun:çiftNo`) vardır; istemci yalnız KENDİ maçını oynar
   (oyun dosyaları tek örnek tutar), oynamayanlar tüm maçların durumunu "A ⚔️ B · kalan 1:12 / 🏆 A kazandı" kartında görür.
   Lider tüm çiftlerin hakemini çalıştırır, sonuçları `mn.pm[i].out` içinde birleştirir (`pt_state.mn`: `pm` çiftler+sonuçlar, `ex` extra, `nf` ilk tur çift sayısı,
-  `oc` sonuç; `pm` olmayan eski tek çiftli görüntü okunur). Her çift kendi süresinde biter (süre dolunca beraberlik/kısmi), kopan oyuncu 25 sn
+  `oc` sonuç; `pm` olmayan eski tek çiftli görüntü okunur). Her çift kendi hızında biter (toplam süre yok), kopan oyuncu 25 sn
   sonra o maçı kaybeder, sigorta: çift süresi + 5 sn. Lider devrinde biten çiftlerin sonucu korunur, bitmeyenler aynı tohumla yeniden başlar.
 - **İkinci şans (tek sayıda insan):** sondaki `extra` oyuncu ilk biten maçın kaybedeniyle (beraberlikse tohumlu rastgele biriyle) yeni bir çiftte
   oynar; yeni maç, önceki maçın banner gecikmesi + sonuç tutması (`hAt`) bitince başlar, böylece kaybeden kendi son atışını ve bannerı görür. Rakip bağlantısızsa maç hükmen: bağlı olan kazanır (ikisi de yoksa beraberlik).
@@ -252,9 +254,11 @@ startMinigame({
   `REWARDS[2]`, beraberlikte ikisi de `REWARDS[2]` (kazanan yok); her oyuncunun **son maçı** belirler (ilk maçı kaybeden ikinci şansı kazanırsa `REWARDS[1]` alır).
   Düello dışındakiler (bot, kopan) `MINI_CONSOLATION` alır; 3 kazanan + 3 kaybeden "4. derece" üretmez. Tek çiftli akışta kazanan/kaybeden ve çark
   eskisi gibi `ranking` yoluyla uygulanır; tek çiftte beraberlik de `duelOutcome` yoluyla (ikisi 2.) uygulanır.
+  **Gösterim ödülle aynıdır:** sıralama kartı ve günlük satırı beraberlik/kaybedeni 🥈 yazar (`getView().mini.medals`: kazanan varsa `[0, 1]`, yoksa `[1]`),
+  kimse yanlışlıkla "1.lik" görmez.
 - **Kedi - Köpek atış kuralı:** oyuncu başına en çok **5 atış** (`DUEL_CATDOG_SHOTS`). Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
   gibi güçlendirmeli atışlar dahil — hasar verirler); `cd_heal` (can iksiri) atış **sayılmaz** (kural modülünde başka eylem türü yoktur).
-  Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 5 atışı bitince ya da 120 sn dolunca **kalan cana**
+  Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 5 atışı bitince **kalan cana**
   göre sıralanır; can eşitse beraberlik `[[a, b]]`. Sınır hakemdedir (`catdog-rules.js` değişmez; `duel-adapter.js` `GAMES.catdog` +
   `partial`): kural modülü sınırı bilmediği için oyunun kendi arayüzü bitmez. Sınır dolunca tahta **kilitlenir** (görünür kalır, fazladan atış
   girmez) ve oyunu kapatmayan **ince üst şerit** "Atışlar bitti, sonuç hesaplanıyor…" son atışın animasyonu bitince belirir (gecikme `bm`, aşağıda;
@@ -279,11 +283,13 @@ startMinigame({
   yoktur: lider zaten çalışan hakemlerinden her kabul edilen hamlede (`referee.onUpdate`) kompakt bir **anlık görüntü** üretir (`mini/duel-watch.js`
   `snapshot`), `pm[i].wb` olarak `pt_state` ile yayınlar (değişmediyse yayınlamaz); alıcı `sanitize` ile doğrular (geçersiz = `null`, oyunu bozmaz).
   Geç katılan/yeniden bağlanan istemci anlık görüntüyü hazır alır; ikinci şans maçı boş başlar. `getView().mini.pairs[i].watch` arayüze verilir.
-- **Süre/takılma:** süre dolunca (XOX/Dörtlü 90 sn, Kedi-Köpek 120 sn: `DUEL_MS_BY_GAME`) bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
+- **Süre/takılma:** düelloda **toplam süre sınırı yoktur**, oyunlar yarıda kesilmez. Takılmaya karşı yalnız **boşta sınırı**: sırası gelen oyuncu
+  `DUEL_IDLE_MS` (3 dk) hiç hamle yapmazsa (lider her hakem güncellemesinde sayacı sıfırlar) o maçı kaybeder (`r: 'idle'`, hükmen: banner/tutma yok);
+  oyun hiç başlamadıysa tohumdan çark sonucu. Kedi-Köpek'in 5 atış sınırı süre değil atış kuralıdır, kalır.
   Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer
   (lider kaçan rakip hamlelerini `catchup` ile yeniden gönderir). Sayfası yenilenen oyuncu için durum kurtarılamaz: düello iki tarafta
   `reset` ile baştan başlar (süre dolmadan).
-- **Lider devri:** `ep` değişir → tüm istemciler oturumu **aynı tohumla** yeniden başlatır (düello baştan; süre 90 sn'den yeniden); yeni lider
+- **Lider devri:** `ep` değişir → tüm istemciler oturumu **aynı tohumla** yeniden başlatır (düello baştan; boşta sayacı sıfırlanır); yeni lider
   sonucu o oturumdan alır.
 - **İptal/temizlik:** `signal.abort()` oyunu yıkar (`destroy`), kökü temizler, Promise `{ ranking: null, aborted: true }` ile biter.
 
@@ -299,7 +305,7 @@ tarayıcısında** okunur (diğer sekmelerde etkisizdir); `PartiRules.parseMiniF
 3. `games/parti/ui.js` içindeki `DUEL_TITLES`'a ad ekle ve `games/parti/config.js` `DUEL_GAMES` listesine oyun kimliğini yaz
    (`rules.minigameSpec` buradan, tohumla deterministik seçer; botlar düelloya seçilmez). Kedi - Köpek gibi sınırlı oyunlar için
    `GAMES` girdisine `limit: { shots, counts(move) }` ekle: sınır dolunca hakem biter, "Atışlar bitti" katmanı çıkar.
-4. Süre sınırı gerekiyorsa (ör. atış sayısı) kural modülüne isteğe bağlı `partial(board, order) -> ranking | null` ekle: süre dolunca hakem bunu kullanır.
+4. Atış sayısı gibi bir sınır gerekiyorsa kural modülüne isteğe bağlı `partial(board, order) -> ranking | null` ekle: sınır dolunca hakem bunu kullanır.
 5. `tests/parti-duel-flow.test.js` içindeki `RULES`'a ekleyip akış testlerini çalıştır; Tarayıcıda: 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
 **Yeni harita eklemek:** `games/parti/maps/<ad>.js` oluştur (aynı UMD kalıbı, `PartiMaps[<id>]`'ye kaydolur) ve `index.html`'e

@@ -173,24 +173,28 @@ test('çoklu düello: botlar düelloya girmez, sıralamada olmaz (3 insan + 2 bo
     assert.ok(all.every((id) => !r.state('A').S.find((s) => s.i === id).b));
 });
 
-test('çoklu düello: çift başına zaman aşımı — biten çift sonucu kalır, diğeri beraberlikle biter', async () => {
+test('çoklu düello: boşta sınırı — biten çift sonucu kalır, hamle yapmayan çiftte sırası gelen kaybeder', async () => {
     const r = await reachDuel('connect4', { humans: 4 });
     const win = mover(r, 0).first;
     playToWin(r, 'connect4', 0);
     await r.settle();
     assert.ok(mnOf(r).pm[0].out && !mnOf(r).pm[1].out);
     assert.ok(!mnOf(r).applyAt);
-    r.advance(C.duelMs('connect4') + 500);
+    const m1 = mover(r, 1);
+    for (let t = 0; t < C.DUEL_IDLE_MS + 30000 && !mnOf(r).pm[1].out; t += 1000) r.advance(1000, 1000);
     await r.settle();
     const mn = mnOf(r);
-    assert.ok(mn.applyAt, 'süre dolunca ikinci çift beraberlikle bitti');
-    assert.equal(mn.pm[1].out.d, 1);
-    assert.deepEqual(mn.oc.win, [win]);
-    assert.deepEqual(mn.oc.draw.slice().sort(), mn.pm[1].p.slice().sort());
+    assert.ok(mn.applyAt, 'boşta sınırı dolunca ikinci çift hükmen bitti');
+    assert.equal(mn.pm[1].out.r, 'idle');
+    assert.equal(mn.pm[1].out.w, m1.second);
+    assert.equal(mn.pm[1].out.l, m1.first, 'sırası gelen kaybeder');
+    assert.deepEqual(mn.oc.win.slice().sort(), [win, m1.second].sort());
+    assert.ok(mn.oc.lose.includes(m1.first));
     r.advance(MAXHOLD + C.MINI_HOLD_MS + 500, 50);
     const rewards = rewardsFromFx(r);
     assert.equal(rewards[win], 1);
-    mn.pm[1].p.forEach((id) => assert.equal(rewards[id], 2, 'beraberlik REWARDS[2]'));
+    assert.equal(rewards[m1.second], 1);
+    assert.equal(rewards[m1.first], 2);
 });
 
 test('çoklu düello: bir çiftteki oyuncu 25 sn içinde dönmezse o maçı kaybeder; diğer maç sürer', async () => {
