@@ -1124,3 +1124,10 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
     .pt-btn { min-height: 34px; padding: 5px 8px; font-size: 13px; }
     .pt-btn.big { min-height: 40px; font-size: 15px; }
 }
+
+.pt-turns { display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+.pt-turns-label { margin-right: 4px; }
+.pt-turns-arrow { opacity: 0.6; }
+.pt-turn { font-size: 18px; padding: 1px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.12); }
+.pt-turn.now { background: #ffb400; box-shadow: 0 0 0 2px #ffd24a; }
+.pt-turn.done { opacity: 0.45; }

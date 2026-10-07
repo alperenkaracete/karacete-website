@@ -423,7 +423,7 @@ test('tur akışı: herkes sırayla oynar, sonra minioyun evresi; atlayan oyuncu
     assert.equal(s.stage, 'mini');
     assert.equal(s.P.p1.sk, 0);
     const r = R.applyMinigame(s, { ranking: [['p0'], ['p1'], ['p2']] }, ctx());
-    assert.equal(R.current(r.state), 'p0');
+    assert.equal(R.current(r.state), 'p1', 'ikinci turda sıra bir kaymış başlar');
     assert.equal(r.state.rd, 2);
 });
 
@@ -509,4 +509,30 @@ test('standings: bireysel ve takım sıralaması', () => {
     const t = game(4, { mode: 'team' });
     t.P.p0.s = 1; t.P.p1.s = 1; t.P.p2.s = 5;
     assert.deepEqual(R.standings(t).map((x) => [x.t, x.s]), [[1, 5], [0, 2]]);
+});
+
+test('tur başı sırası her turda bir kayar: 3 oyuncuda abc / bca / cab / abc; minioyun yalnız ödülleri etkiler', () => {
+    let s = game(3);
+    s.order = ['p0', 'p1', 'p2'];
+    const starts = [];
+    for (let round = 0; round < 4; round++) {
+        starts.push(R.current(s));
+        s.stage = 'mini';
+        s.turn = s.order.length;
+        // farklı minioyun sonuçları sırayı değiştirmez
+        const ranking = round % 2 ? [['p2'], ['p1'], ['p0']] : [['p0'], ['p1'], ['p2']];
+        s = R.applyMinigame(s, { ranking }, ctx()).state;
+        s.chests = {};
+    }
+    assert.deepEqual(starts, ['p0', 'p1', 'p2', 'p0']);
+    // bir turun tam sırası: ikinci turda b, c, a
+    let t = game(3);
+    t.order = ['p0', 'p1', 'p2'];
+    t.stage = 'mini'; t.turn = 3;
+    t = R.applyMinigame(t, { ranking: [['p0'], ['p1'], ['p2']] }, ctx()).state;
+    assert.deepEqual(t.order, ['p1', 'p2', 'p0']);
+    assert.equal(R.current(t), 'p1');
+    // sıra kaydıktan sonra ayrılan oyuncu sırayı bozmaz
+    const r = R.removePlayer(t, 'p2', ctx());
+    assert.deepEqual(r.state.order, ['p1', 'p0']);
 });

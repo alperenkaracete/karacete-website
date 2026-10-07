@@ -463,6 +463,9 @@
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };
         state.rd++;
         spawnChests(state, g, rng, evts);
+        // Her turun başlangıç sırası bir kayar (ilk oynayan sona geçer): sabit ilk sıra avantajı olmasın.
+        // Minioyun yalnızca ödülleri etkiler, sırayı etkilemez.
+        if (state.order.length > 1) state.order.push(state.order.shift());
         state.turn = -1;
         state.mini = null;
         if (state.stage !== 'over') nextTurn(state, g, rng, evts);

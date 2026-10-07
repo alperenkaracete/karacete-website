@@ -378,8 +378,20 @@
             });
             P.appendChild(strip);
         }
+        // bu turun oynanış sırası (şerit); kartlar ise sabit koltuk sırasıyla çizilir
+        var turnStrip = el('div', 'pt-turns');
+        turnStrip.appendChild(el('span', 'pt-turns-label', 'Bu tur:'));
+        g.order.forEach(function (id, i) {
+            if (i) turnStrip.appendChild(el('span', 'pt-turns-arrow', '→'));
+            var chipT = el('span', 'pt-turn' + (id === v.cur ? ' now' : '') + (g.stage !== 'mini' && i < g.turn ? ' done' : ''), g.P[id].av);
+            chipT.title = g.P[id].n;
+            turnStrip.appendChild(chipT);
+        });
+        P.appendChild(turnStrip);
         var grid = el('div', 'pt-pgrid');
-        g.order.forEach(function (id) {
+        var seatOrder = v.seats.map(function (sx) { return sx.i; }).filter(function (id) { return g.P[id]; });
+        g.order.forEach(function (id) { if (seatOrder.indexOf(id) < 0) seatOrder.push(id); });
+        seatOrder.forEach(function (id) {
             var p = g.P[id];
             var seat = seatById(v, id);
             var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : ''));
