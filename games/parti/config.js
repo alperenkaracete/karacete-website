@@ -114,6 +114,10 @@
         DISCONNECT_MS: 180000,       // kopan oyuncuyu bekleme
         BOT_DELAY_MS: 900,           // bot eylemleri arası (görünürlük)
         MINI_HOLD_MS: 5000,          // minioyun sonucu ekranda kalma
+        DUEL_MS: 90000,              // düello toplam süresi (dolunca bitmemiş oyun beraberlik / kısmi sonuç)
+        DUEL_GRACE_MS: 5000,         // lider sigortası: süre + bu kadar içinde sonuç yoksa çark sonucu
+        DUEL_RECONNECT_MS: 25000,    // düello oyuncusu koparsa dönmesi için bekleme; dönmezse kopan kaybeder
+        DUEL_GAMES: ['xox', 'connect4'],   // minigameSpec'in seçebildiği hazır düello oyunları
         GOALS: [5, 10, 15, 20, 25],
         GOAL_AUTO: 0,                // 0 = otomatik: 2-3 kişide 15, 4-8 kişide 10
         autoGoal: function (players) { return players <= 3 ? 15 : 10; },
