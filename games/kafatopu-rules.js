@@ -43,6 +43,7 @@
     var KICK_START_ANGLE = -35;   // derece, aşağıdan geriye
     var KICK_END_ANGLE = 110;     // derece, aşağıdan ileri-yukarı
     var LEG_LENGTH = 38;
+    var BODY_TOP_OFFSET = 8;      // gövde kapsülünün üst ucu: kafa merkezinin bu kadar altı (ayak pivotu)
     var HEAD_BOUNCE = 0.8;
     var FOOT_BOUNCE = 0.45;
 
@@ -370,6 +371,11 @@
         var kick = g.kb + (g.ke - g.kb) * f;
         if (kick < 0) kick = 0;
         var changed = collideBallCircle(ball, hx, hy, HEAD_R, g.hvx, g.hvy, HEAD_BOUNCE);
+        // Gövde: kafadan zemindeki dinlenme ayağına uzanan dikey kapsül. Vuruşta ayak havaya kalkınca kafa ile zemin arasındaki
+        // ~31 px'lik boşluk açılırdı (top 32 px) ve zemine yakın gelen top oyuncunun ALTINDAN geçerdi; gövde her zaman çarpışır.
+        var bodyTop = hy + BODY_TOP_OFFSET;
+        var bodyY = clamp(ball.y, bodyTop, bodyTop + LEG_LENGTH);
+        if (collideBallCircle(ball, hx, bodyY, FOOT_R, g.hvx, g.hvy, FOOT_BOUNCE)) changed = true;
         var foot = footPosAt(hx, hy, p.dir, kick);
         if (kickActiveAt(kick, p.hit)) {
             var dx = ball.x - foot.x;

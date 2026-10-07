@@ -143,6 +143,8 @@ canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa
   (`games/kafatopu-predict.js`); küçük sapma her adımda %20 azalarak yumuşatılır, 40 px'ten büyük sapma ışınlanır.
 - Rakip ve top kurucudan gelir; görüntüler kurucunun zaman damgasıyla tamponlanır ve **~40 ms (≈2 aralık)** gecikmeyle iki
   görüntü arasında interpolasyonla çizilir, tampon biterse hızla **≤100 ms ekstrapole** edilir (kurucu saati farkı yavaşça ayarlanır).
+- **Gövde çarpışması:** oyuncunun kafası ile zemin arasında her zaman bir gövde (kafadan zemindeki dinlenme ayağına dikey kapsül, yarıçap 12) vardır. Vuruşta ayak havaya
+  kalksa da kafa–zemin boşluğu (~31 px, top 32 px) açılmaz; zemine yakın gelen top oyuncunun altından geçmez. Zıplayan oyuncunun altından top geçebilir. Testler: `tests/kafatopu-govde.test.js`.
 - **Top çarpışmaları:** her adım topun hızına göre 2–8 alt adıma bölünür (hiçbir alt adımda top yarıçapın yarısından fazla gitmez),
   top hız sınırı 1200 px/sn, çarpışma sonrası top oyuncu/direk/duvardan dışarı itilir; gol yalnızca top çizgiyi tamamen
   geçince ve çözüm sonrası sayılır.
