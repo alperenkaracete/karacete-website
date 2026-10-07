@@ -99,7 +99,7 @@
         var rules = spec.rules || info.rules();
         var players = spec.players.slice(0, 2);
         var meId = spec.me.id;
-        var isPlayer = players.indexOf(meId) >= 0;
+        var isPlayer = !spec.observer && players.indexOf(meId) >= 0;
         var oppId = isPlayer ? (players[0] === meId ? players[1] : players[0]) : null;
         var timers = spec.timers || defaultTimers();
         var now = spec.now || Date.now;
