@@ -110,7 +110,7 @@
             // Devir en çok bir adım ilerler (takeOver ep'yi tam 1 artırır). Yeniden bağlanma sonrası ilk görüntü muaf:
             // uzun kopan oyuncu birden çok devri kaçırmış olabilir.
             if (M && !resyncOk && msg.ep > M.ep + 1) return null;
-            if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || C.GOALS.indexOf(msg.cf.gl) < 0) return null;
+            if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || (msg.cf.gl !== C.GOAL_AUTO && C.GOALS.indexOf(msg.cf.gl) < 0)) return null;
             if (!Array.isArray(msg.S) || msg.S.length > C.MAX_PLAYERS) return null;
             var t = now();
             var seats = [];
@@ -158,6 +158,7 @@
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
                 case 'block': return nm(e.id) + ' kalkanla korundu';
                 case 'shield': return nm(e.id) + ' 🛡️ kalkanını kurdu';
+                case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;
                 case 'death': return nm(e.id) + ' düştü' + (e.lost ? ' (' + e.lost + ' ⭐ kaybetti)' : '');
                 case 'skip': return nm(e.id) + ' turunu atladı';
                 case 'lost': return nm(e.id) + ' envanteri dolu: ' + wn(e.w) + ' kaçtı';
@@ -320,7 +321,7 @@
             M.lg = [];
             M.kk = [];
             M.fx = [];
-            addLog('Oyun başladı! Hedef: ' + M.cf.gl + ' ⭐');
+            addLog('Oyun başladı! Hedef: ' + M.g.goal + ' ⭐');
             M.fq++;
             setDeadline();
             botAt = now() + C.BOT_DELAY_MS;
@@ -346,7 +347,7 @@
                         M.cf.m = a.mode;
                     }
                     if (typeof a.map === 'string' && opts.maps[a.map]) M.cf.mp = a.map;
-                    if (C.GOALS.indexOf(a.goal) >= 0) M.cf.gl = a.goal;
+                    if (a.goal === C.GOAL_AUTO || C.GOALS.indexOf(a.goal) >= 0) M.cf.gl = a.goal;
                     return true;
                 }
                 case 'team': {

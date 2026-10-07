@@ -38,13 +38,13 @@ function nodeAt(from, d, skip) {
 
 const loopNode = pirate.nodes.find((n) => n.type === 'normal' && n.next.length === 1);
 
-test('kurulum: herkes kendi başlangıcında, 100 can, 0 yıldız; 2 yıldız + 1 silah sandığı çıkar', () => {
+test('kurulum: herkes kendi başlangıcında, 100 can, 0 yıldız; ceil(n/2)+1 yıldız + 1 silah sandığı çıkar', () => {
     const s = R.createGame({ seed: 3, cfg: { mode: 'solo', goal: 10, map: 'pirate' }, seats: seats(8) }, ctx());
     const starts = new Set();
     s.order.forEach((id) => { starts.add(s.P[id].pos); assert.equal(s.P[id].hp, 100); assert.equal(s.P[id].s, 0); assert.equal(g.byId[s.P[id].pos].type, 'start'); });
     assert.equal(starts.size, 8);
     const chests = Object.values(s.chests);
-    assert.equal(chests.filter((c) => c.k === 'star').length, 2);
+    assert.equal(chests.filter((c) => c.k === 'star').length, 5, '8 oyuncu: ceil(8/2)+1');
     assert.equal(chests.filter((c) => c.k === 'weapon').length, 1);
     Object.keys(s.chests).forEach((n) => assert.equal(g.byId[n].type, 'treasure'));
     assert.equal(s.stage, 'roll');
@@ -229,19 +229,21 @@ test('kalkan bomba hasarını da engeller (kendi bombasında bile)', () => {
 });
 
 // ---- Ölüm ----
-test('ölüm: yıldızların yarısı (aşağı) saldırana gider; başlangıca döner, can dolar, bir tur atlar, envanter korunur', () => {
+test('ölüm: min(3, yarısı) yıldız saldırana gider; başlangıca döner, can dolar, tur ATLATILMAZ, envanter korunur', () => {
     const s = duelSetup('fist', 1);
     s.P.p1.hp = 20;
     s.P.p1.s = 5;
     s.P.p1.w = ['bow'];
     s.P.p0.s = 1;
     const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
-    assert.equal(r.state.P.p1.s, 3);
+    assert.equal(r.state.P.p1.s, 3, '5 yıldız: floor(5/2)=2 kaybolur');
     assert.equal(r.state.P.p0.s, 3);
     assert.equal(r.state.P.p1.hp, 100);
     assert.equal(r.state.P.p1.pos, s.P.p1.home);
-    assert.ok(r.events.some((e) => e.t === 'skip' && e.id === 'p1'), 'sıradaki turunu atladı');
-    assert.equal(r.state.stage, 'mini', 'turun sonu');
+    assert.equal(r.state.P.p1.sk, 0, 'ölümde tur atlatma yok');
+    assert.ok(!r.events.some((e) => e.t === 'skip'));
+    assert.equal(r.state.stage, 'roll', 'sıra ölen oyuncuya geçer (atlatılmaz)');
+    assert.equal(R.current(r.state), 'p1');
     assert.deepEqual(r.state.P.p1.w, ['bow']);
     assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1' && e.killer === 'p0' && e.lost === 2));
 });
@@ -357,7 +359,7 @@ test('ödüller: 1. yıldız+silah, 2. silah, 3. kalkan, diğerleri boş', () =>
     assert.equal(r.state.P.p0.w.length, 1);
     assert.equal(r.state.P.p1.s, 0);
     assert.equal(r.state.P.p1.w.length, 1);
-    assert.deepEqual(r.state.P.p2.w, ['shield']);
+    assert.deepEqual(r.state.P.p2.w, [], '3.: kalkan değil +25 can');
     assert.equal(r.state.P.p3.w.length, 0);
     assert.equal(r.state.P.p4.w.length, 0);
     assert.equal(r.state.rd, 2);
@@ -365,12 +367,13 @@ test('ödüller: 1. yıldız+silah, 2. silah, 3. kalkan, diğerleri boş', () =>
     assert.ok(Object.keys(r.state.chests).length >= 3, 'yeni sandıklar çıktı');
 });
 
-test('ödüller: eşit 1.ler ikisi de 1. ödülünü alır, sonraki 3. sayılır (kalkan)', () => {
+test('ödüller: eşit 1.ler ikisi de 1. ödülünü alır, sonraki 3. sayılır (+25 can)', () => {
     const s = miniState(3);
+    s.P.p2.hp = 40;
     const r = R.applyMinigame(s, { ranking: [['p0', 'p1'], ['p2']] }, ctx());
     assert.equal(r.state.P.p0.s, 1);
     assert.equal(r.state.P.p1.s, 1);
-    assert.deepEqual(r.state.P.p2.w, ['shield']);
+    assert.equal(r.state.P.p2.hp, 65);
 });
 
 test('ödüller: düelloda kazanan 1., kaybeden 2. ödülünü alır; katılmayanlar bir şey almaz', () => {
@@ -384,13 +387,13 @@ test('ödüller: düelloda kazanan 1., kaybeden 2. ödülünü alır; katılmaya
     assert.equal(r.state.P.p1.w.length, 0);
 });
 
-test('ödüller: takım modunda yıldız bireye yazılır, takım havuzuna işler; dolu envanterde kalkan kurulur, silah kaybolur', () => {
+test('ödüller: takım modunda yıldız bireye yazılır, takım havuzuna işler; dolu envanterde silah ödülü kaybolur', () => {
     const s = miniState(4, { mode: 'team' });
-    s.P.p2.w = ['fist', 'fist', 'fist'];
+    s.P.p1.w = ['fist', 'fist', 'fist'];
     const r = R.applyMinigame(s, { ranking: [['p0'], ['p1'], ['p2']] }, ctx());
     assert.equal(R.teamStars(r.state, 0), 1);
-    assert.equal(r.state.P.p2.shield, true);
-    assert.equal(r.state.P.p2.w.length, 3);
+    assert.equal(r.state.P.p1.w.length, 3);
+    assert.ok(r.events.some((e) => e.t === 'lost' && e.id === 'p1'));
     const t = miniState(2);
     t.P.p0.w = ['fist', 'fist', 'fist'];
     const r2 = R.applyMinigame(t, { ranking: [['p0'], ['p1']] }, ctx());
@@ -596,4 +599,93 @@ test('prototip anahtarları ve geçersiz tipler hedef/düğüm/yön olarak redde
     // geçerli hâlâ çalışır
     assert.equal(R.reduce(duelSetup('fist', 1), { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, true);
     assert.equal(R.reduce(duelSetup('bomb', 1), { type: 'use', by: 'p0', item: 0, node: loopNode.id }, ctx()).ok, true);
+});
+
+test('ölümde kayıp en çok 3 yıldız (min(3, floor(s/2))); 0-1 yıldızda kayıp yok', () => {
+    for (const [stars, lost] of [[0, 0], [1, 0], [2, 1], [5, 2], [6, 3], [7, 3], [12, 3], [20, 3]]) {
+        const s = duelSetup('fist', 1);
+        s.P.p1.hp = 10; s.P.p1.s = stars; s.P.p0.s = 0;
+        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        assert.equal(r.state.P.p1.s, stars - lost, stars + ' yıldız');
+        assert.equal(r.state.P.p0.s, lost);
+    }
+});
+
+test('yıldız sandığı sayısı = ceil(n/2)+1 (2..8 oyuncu), silah sandığı 1; hazine noktalarına sığar', () => {
+    for (let n = 2; n <= 8; n++) {
+        const s = R.createGame({ seed: 9, cfg: { mode: 'solo', goal: 10, map: 'pirate' }, seats: seats(n) }, ctx());
+        const chests = Object.values(s.chests);
+        assert.equal(chests.filter((c) => c.k === 'star').length, Math.ceil(n / 2) + 1, n + ' oyuncu');
+        assert.equal(chests.filter((c) => c.k === 'weapon').length, 1);
+    }
+    const space = require('../games/parti/maps/space.js');
+    const gs = G.index(space);
+    const s8 = R.createGame({ seed: 9, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: seats(8) }, { g: gs });
+    assert.equal(Object.keys(s8.chests).length, 6);
+});
+
+test('hedef otomatik (0): 2-3 oyuncuda 15, 4-8 oyuncuda 10; elle seçim korunur', () => {
+    const mk = (n, goal) => R.createGame({ seed: 1, cfg: { mode: 'solo', goal, map: 'pirate' }, seats: seats(n) }, ctx()).goal;
+    assert.deepEqual([2, 3, 4, 5, 8].map((n) => mk(n, 0)), [15, 15, 10, 10, 10]);
+    assert.equal(mk(2, 5), 5);
+    assert.equal(mk(8, 25), 25);
+    assert.equal(C.autoGoal(3), 15);
+    assert.equal(C.autoGoal(4), 10);
+});
+
+test('silah düşme ağırlıkları: yumruk 1, pompalı 3, yay 3, bomba 2, kalkan 2 (ağırlıklı)', () => {
+    assert.deepEqual(C.WEAPON_WEIGHTS, { fist: 1, shotgun: 3, bow: 3, bomb: 2, shield: 2 });
+    // ağırlık sınırları: f toplam(11) üzerinden
+    const pick = (f) => {
+        const s = game(2);
+        s.chests = {};
+        const treasure = pirate.nodes.find((n) => n.type === 'treasure').id;
+        s.chests[treasure] = { k: 'weapon' };
+        const pre = pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === treasure);
+        s.P.p0.pos = pre.id;
+        const r = apply(s, { type: 'roll', by: 'p0' }, { dice: () => 1, rand: () => f });
+        const ev = r.events.find((e) => e.t === 'chest' && e.k === 'weapon');
+        return ev && ev.w;
+    };
+    assert.equal(pick(0.0), 'fist');            // [0,1)/11
+    assert.equal(pick(0.5 / 11), 'fist');
+    assert.equal(pick(2 / 11), 'shotgun');       // [1,4)
+    assert.equal(pick(5 / 11), 'bow');           // [4,7)
+    assert.equal(pick(8 / 11), 'bomb');          // [7,9)
+    assert.equal(pick(10 / 11), 'shield');       // [9,11)
+    // istatistik: 11000 çekim, her silah oranına yakın
+    const counts = {};
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const st = { rs: 1 };
+    for (let i = 0; i < 11000; i++) {
+        const f = rnd();
+        const s = game(2); s.chests = {};
+        const treasure = pirate.nodes.find((n) => n.type === 'treasure').id;
+        s.chests[treasure] = { k: 'weapon' };
+        s.P.p0.pos = pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === treasure).id;
+        const r = R.reduce(s, { type: 'roll', by: 'p0' }, ctx({ dice: () => 1, rand: () => f }));
+        const w = r.events.find((e) => e.t === 'chest' && e.k === 'weapon').w;
+        counts[w] = (counts[w] || 0) + 1;
+    }
+    for (const [w, weight] of Object.entries(C.WEAPON_WEIGHTS)) assert.ok(Math.abs(counts[w] / 11000 - weight / 11) < 0.03, w + ' ' + counts[w]);
+});
+
+test('minioyun 3.\'lük ödülü: kalkan değil +25 can (üst sınır 100), olay üretir', () => {
+    const s = miniState(4);
+    s.P.p2.hp = 60;
+    s.P.p3.hp = 90;
+    let r = R.applyMinigame(s, { ranking: [['p0'], ['p1'], ['p2'], ['p3']] }, ctx());
+    assert.equal(r.state.P.p2.hp, 85);
+    assert.equal(r.state.P.p2.shield, false);
+    assert.ok(!r.state.P.p2.w.includes('shield'));
+    assert.ok(r.events.some((e) => e.t === 'heal' && e.id === 'p2' && e.n === 25));
+    s.P.p2.hp = 90;
+    r = R.applyMinigame(s, { ranking: [['p0'], ['p1'], ['p2']] }, ctx());
+    assert.equal(r.state.P.p2.hp, 100, 'üst sınır');
+    assert.ok(r.events.some((e) => e.t === 'heal' && e.id === 'p2' && e.n === 10));
+    // eşit derece: [['p0','p1'],['p2']] -> p2 3. sayılır
+    const t = miniState(3);
+    t.P.p2.hp = 50;
+    assert.equal(R.applyMinigame(t, { ranking: [['p0', 'p1'], ['p2']] }, ctx()).state.P.p2.hp, 75);
 });

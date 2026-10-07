@@ -47,7 +47,7 @@
         var state = {
             rs: (opts.seed >>> 0) || 1,
             mode: opts.cfg.mode === 'team' ? 'team' : 'solo',
-            goal: opts.cfg.goal || C.DEFAULT_GOAL,
+            goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
             rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
             order: [], P: {}, chests: {}, mini: null, winner: null
@@ -125,7 +125,16 @@
         }
     }
 
-    function randomWeapon(rng) { return rng.pick(C.WEAPON_IDS); }
+    function randomWeapon(rng) {
+        var total = 0;
+        C.WEAPON_IDS.forEach(function (w) { total += C.WEAPON_WEIGHTS[w]; });
+        var r = rng.f() * total;
+        for (var i = 0; i < C.WEAPON_IDS.length; i++) {
+            r -= C.WEAPON_WEIGHTS[C.WEAPON_IDS[i]];
+            if (r < 0) return C.WEAPON_IDS[i];
+        }
+        return C.WEAPON_IDS[C.WEAPON_IDS.length - 1];
+    }
 
     function collectChest(state, id, node, rng, evts) {
         var chest = state.chests[node];
@@ -146,7 +155,7 @@
         free = rng.shuffle(free);
         var wanted = [];
         var i;
-        for (i = 0; i < C.CHESTS.star; i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
+        for (i = 0; i < C.starChests(state.order.length); i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
         for (i = 0; i < C.CHESTS.weapon; i++) wanted.push({ k: 'weapon' });
         wanted.forEach(function (chest, k) {
             if (k >= free.length) return;
@@ -170,13 +179,12 @@
         Object.keys(p.dmg).forEach(function (a) {
             if (state.P[a] && p.dmg[a] > best) { best = p.dmg[a]; killer = a; }
         });
-        var lost = Math.floor(p.s / 2);
+        var lost = Math.min(C.DEATH_LOSS_MAX, Math.floor(p.s / 2));
         p.s -= lost;
         var at = p.pos;
         p.hp = C.MAX_HP;
         p.pos = p.home;
-        p.sk = 1;
-        p.dmg = {};
+        p.dmg = {};            // ölümde tur atlatma yok: oyuncu hemen başlangıçta bir sonraki turda oynar
         p.offers = [];
         evts.push({ t: 'death', id: id, killer: killer, lost: lost, at: at, to: p.home });
         if (killer && lost > 0) addStars(state, killer, lost, evts, 'kill');
@@ -470,6 +478,11 @@
             evts.push({ t: 'reward', id: id, rank: rank });
             if (reward.stars) addStars(state, id, reward.stars, evts, 'mini');
             if (reward.weapon) giveItem(state, id, randomWeapon(rng), evts, false);
+            if (reward.heal) {
+                var healed = Math.min(C.MAX_HP, state.P[id].hp + reward.heal) - state.P[id].hp;
+                state.P[id].hp += healed;
+                evts.push({ t: 'heal', id: id, n: healed });
+            }
             if (reward.shield) giveItem(state, id, 'shield', evts, false);
         });
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };

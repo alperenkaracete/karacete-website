@@ -133,7 +133,7 @@ test('lobi: oda kurucusu lider; katılanlar koltuk alır, benzersiz avatar; herk
     const seats = r.view('C').seats;
     assert.deepEqual(seats.map((s) => s.i), ['A', 'B', 'C']);
     assert.equal(new Set(seats.map((s) => s.a)).size, 3);
-    assert.equal(r.view('B').cfg.gl, 10);
+    assert.equal(r.view('B').cfg.gl, 0, 'varsayılan hedef otomatik');
 });
 
 test('lobi: avatar benzersiz olmalı; ayarları yalnızca lider değiştirir', () => {
@@ -148,7 +148,7 @@ test('lobi: avatar benzersiz olmalı; ayarları yalnızca lider değiştirir', (
     assert.equal(r.view('A').seats[1].a, free);
     r.m('B').dispatch({ type: 'cfg', goal: 25, map: 'space', mode: 'team' });
     r.flush();
-    assert.equal(r.view('A').cfg.gl, 10);
+    assert.equal(r.view('A').cfg.gl, 0);
     r.m('A').dispatch({ type: 'cfg', goal: 25, map: 'space' });
     r.flush();
     assert.deepEqual([r.view('B').cfg.gl, r.view('B').cfg.mp], [25, 'space']);
@@ -891,4 +891,25 @@ test('AFK: eylem yapan oyuncu AFK sayılmaz; sayaç sıfırlanır', () => {
     r.flush();
     assert.equal(r.state('A').g.P.B.afkc, 0);
     assert.equal(r.view('B').afk, false);
+});
+
+test('otomatik hedef: başlarken oyuncu sayısına göre 15 / 10; elle seçilen hedef korunur ve "otomatik"e dönülebilir', () => {
+    const two = started(2);
+    assert.equal(two.view('A').cfg.gl, 0);
+    assert.equal(two.state('A').g.goal, 15);
+    assert.equal(two.view('B').game.goal, 15, 'takipçi de aynı hedefi görür');
+    const four = started(4);
+    assert.equal(four.state('A').g.goal, 10);
+    const fixed = room();
+    ['A', 'B', 'C'].forEach((id) => fixed.join(id, id));
+    fixed.m('A').dispatch({ type: 'cfg', goal: 5 });
+    fixed.m('A').dispatch({ type: 'start' });
+    fixed.flush();
+    assert.equal(fixed.state('A').g.goal, 5);
+    const back = room();
+    back.join('A', 'A'); back.join('B', 'B');
+    back.m('A').dispatch({ type: 'cfg', goal: 20 });
+    back.m('A').dispatch({ type: 'cfg', goal: 0 });
+    back.flush();
+    assert.equal(back.view('B').cfg.gl, 0);
 });

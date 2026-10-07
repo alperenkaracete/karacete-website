@@ -27,8 +27,11 @@
     var REWARDS = {
         1: { stars: 1, weapon: true },
         2: { weapon: true },
-        3: { shield: true }
+        3: { heal: 25 }
     };
+
+    // Rastgele silah ağırlıkları (kalkan ve bomba nadir, pompalı/yay sık)
+    var WEAPON_WEIGHTS = { fist: 1, shotgun: 3, bow: 3, bomb: 2, shield: 2 };
 
     return {
         MAX_HP: 100,
@@ -43,14 +46,20 @@
         BOT_DELAY_MS: 900,           // bot eylemleri arası (görünürlük)
         MINI_HOLD_MS: 5000,          // minioyun sonucu ekranda kalma
         GOALS: [5, 10, 15, 20, 25],
-        DEFAULT_GOAL: 10,
-        CHESTS: { star: 2, weapon: 1, bigStarChance: 0.3 },
+        GOAL_AUTO: 0,                // 0 = otomatik: 2-3 kişide 15, 4-8 kişide 10
+        autoGoal: function (players) { return players <= 3 ? 15 : 10; },
+        DEFAULT_GOAL: 0,
+        // yıldız sandığı sayısı = ceil(oyuncu/2)+1; silah sandığı sabit 1
+        starChests: function (players) { return Math.ceil(players / 2) + 1; },
+        DEATH_LOSS_MAX: 3,           // ölümde en çok bu kadar yıldız kaybedilir (min(3, floor(yıldız/2)))
+        CHESTS: { weapon: 1, bigStarChance: 0.3 },
         DICE: 6,
         LOG_MAX: 30,
         WEAPONS: WEAPONS,
         WEAPON_IDS: WEAPON_IDS,
         EVENTS: EVENTS,
         REWARDS: REWARDS,
+        WEAPON_WEIGHTS: WEAPON_WEIGHTS,
         TEAMS: [
             { id: 0, name: 'Kırmızı', color: '#e5484d' },
             { id: 1, name: 'Mavi', color: '#2f80ed' },

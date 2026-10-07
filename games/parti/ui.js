@@ -351,6 +351,7 @@
         settings.appendChild(mapRow);
         var goalRow = el('div', 'pt-row');
         goalRow.appendChild(el('span', 'pt-label', 'Hedef ⭐'));
+        goalRow.appendChild(btn('Otomatik (' + C.autoGoal(v.seats.length) + ')', v.cfg.gl === C.GOAL_AUTO ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: C.GOAL_AUTO }); }, !v.isLeader));
         C.GOALS.forEach(function (n) {
             goalRow.appendChild(btn(String(n), v.cfg.gl === n ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: n }); }, !v.isLeader));
         });
@@ -603,6 +604,7 @@
                 cursor[e.id] = e.to;
                 announce(v, '💀 ' + (e.killer ? nameOf(v, e.killer) + ', ' + accusative(plainName(v, e.id)) + ' düşürdü' : plainName(v, e.id) + ' düştü') + (e.lost ? ' (−' + e.lost + '⭐)' : ''), t);
             } else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
+            else if (e.t === 'heal' && e.n > 0) pop(e.id, '+' + e.n + '❤️', '#8dffb0');
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
             else if (e.t === 'event') {
                 if (e.e === 'teleport' && e.at !== undefined) {

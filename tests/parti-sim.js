@@ -19,8 +19,7 @@ function simulate(opts) {
     for (let k = 0; k < games; k++) {
         const seats = [];
         for (let i = 0; i < n; i++) seats.push({ id: 'p' + i, name: 'P' + i, av: 'x', t: Math.floor(i / 2), bot: true });
-        const cfg = { mode: 'solo', goal: opts.goal || 0, map: mapId };
-        if (opts.goal === undefined && opts.defaultGoal) cfg.goal = opts.defaultGoal;
+        const cfg = { mode: 'solo', goal: opts.goal || 0, map: mapId };      // goal 0 = otomatik (2-3 kişi 15, 4-8 kişi 10)
         let st = R.createGame({ seed: (opts.seed || 1000) + k * 7919, cfg: cfg, seats: seats }, { g: g });
         const firstOrder = st.order.slice();
         let steps = 0;
@@ -63,9 +62,10 @@ function format(res) {
 if (require.main === module) {
     const games = Number(process.argv[2]) || 240;
     const map = process.argv[3] || 'pirate';
+    const goal = Number(process.argv[4]) || 0;            // 0 = otomatik
     console.log('| Kişi | Ort. tur (medyan/maks) | Koltuk sırasına göre kazanma | Ölüm/oyun | Botun kendini bombalaması |');
     console.log('|---|---|---|---|---|');
-    [2, 4, 8].forEach(function (n) { console.log(format(simulate({ players: n, games: games, map: map, defaultGoal: 10, seed: 1000 }))); });
+    [2, 4, 8].forEach(function (n) { console.log(format(simulate({ players: n, games: games, map: map, goal: goal, seed: 1000 }))); });
 }
 
 module.exports = { simulate: simulate, format: format };
