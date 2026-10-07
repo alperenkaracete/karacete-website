@@ -282,10 +282,16 @@ startMinigame({
   (`catdog.js` sayılarıyla ayrışmayı da yakalar). Hold sırasında lider devri oturumu yeniden
   başlatmaz. Lider sonucu `{k:'result'}` yüküyle oyunculara bildirir (yalnız lider kabul edilir).
 - **Canlı izleme:** düelloda olmayanlar (ikinci şans bekleyen, botlar dışındaki herkes) ve maçı biten oyuncular, süren **tüm maçların** salt-okunur
-  canlı tahtasını görür (`duelPairsCard`: XOX 3×3, Dörtlü 7×6, Kedi-Köpek can çubukları + son atış özeti; canvas/animasyon yok). Yeni yük ya da oturum
+  canlı tahtasını görür (`duelPairsCard`: XOX 3×3, Dörtlü 7×6, Kedi-Köpek **canlı sahne**: tohumdan çizilen arazi, kedi/köpek, can çubukları ve son atışın yörüngesi izleyicide yeniden oynatılır). Yeni yük ya da oturum
   yoktur: lider zaten çalışan hakemlerinden her kabul edilen hamlede (`referee.onUpdate`) kompakt bir **anlık görüntü** üretir (`mini/duel-watch.js`
   `snapshot`), `pm[i].wb` olarak `pt_state` ile yayınlar (değişmediyse yayınlamaz); alıcı `sanitize` ile doğrular (geçersiz = `null`, oyunu bozmaz).
   Geç katılan/yeniden bağlanan istemci anlık görüntüyü hazır alır; ikinci şans maçı boş başlar. `getView().mini.pairs[i].watch` arayüze verilir.
+  **Kedi-Köpek sahnesi:** anlık görüntü ayrıca `sd` (tohum), `tn` (hamle no) ve son atışın yörüngelerini (`shots`: ≤80 tamsayı nokta, kare sayısı, çarpma noktası, hasar,
+  atış sonrası can) taşır (tek atış ~2-3 KB). İzleyicide `PartiDuelWatch.createScene` (kalıcı kanvas; `ui.js` çift başına bir denetleyici, her karede `tick`) sahneyi
+  `CatDogRules.generateScene(sd)` ile çizer ve yeni `tn` gelince atışı `catdog.js` ile **aynı sürelerle** oynatır (uçuş `clamp(kare/60 sn, 0,5–2,6 sn)`, mermiler arası 650 ms,
+  son 700 ms); can çubuğu **çarpma anında** düşer, hamleler kuyruğa girer, yeni tohum (yeni maç) ya da ilk görüşte animasyon oynatılmaz. Eski lider (`sd` yok) için
+  eski can çubuklu görünüm. **Tıklanamama düzeltmesi:** `pt-duel-locked` (sonuçta/atış sınırında tahtayı tıklamaya kapatır) kalıcı kök düğümde kalıp sonraki düelloyu
+  kilitli bırakıyordu; adaptör artık oturum başında ve kapanışta temizler.
 - **Süre/takılma:** düelloda **toplam süre sınırı yoktur**, oyunlar yarıda kesilmez. Takılmaya karşı yalnız **boşta sınırı**: sırası gelen oyuncu
   `DUEL_IDLE_MS` (3 dk) hiç hamle yapmazsa (lider her hakem güncellemesinde sayacı sıfırlar) o maçı kaybeder (`r: 'idle'`, hükmen: banner/tutma yok);
   oyun hiç başlamadıysa tohumdan çark sonucu. Kedi-Köpek'in 5 atış sınırı süre değil atış kuralıdır, kalır.
