@@ -557,3 +557,24 @@ test('olay konumları: ölüm ve ışınlanma olayları eski kutucuğu (at) ve b
     assert.equal(tp.to, t.P.p0.home);
     assert.equal(r2.state.P.p0.pos, t.P.p0.home);
 });
+
+test('attackOptions: bomba için atanın kendi kutucuğu sunulmaz (aynı kutucuktaki rakip olsa bile); kuralda insan yine atabilir', () => {
+    const s = game(3);
+    const a = loopNode.id;
+    s.P.p0.pos = a; s.P.p1.pos = a; s.P.p2.pos = nodeAt(a, 2);
+    s.P.p0.w = ['bomb']; s.stage = 'act';
+    const opts = R.attackOptions(s, ctx());
+    assert.ok(opts.length > 0, 'başka kutucuktaki rakip hâlâ hedef');
+    assert.ok(opts.every((o) => o.node !== a), 'kendi kutucuğu yok');
+    assert.ok(opts.some((o) => o.node === s.P.p2.pos));
+    // yalnız aynı kutucukta rakip varsa bot hiç bomba seçeneği görmez
+    s.P.p2.pos = a;
+    assert.deepEqual(R.attackOptions(s, ctx()), []);
+    // botAction kendini bombalamaz
+    for (let i = 0; i < 20; i++) {
+        const act = R.botAction(s, ctx({ rand: () => i / 20 }));
+        assert.ok(!(act.type === 'use' && act.node === a));
+    }
+    // insan reduce ile yine kendi kutucuğuna atabilir (kural değişmedi)
+    assert.equal(R.reduce(s, { type: 'use', by: 'p0', item: 0, node: a }, ctx()).ok, true);
+});

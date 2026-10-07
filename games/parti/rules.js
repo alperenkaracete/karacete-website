@@ -399,6 +399,7 @@
                 });
             } else if (def.kind === 'area') {
                 var seen = {};
+                seen[p.pos] = true;          // atanın kendi kutucuğu hedef olarak sunulmaz (bot kendini bombalamasın)
                 state.order.forEach(function (o) {
                     var pos = state.P[o].pos;
                     if (o === id || isTeammate(state, id, o) || seen[pos]) return;
