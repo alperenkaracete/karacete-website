@@ -556,7 +556,16 @@
         var ranks = ranksOf(result && result.ranking ? result.ranking : []);
         state.order.forEach(function (id) {
             var rank = ranks[id];
-            var reward = rank && C.REWARDS[rank];
+            if (!rank) {
+                // Sıralamada yok (düelloda olmayan): teselli iyileşmesi
+                var comfort = Math.min(C.MAX_HP, state.P[id].hp + C.MINI_CONSOLATION.heal) - state.P[id].hp;
+                if (comfort > 0) {
+                    state.P[id].hp += comfort;
+                    evts.push({ t: 'heal', id: id, n: comfort });
+                }
+                return;
+            }
+            var reward = C.REWARDS[rank];
             if (!reward) return;
             evts.push({ t: 'reward', id: id, rank: rank });
             if (reward.stars) addStars(state, id, reward.stars, evts, 'mini');

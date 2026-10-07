@@ -141,6 +141,9 @@
         eventAnnounce: eventAnnounce,
         NODE_TYPES: NODE_TYPES,
         REWARDS: REWARDS,
+        // Düelloda olmayanlar (sıralamada yer almayanlar) için küçük teselli: iyileşme (üst sınır MAX_HP).
+        // REWARDS[3] ile çakışmaz: o derece yalnızca sıralamadakilere verilir; sıralamadakiler teselli almaz.
+        MINI_CONSOLATION: { heal: 25 },
         WEAPON_WEIGHTS: WEAPON_WEIGHTS,
         TEAMS: [
             { id: 0, name: 'Kırmızı', color: '#e5484d' },
