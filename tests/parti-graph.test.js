@@ -74,3 +74,29 @@ test('mesafe: yön gözetmeden en kısa adım sayısı', () => {
     const d = G.distance(map, 0, 15);
     assert.ok(d > 3 && Number.isFinite(d));
 });
+
+test('başlangıç kenarları ≤ 200 birim, başlangıç düğümleri başka düğümlerden ≥ 60 uzak (iki haritada)', () => {
+    for (const map of [pirate, space]) {
+        const g = G.index(map);
+        map.nodes.filter((n) => n.type === 'start').forEach((n) => {
+            n.next.forEach((to) => {
+                const t = g.byId[to];
+                assert.ok(Math.hypot(n.x - t.x, n.y - t.y) <= 200, map.id + ' başlangıç ' + n.id + ' kenarı uzun');
+            });
+            map.nodes.forEach((o) => {
+                if (o.id !== n.id) assert.ok(Math.hypot(n.x - o.x, n.y - o.y) >= 60, map.id + ' ' + n.id + ' ' + o.id + ' yakın');
+            });
+        });
+    }
+});
+
+test('doğrulayıcı: uzun başlangıç kenarı ve yakın başlangıç yakalanır', () => {
+    const bad = JSON.parse(JSON.stringify(space));
+    const start = bad.nodes.find((n) => n.type === 'start');
+    start.next = [1];                                  // üst kenara çapraz uzun çizgi
+    assert.ok(G.validate(bad).some((e) => /çok uzun/.test(e)));
+    const close = JSON.parse(JSON.stringify(pirate));
+    const starts = close.nodes.filter((n) => n.type === 'start');
+    starts[1].x = starts[0].x + 20; starts[1].y = starts[0].y;
+    assert.ok(G.validate(close).some((e) => /yakın/.test(e)));
+});

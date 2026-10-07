@@ -1078,7 +1078,11 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-bar { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.4); font-size: 14px; font-weight: 700; }
 .pt-bar-mid.mine { color: #ffd24a; }
 .pt-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
-.pt-board { flex: 0 0 auto; width: 100%; aspect-ratio: 10 / 7; max-height: 58%; display: flex; align-items: center; justify-content: center; }
+.pt-boardcol { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; max-height: 66%; }
+.pt-board { flex: 0 0 auto; width: 100%; aspect-ratio: 10 / 7; max-height: 58vh; display: flex; align-items: center; justify-content: center; }
+.pt-strip { flex: 0 0 auto; min-height: 34px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); font-size: 13px; line-height: 1.25; }
+.pt-strip-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-strip-line:last-child { font-weight: 700; }
 .pt-canvas { border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); touch-action: manipulation; }
 .pt-side { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .pt-players { display: flex; flex-direction: column; gap: 4px; }
@@ -1115,7 +1119,8 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 
 @media (orientation: landscape) and (min-width: 760px) {
     .pt-main { flex-direction: row; }
-    .pt-board { flex: 1 1 auto; width: auto; aspect-ratio: auto; max-height: none; height: 100%; min-width: 0; }
+    .pt-boardcol { flex: 1 1 auto; max-height: none; height: 100%; min-width: 0; }
+    .pt-board { flex: 1 1 auto; width: auto; aspect-ratio: auto; max-height: none; min-height: 0; min-width: 0; }
     .pt-side { flex: 0 0 min(300px, 34%); }
     .pt-pgrid { grid-template-columns: repeat(2, 1fr); }
     .pt-pname { font-size: 13px; }
@@ -1124,3 +1129,16 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
     .pt-btn { min-height: 34px; padding: 5px 8px; font-size: 13px; }
     .pt-btn.big { min-height: 40px; font-size: 15px; }
 }
+
+.pt-turns { display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+.pt-turns-label { margin-right: 4px; }
+.pt-turns-arrow { opacity: 0.6; }
+.pt-turn { font-size: 18px; padding: 1px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.12); }
+.pt-turn.now { background: #ffb400; box-shadow: 0 0 0 2px #ffd24a; }
+.pt-turn.done { opacity: 0.45; }
+
+.pt-afk { border: 2px solid #ffb400; }
+.pt-afk .pt-btn { width: 100%; }
+
+.pt-emotes { display: flex; gap: 6px; justify-content: center; }
+.pt-emote { font-size: 20px; min-width: 44px; min-height: 40px; padding: 2px 8px; }

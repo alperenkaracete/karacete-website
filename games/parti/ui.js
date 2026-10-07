@@ -30,12 +30,17 @@
     var anims = {};          // oyuncu -> { from, path, t0 }
     var particles = [];
     var banner = null;
+    var announcer = null;
+    var bubbles = {};         // oyuncu -> { e, t0 } emoji tepkisi baloncuğu
+    var EMOTE_MS = 2200;
     var lastFq = -1;
     var sig = '';
     var targeting = null;    // { item, kind, range }
     var logOpen = false;
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
+    var tickTimer = null;
+    var TICK_MS = 250;
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -83,14 +88,22 @@
         var barMid = el('span', 'pt-bar-mid');
         var barTime = el('span', 'pt-bar-time');
         var main = el('div', 'pt-main');
+        var boardCol = el('div', 'pt-boardcol');
         var boardWrap = el('div', 'pt-board');
         var canvas = el('canvas', 'pt-canvas');
         boardWrap.appendChild(canvas);
+        var strip = el('div', 'pt-strip');
+        boardCol.appendChild(boardWrap);
+        boardCol.appendChild(strip);
         var side = el('div', 'pt-side');
         var players = el('div', 'pt-players');
         var controls = el('div', 'pt-controls');
-        side.appendChild(players); side.appendChild(controls);
-        main.appendChild(boardWrap); main.appendChild(side);
+        var emotes = el('div', 'pt-emotes');
+        C.EMOTES.forEach(function (em) {
+            emotes.appendChild(btn(em, 'pt-emote small', function () { if (machine) machine.emote(em); }));
+        });
+        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes);
+        main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
         bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(logBtn);
         var logPanel = el('div', 'pt-log hidden');
@@ -101,7 +114,7 @@
         root.appendChild(rootEl);
         return {
             root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
-            canvas: canvas, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
+            canvas: canvas, strip: strip, emotes: emotes, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
 
@@ -124,7 +137,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
         return parts.join(':');
     }
 
@@ -139,12 +152,14 @@
         var inGame = v.mode === 'play' || v.mode === 'over' || v.mode === 'spectator';
         els.lobby.classList.toggle('hidden', v.mode !== 'lobby');
         els.game.classList.toggle('hidden', !(inGame && v.game));
+        els.emotes.classList.toggle('hidden', !(v.mode === 'play' || v.mode === 'over'));
         if (v.mode === 'lobby') renderLobby(v);
         if (inGame && v.game) {
             renderBar(v);
             renderPlayers(v);
             renderControls(v);
             renderLog(v);
+            renderStrip(v);
             window.requestAnimationFrame(resize);
         }
         renderOverlay(v);
@@ -159,6 +174,7 @@
         else if (v.mode === 'spectator') cards.push(toastCard('👀 İzleyicisin: oyun başlamış, eylem yapamazsın.', [btn('Lobiye Dön', '', function () { gctx.leave(); })]));
         if (v.offline) cards.push(toastCard('📡 Bağlantı koptu, yeniden bağlanılıyor…'));
         if (v.wait) cards.push(waitCard(v));
+        if (v.afk && v.mode === 'play') cards.push(afkCard());
         if (v.game && v.game.stage === 'mini' && v.mini) cards.push(miniCard(v));
         if (v.mode === 'over' && v.game) cards.push(overCard(v));
         if (v.mode !== 'lobby' && v.game && v.game.stage === 'swap' && v.cur === v.me.id) cards.push(swapCard(v));
@@ -185,8 +201,12 @@
         c.appendChild(el('strong', '', '📵 ' + v.wait.name + ' bağlantısı koptu'));
         var t = el('span', 'pt-hint');
         t.dataset.wait = v.wait.id;
-        t.textContent = 'Kalan süre ' + fmtTime(v.wait.left);
-        timerEls.push({ node: t, fn: function (vv) { return vv.wait ? 'Kalan süre ' + fmtTime(vv.wait.left) : ''; } });
+        function waitText(vv) {
+            if (!vv.wait) return '';
+            return (vv.wait.bot ? '🤖 Bot oynuyor' : '🤖 Bot ' + fmtTime(vv.wait.botIn) + ' sonra oynayacak') + ' · koltuk ' + fmtTime(vv.wait.left) + ' saklı';
+        }
+        t.textContent = waitText(v);
+        timerEls.push({ node: t, fn: waitText });
         c.appendChild(t);
         if (v.isLeader) {
             var row = el('div', 'pt-row');
@@ -197,6 +217,14 @@
         } else {
             c.appendChild(el('span', 'pt-hint', 'Lider bekleyip beklemeyeceğine karar verir.'));
         }
+        return c;
+    }
+
+    // AFK oyuncuya: bot devraldı, geri dönmek için büyük düğme (her eylem de aynı işi görür)
+    function afkCard() {
+        var c = el('div', 'pt-card pt-card-small pt-afk');
+        c.appendChild(el('strong', '', '😴 Bot senin yerine oynuyor'));
+        c.appendChild(btn('🙋 Ben buradayım', 'primary big', function () { act({ type: 'back' }); }));
         return c;
     }
 
@@ -330,6 +358,7 @@
         settings.appendChild(mapRow);
         var goalRow = el('div', 'pt-row');
         goalRow.appendChild(el('span', 'pt-label', 'Hedef ⭐'));
+        goalRow.appendChild(btn('Otomatik (' + C.autoGoal(v.seats.length) + ')', v.cfg.gl === C.GOAL_AUTO ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: C.GOAL_AUTO }); }, !v.isLeader));
         C.GOALS.forEach(function (n) {
             goalRow.appendChild(btn(String(n), v.cfg.gl === n ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: n }); }, !v.isLeader));
         });
@@ -378,8 +407,20 @@
             });
             P.appendChild(strip);
         }
+        // bu turun oynanış sırası (şerit); kartlar ise sabit koltuk sırasıyla çizilir
+        var turnStrip = el('div', 'pt-turns');
+        turnStrip.appendChild(el('span', 'pt-turns-label', 'Bu tur:'));
+        g.order.forEach(function (id, i) {
+            if (i) turnStrip.appendChild(el('span', 'pt-turns-arrow', '→'));
+            var chipT = el('span', 'pt-turn' + (id === v.cur ? ' now' : '') + (g.stage !== 'mini' && i < g.turn ? ' done' : ''), g.P[id].av);
+            chipT.title = g.P[id].n;
+            turnStrip.appendChild(chipT);
+        });
+        P.appendChild(turnStrip);
         var grid = el('div', 'pt-pgrid');
-        g.order.forEach(function (id) {
+        var seatOrder = v.seats.map(function (sx) { return sx.i; }).filter(function (id) { return g.P[id]; });
+        g.order.forEach(function (id) { if (seatOrder.indexOf(id) < 0) seatOrder.push(id); });
+        seatOrder.forEach(function (id) {
             var p = g.P[id];
             var seat = seatById(v, id);
             var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : ''));
@@ -404,6 +445,7 @@
             var status = '';
             if (seat && !seat.b && !seat.c) status += '📵';
             if (p.sk > 0) status += '💤';
+            if (p.afk) status += '😴';
             if (status) cardEl.appendChild(el('span', 'pt-pstatus', status));
             grid.appendChild(cardEl);
         });
@@ -497,6 +539,12 @@
         return t.kind === 'area' ? 'Bomba: listeden ya da haritada bir kutucuğa dokun (menzil ' + t.range + ').' : 'Hedef seç (menzil ' + t.range + ').';
     }
 
+    // Tahtanın altında son 2 olay
+    function renderStrip(v) {
+        els.strip.textContent = '';
+        v.log.slice(-2).forEach(function (l) { els.strip.appendChild(el('div', 'pt-strip-line', l)); });
+    }
+
     function renderLog(v) {
         els.logPanel.classList.toggle('hidden', !logOpen);
         els.logPanel.textContent = '';
@@ -515,7 +563,7 @@
         var p = v.game.P[id];
         var a = anims[id];
         if (a) {
-            var e = Math.max(0, (t - a.t0) / STEP_ANIM_MS);
+            var e = Math.max(0, (t - a.t0) / (a.dur || STEP_ANIM_MS));
             var seq = [a.from].concat(a.path);
             if (e >= seq.length - 1) { delete anims[id]; shown[id] = p.pos; }
             else {
@@ -537,26 +585,72 @@
         lastFq = v.fq;
         if (first) return;
         var g = graphFor(v.game.mapId);
+        // Her oyuncunun olay anındaki konumu: şu an gösterilen kutucuktan başlayıp olaylarla ilerler
+        // (anlık görüntüdeki P.pos olayların SONUNDAKİ konumdur; ölüm/ışınlanma baloncuğu eski kutucukta çıkmalı).
+        var cursor = {};
+        v.game.order.forEach(function (id) { cursor[id] = shown[id] !== undefined ? shown[id] : v.game.P[id].pos; });
+        function where(id) { return cursor[id] !== undefined ? cursor[id] : (v.game.P[id] ? v.game.P[id].pos : null); }
         v.fx.forEach(function (e) {
-            function at(id) { var s = shown[id] !== undefined && v.game.P[id] ? shown[id] : (v.game.P[id] ? v.game.P[id].pos : null); return s === null ? null : nodePos(g, s); }
-            function pop(id, text, color, dx) {
-                var pos = e.node !== undefined && !id ? nodePos(g, e.node) : (v.game.P[id] ? nodePos(g, v.game.P[id].pos) : at(id));
-                if (!pos) return;
-                particles.push({ x: pos.x + (dx || 0), y: pos.y - 26, text: text, color: color, t0: t, life: 1400 });
+            function pop(id, text, color, nodeId) {
+                var n = nodeId !== undefined && nodeId !== null ? nodeId : (id ? where(id) : e.node);
+                if (n === null || n === undefined || !g.byId[n]) return;
+                var pos = nodePos(g, n);
+                particles.push({ x: pos.x, y: pos.y - 26, text: text, color: color, t0: t, life: 1400 });
             }
             if (e.t === 'move' && v.game.P[e.id]) {
-                anims[e.id] = { from: shown[e.id] !== undefined ? shown[e.id] : e.path[0], path: e.path, t0: t };
+                anims[e.id] = { from: cursor[e.id], path: e.path, t0: t };
+                cursor[e.id] = e.path[e.path.length - 1];
             } else if (e.t === 'roll') {
                 banner = { text: '🎲 ' + e.v, sub: nameOf(v, e.id), t0: t };
             } else if (e.t === 'dmg') pop(e.id, '−' + e.n, '#ff5d5d');
             else if (e.t === 'star') pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a');
-            else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', 0);
-            else if (e.t === 'death') pop(e.id, '💀', '#ffffff');
-            else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
+            else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', e.node);
+            else if (e.t === 'death') {
+                pop(e.id, '💀', '#ffffff', e.at);
+                flyHome(e.id, e.at, e.to, t);
+                cursor[e.id] = e.to;
+                announce(v, '💀 ' + (e.killer ? nameOf(v, e.killer) + ', ' + accusative(plainName(v, e.id)) + ' düşürdü' : plainName(v, e.id) + ' düştü') + (e.lost ? ' (−' + e.lost + '⭐)' : ''), t);
+            } else if (e.t === 'frenzy') {
+                announce(v, '🔥 SON ÇILGINLIK! Sandıklar ×2', t, 3000);
+            } else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
+            else if (e.t === 'heal' && e.n > 0) pop(e.id, '+' + e.n + '❤️', '#8dffb0');
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
-            else if (e.t === 'event') pop(e.id, '🎁', '#e3c9ff');
-            else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
+            else if (e.t === 'event') {
+                if (e.e === 'teleport' && e.at !== undefined) {
+                    pop(e.id, '🌀', '#d6c4ff', e.at);
+                    flyHome(e.id, e.at, e.to, t);
+                    cursor[e.id] = e.to;
+                    announce(v, '🌀 ' + plainName(v, e.id) + ' başlangıca ışınlandı', t);
+                } else pop(e.id, '🎁', '#e3c9ff');
+            } else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
         });
+    }
+
+    // Ölüm/ışınlanma: jeton önce eski kutucukta kalır (baloncuk orada), kısa süre sonra başlangıca uçar.
+    function flyHome(id, from, to, t) {
+        if (from === undefined || to === undefined || from === to) return;
+        anims[id] = { from: from, path: [to], t0: t + 900, dur: 700 };
+    }
+
+    function announce(v, text, t, life) {
+        announcer = { text: text, t0: t, life: life || 1500 };
+    }
+
+    function plainName(v, id) {
+        var s = seatById(v, id);
+        if (s) return s.n;
+        return v.game && v.game.P[id] ? v.game.P[id].n : '?';
+    }
+
+    // Türkçe belirtme hâli (ünlü uyumu): Ayşe → Ayşe'yi, Ali → Ali'yi, Can → Can'ı, Ömer → Ömer'i
+    function accusative(name) {
+        var vowels = 'aeıioöuü';
+        var lower = name.toLocaleLowerCase('tr');
+        var last = '';
+        for (var i = lower.length - 1; i >= 0; i--) { if (vowels.indexOf(lower[i]) >= 0) { last = lower[i]; break; } }
+        var suffix = { a: 'ı', 'ı': 'ı', o: 'u', u: 'u', e: 'i', i: 'i', 'ö': 'ü', 'ü': 'ü' }[last] || 'i';
+        var endsVowel = vowels.indexOf(lower[lower.length - 1]) >= 0;
+        return name + "'" + (endsVowel ? 'y' : '') + suffix;
     }
 
     function drawBackground(c, map, t) {
@@ -610,6 +704,14 @@
         var map = graph.map;
         drawBackground(c, map, t);
         drawDecor(c, map, t);
+        if (g.fr) {            // Son Çılgınlık: kızıl, nabız gibi atan bir ton
+            c.fillStyle = 'rgba(255, 50, 20,' + (0.12 + 0.07 * Math.sin(t / 380)).toFixed(3) + ')';
+            c.fillRect(0, 0, BOARD_W, BOARD_H);
+            c.textAlign = 'left';
+            c.textBaseline = 'top';
+            font(c, 26);
+            c.fillText('🔥 Son Çılgınlık', 14, 14);
+        }
         // yollar
         c.lineCap = 'round';
         map.nodes.forEach(function (n) {
@@ -694,6 +796,22 @@
             c.fillText(p.text, p.x, p.y - k * 40);
         });
         c.globalAlpha = 1;
+        if (announcer) {
+            var ak = (t - announcer.t0) / announcer.life;
+            if (ak >= 1) announcer = null;
+            else {
+                c.globalAlpha = ak < 0.75 ? 1 : 1 - (ak - 0.75) / 0.25;
+                c.font = 'bold 30px ' + EMOJI_FONT;
+                var aw = Math.min(BOARD_W - 20, c.measureText(announcer.text).width + 40);
+                c.fillStyle = 'rgba(0,0,0,0.7)';
+                c.fillRect(BOARD_W / 2 - aw / 2, 14, aw, 50);
+                c.fillStyle = '#fff';
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                c.fillText(announcer.text, BOARD_W / 2, 40, aw - 20);
+                c.globalAlpha = 1;
+            }
+        }
         if (banner) {
             var bk = (t - banner.t0) / 1500;
             if (bk >= 1) banner = null;
@@ -735,6 +853,27 @@
         c.fillRect(x - 15, y + bob + 19, 30 * Math.max(0, p.hp) / 100, 5);
         if (p.shield) { font(c, 14); c.fillText('🛡️', x + 16, y + bob - 14); }
         if (p.sk > 0) { font(c, 14); c.fillText('💤', x - 16, y + bob - 14); }
+        var bub = bubbles[id];
+        if (bub) {
+            var bk = (t - bub.t0) / EMOTE_MS;
+            if (bk >= 1) delete bubbles[id];
+            else {
+                var rise = Math.min(1, bk * 6) * 10;
+                c.globalAlpha = bk < 0.8 ? 1 : 1 - (bk - 0.8) / 0.2;
+                c.fillStyle = '#ffffff';
+                c.beginPath();
+                c.arc(x, y + bob - 42 - rise, 19, 0, Math.PI * 2);
+                c.fill();
+                c.beginPath();
+                c.moveTo(x - 6, y + bob - 26 - rise); c.lineTo(x + 6, y + bob - 26 - rise); c.lineTo(x, y + bob - 18 - rise);
+                c.fill();
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                font(c, 26);
+                c.fillText(bub.e, x, y + bob - 41 - rise);
+                c.globalAlpha = 1;
+            }
+        }
     }
 
     function draw(t) {
@@ -794,13 +933,14 @@
         els = buildDom();
         view = null;
         sig = '';
-        shown = {}; anims = {}; particles = []; banner = null; lastFq = -1; targeting = null; logOpen = false;
+        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
         var creator = ctx.isHost() && ctx.players.length <= 1;
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
-            onChange: onView, startMinigame: PartiMinigame.startMinigame
+            onChange: onView, startMinigame: PartiMinigame.startMinigame,
+            onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         listen(els.canvas, 'click', onCanvasClick);
         listen(window, 'resize', resize);
@@ -811,14 +951,24 @@
         }
         view = machine.getView();
         raf = requestAnimationFrame(frame);
+        // Oyun saati requestAnimationFrame'e bağlı OLMAMALI: arka plandaki sekmede rAF durur, lider botları/süreleri
+        // ilerletemez. Bağımsız bir aralık ve sekme görünür olunca anında tick atar.
+        tickTimer = setInterval(function () { if (machine) machine.tick(); }, TICK_MS);
+        listen(document, 'visibilitychange', function () { if (machine && !document.hidden) machine.tick(); });
         render();
     }
 
-    function onMessage(data) { if (machine) machine.onMessage(data); }
+    function onMessage(data) {
+        if (!machine) return;
+        machine.onMessage(data);
+        machine.tick();       // arka planda aralıklar kısılsa da gelen her mesaj lideri bir adım ilerletir
+    }
 
     function destroy() {
         if (raf !== null) cancelAnimationFrame(raf);
         raf = null;
+        if (tickTimer !== null) clearInterval(tickTimer);
+        tickTimer = null;
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');

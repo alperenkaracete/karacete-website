@@ -17,6 +17,11 @@
 
     function clone(x) { return JSON.parse(JSON.stringify(x)); }
 
+    // Dışarıdan gelen anahtarlar yalnızca kendi özellikleriyle eşleşsin ('__proto__', 'constructor' vb. reddedilir).
+    function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+    function validNode(g, id) { return Number.isInteger(id) && has(g.byId, id); }
+    function validPlayer(state, id) { return typeof id === 'string' && has(state.P, id) && state.order.indexOf(id) >= 0; }
+
     // ctx: { g: graf indeksi, rand?: () => [0,1) (testler için) }
     function Rng(state, ctx) {
         var f = ctx && ctx.rand ? ctx.rand : function () { return nextRand(state); };
@@ -42,10 +47,10 @@
         var state = {
             rs: (opts.seed >>> 0) || 1,
             mode: opts.cfg.mode === 'team' ? 'team' : 'solo',
-            goal: opts.cfg.goal || C.DEFAULT_GOAL,
+            goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
             rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
-            order: [], P: {}, chests: {}, mini: null, winner: null
+            order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
         };
         var rng = Rng(state, ctx);
         var seats = rng.shuffle(opts.seats);
@@ -120,7 +125,16 @@
         }
     }
 
-    function randomWeapon(rng) { return rng.pick(C.WEAPON_IDS); }
+    function randomWeapon(rng) {
+        var total = 0;
+        C.WEAPON_IDS.forEach(function (w) { total += C.WEAPON_WEIGHTS[w]; });
+        var r = rng.f() * total;
+        for (var i = 0; i < C.WEAPON_IDS.length; i++) {
+            r -= C.WEAPON_WEIGHTS[C.WEAPON_IDS[i]];
+            if (r < 0) return C.WEAPON_IDS[i];
+        }
+        return C.WEAPON_IDS[C.WEAPON_IDS.length - 1];
+    }
 
     function collectChest(state, id, node, rng, evts) {
         var chest = state.chests[node];
@@ -136,13 +150,31 @@
         }
     }
 
+    // Biri (takımda takımın toplamı) hedefe FRENZY_STARS_LEFT yıldız ya da daha az kala 'Son Çılgınlık' başlar
+    // (bir kez tetiklenir, oyun boyunca sürer): sandık sayıları ×2.
+    function nearGoal(state) {
+        var left = C.FRENZY_STARS_LEFT;
+        if (state.mode === 'team') {
+            return state.order.some(function (id) {
+                var total = teamStars(state, state.P[id].t);
+                return total < state.goal && state.goal - total <= left;
+            });
+        }
+        return state.order.some(function (id) { var s = state.P[id].s; return s < state.goal && state.goal - s <= left; });
+    }
+
     function spawnChests(state, g, rng, evts) {
+        if (!state.fr && nearGoal(state)) {
+            state.fr = 1;
+            evts.push({ t: 'frenzy' });
+        }
+        var mult = state.fr ? 2 : 1;
         var free = g.map.nodes.filter(function (n) { return n.type === 'treasure' && !state.chests[n.id]; }).map(function (n) { return n.id; });
         free = rng.shuffle(free);
         var wanted = [];
         var i;
-        for (i = 0; i < C.CHESTS.star; i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
-        for (i = 0; i < C.CHESTS.weapon; i++) wanted.push({ k: 'weapon' });
+        for (i = 0; i < C.starChests(state.order.length) * mult; i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
+        for (i = 0; i < C.CHESTS.weapon * mult; i++) wanted.push({ k: 'weapon' });
         wanted.forEach(function (chest, k) {
             if (k >= free.length) return;
             state.chests[free[k]] = chest;
@@ -165,14 +197,14 @@
         Object.keys(p.dmg).forEach(function (a) {
             if (state.P[a] && p.dmg[a] > best) { best = p.dmg[a]; killer = a; }
         });
-        var lost = Math.floor(p.s / 2);
+        var lost = Math.min(C.DEATH_LOSS_MAX, Math.floor(p.s / 2));
         p.s -= lost;
+        var at = p.pos;
         p.hp = C.MAX_HP;
         p.pos = p.home;
-        p.sk = 1;
-        p.dmg = {};
+        p.dmg = {};            // ölümde tur atlatma yok: oyuncu hemen başlangıçta bir sonraki turda oynar
         p.offers = [];
-        evts.push({ t: 'death', id: id, killer: killer, lost: lost });
+        evts.push({ t: 'death', id: id, killer: killer, lost: lost, at: at, to: p.home });
         if (killer && lost > 0) addStars(state, killer, lost, evts, 'kill');
         else checkWin(state);
     }
@@ -252,7 +284,11 @@
         var p = state.P[id];
         if (ev.id === 'star') addStars(state, id, 1, evts, 'event');
         else if (ev.id === 'damage') hit(state, id, ev.damage, null, evts);
-        else if (ev.id === 'teleport') p.pos = p.home;
+        else if (ev.id === 'teleport') {
+            evts[evts.length - 1].at = p.pos;       // eski kutucuk (arayüz balonu orada gösterir)
+            evts[evts.length - 1].to = p.home;
+            p.pos = p.home;
+        }
         else if (ev.id === 'weapon') giveItem(state, id, randomWeapon(rng), evts, true);
         else if (ev.id === 'rest') p.sk = 1;
     }
@@ -307,8 +343,9 @@
             }
             case 'dir': {
                 if (state.stage !== 'choose') return fail('yön seçilemez');
+                if (!validNode(g, action.to) || state.choices.indexOf(action.to) < 0) return fail('geçersiz yön');
                 var w = G.walkVia(g, p.pos, state.steps, action.to);
-                if (!w || state.choices.indexOf(action.to) < 0) return fail('geçersiz yön');
+                if (!w) return fail('geçersiz yön');
                 move(state, g, id, w, rng, evts);
                 return done();
             }
@@ -335,8 +372,8 @@
                     return done();            // tur harcanmaz
                 }
                 if (def.kind === 'target') {
+                    if (!validPlayer(state, action.target) || action.target === id) return fail('geçersiz hedef');
                     var tgt = state.P[action.target];
-                    if (!tgt || action.target === id) return fail('geçersiz hedef');
                     if (isTeammate(state, id, action.target)) return fail('takım arkadaşına saldırılamaz');
                     var d = G.distance(g, p.pos, tgt.pos);
                     if (d > def.range) return fail('hedef menzil dışında');
@@ -345,7 +382,7 @@
                     hit(state, action.target, def.dmg[d], id, evts);
                 } else {
                     var node = action.node;
-                    if (!g.byId[node]) return fail('geçersiz kutucuk');
+                    if (!validNode(g, node)) return fail('geçersiz kutucuk');
                     if (G.distance(g, p.pos, node) > def.range) return fail('hedef menzil dışında');
                     p.w.splice(idx, 1);
                     evts.push({ t: 'attack', id: id, w: def.id, node: node });
@@ -394,6 +431,7 @@
                 });
             } else if (def.kind === 'area') {
                 var seen = {};
+                seen[p.pos] = true;          // atanın kendi kutucuğu hedef olarak sunulmaz (bot kendini bombalamasın)
                 state.order.forEach(function (o) {
                     var pos = state.P[o].pos;
                     if (o === id || isTeammate(state, id, o) || seen[pos]) return;
@@ -458,11 +496,19 @@
             evts.push({ t: 'reward', id: id, rank: rank });
             if (reward.stars) addStars(state, id, reward.stars, evts, 'mini');
             if (reward.weapon) giveItem(state, id, randomWeapon(rng), evts, false);
+            if (reward.heal) {
+                var healed = Math.min(C.MAX_HP, state.P[id].hp + reward.heal) - state.P[id].hp;
+                state.P[id].hp += healed;
+                evts.push({ t: 'heal', id: id, n: healed });
+            }
             if (reward.shield) giveItem(state, id, 'shield', evts, false);
         });
         if (state.stage === 'over') return { ok: true, state: state, events: evts, error: null };
         state.rd++;
         spawnChests(state, g, rng, evts);
+        // Her turun başlangıç sırası bir kayar (ilk oynayan sona geçer): sabit ilk sıra avantajı olmasın.
+        // Minioyun yalnızca ödülleri etkiler, sırayı etkilemez.
+        if (state.order.length > 1) state.order.push(state.order.shift());
         state.turn = -1;
         state.mini = null;
         if (state.stage !== 'over') nextTurn(state, g, rng, evts);

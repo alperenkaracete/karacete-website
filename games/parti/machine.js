@@ -27,6 +27,8 @@
         var rand = opts.rand || Math.random;
         var startMinigame = opts.startMinigame || Mini.startMinigame;
         var onChange = opts.onChange || function () {};
+        var onEmote = opts.onEmote || function () {};
+        var lastEmote = {};           // gönderen -> son emote zamanı (hız sınırı; durumda tutulmaz)
         var graphs = {};
 
         var M = null;                 // en son durum (lider: otoriter; diğerleri: son anlık görüntü)
@@ -36,6 +38,8 @@
         var offline = false;
         var botAt = 0;
         var botSeq = 0;
+        var turnMark = null;          // { key, id, acted, counted } bu turda insanın eylem yapıp yapmadığı (AFK sayacı)
+        var resyncOk = false;         // _reconnected sonrası ilk pt_state ep sınırından muaf
 
         function send(msg) { opts.send(msg); }
         function isLeader() { return !!M && M.ld === me.id; }
@@ -69,7 +73,7 @@
             M = {
                 ep: 1, rv: 0, ld: me.id, ph: 'lobby',
                 cf: { m: 'solo', mp: Object.keys(opts.maps)[0], gl: C.DEFAULT_GOAL },
-                S: [], g: null, dlAt: 0, dlLeft: 0, pz: false, mn: null, lg: [], fx: [], fq: 0, kk: []
+                S: [], g: null, dlAt: 0, dlLeft: 0, pz: false, bt: null, mn: null, lg: [], fx: [], fq: 0, kk: []
             };
             M.S.push(freshSeat(me.id, me.name, false));
             // odaya zaten girmiş başkaları varsa (ender) onları da ekle
@@ -86,7 +90,7 @@
                 type: 'pt_state', ep: M.ep, rv: M.rv, ld: M.ld, ph: M.ph, cf: M.cf,
                 S: M.S.map(function (s) { return { i: s.i, n: s.n, a: s.a, t: s.t, b: s.b, c: s.c, d: s.c ? 0 : Math.max(0, Math.round(s.dAt - t)) }; }),
                 g: M.g,
-                dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0,
+                dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0, bt: M.bt,
                 mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1 } : null,
                 lg: M.lg, fx: M.fx, fq: M.fq, kk: M.kk
             };
@@ -105,7 +109,10 @@
         function unpack(msg) {
             if (!msg || !isInt(msg.ep, 0, 1e6) || !isInt(msg.rv, 0, 1e9)) return null;
             if (typeof msg.ld !== 'string' || PHASES.indexOf(msg.ph) < 0) return null;
-            if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || C.GOALS.indexOf(msg.cf.gl) < 0) return null;
+            // Devir en çok bir adım ilerler (takeOver ep'yi tam 1 artırır). Yeniden bağlanma sonrası ilk görüntü muaf:
+            // uzun kopan oyuncu birden çok devri kaçırmış olabilir.
+            if (M && !resyncOk && msg.ep > M.ep + 1) return null;
+            if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || (msg.cf.gl !== C.GOAL_AUTO && C.GOALS.indexOf(msg.cf.gl) < 0)) return null;
             if (!Array.isArray(msg.S) || msg.S.length > C.MAX_PLAYERS) return null;
             var t = now();
             var seats = [];
@@ -115,6 +122,9 @@
                 if (!isInt(s.t, 0, 3) || !isInt(s.d, 0, C.DISCONNECT_MS)) return null;
                 seats.push({ i: s.i, n: s.n.slice(0, 20), a: s.a.slice(0, 8), t: s.t, b: s.b ? 1 : 0, c: s.c ? 1 : 0, dAt: t + s.d });
             }
+            // Lider, görüntüdeki koltuklarda oturan bir İNSAN olmalı. Bağlı olup olmadığına bakılmaz: alıcı
+            // player_disconnect/player_joined'u henüz işlememiş olabilir ve yeni liderin ilk yayını reddedilirdi.
+            if (!seats.some(function (x) { return x.i === msg.ld && !x.b; })) return null;
             if (msg.g !== null && (typeof msg.g !== 'object' || !msg.g.P || !Array.isArray(msg.g.order))) return null;
             if (!isInt(msg.dl, 0, 3600000)) return null;
             var mn = null;
@@ -125,7 +135,7 @@
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
                 ep: msg.ep, rv: msg.rv, ld: msg.ld, ph: msg.ph, cf: { m: msg.cf.m, mp: msg.cf.mp, gl: msg.cf.gl },
-                S: seats, g: msg.g, dlAt: t + msg.dl, dlLeft: msg.dl, pz: !!msg.pz, mn: mn,
+                S: seats, g: msg.g, dlAt: t + msg.dl, dlLeft: msg.dl, pz: !!msg.pz, bt: typeof msg.bt === 'string' ? msg.bt : null, mn: mn,
                 lg: msg.lg.map(String).slice(-C.LOG_MAX), fx: msg.fx.slice(0, 40), fq: msg.fq, kk: Array.isArray(msg.kk) ? msg.kk.map(String) : []
             };
         }
@@ -141,7 +151,7 @@
             switch (e.t) {
                 case 'roll': return nm(e.id) + ' zar attı: ' + e.v;
                 case 'chest': return nm(e.id) + (e.k === 'star' ? ' sandıktan ' + e.n + ' yıldız buldu' : ' silah sandığı açtı: ' + wn(e.w));
-                case 'star': return e.why === 'chest' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
+                case 'star': return e.why === 'chest' || e.why === 'mini' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
                 case 'item': return nm(e.id) + ' aldı: ' + wn(e.w);
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
                 case 'swap': return nm(e.id) + ' ' + wn(e.old) + ' yerine ' + wn(e.w) + ' aldı';
@@ -150,6 +160,8 @@
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
                 case 'block': return nm(e.id) + ' kalkanla korundu';
                 case 'shield': return nm(e.id) + ' 🛡️ kalkanını kurdu';
+                case 'frenzy': return '🔥 SON ÇILGINLIK! Sandıklar ×2';
+                case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;
                 case 'death': return nm(e.id) + ' düştü' + (e.lost ? ' (' + e.lost + ' ⭐ kaybetti)' : '');
                 case 'skip': return nm(e.id) + ' turunu atladı';
                 case 'lost': return nm(e.id) + ' envanteri dolu: ' + wn(e.w) + ' kaçtı';
@@ -158,7 +170,7 @@
                     C.EVENTS.forEach(function (ev) { if (ev.id === e.e) found = ev; });
                     return '🎁 ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
                 }
-                case 'reward': return nm(e.id) + ' minioyunda ' + e.rank + '. oldu';
+                case 'reward': return null;          // minioyun sonucu tek satırda yazılır (resultLine)
                 default: return null;
             }
         }
@@ -169,10 +181,33 @@
             while (M.lg.length > C.LOG_MAX) M.lg.shift();
         }
 
+        // Minioyun sonucu günlükte tek satır: "🥇Ali 🥈Ayşe 🥉Cem"
+        function resultLine(ranking) {
+            var rank = 1;
+            var parts = [];
+            ranking.forEach(function (group) {
+                var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '▫️';
+                group.forEach(function (id) { parts.push(medal + nm(id)); });
+                rank += group.length;
+            });
+            return '🎡 ' + parts.join(' ');
+        }
+
         // ---- Kurallar köprüsü (lider) ----
+        // Sıradaki oyuncunun süre sınırı: aşamaya göre; kopmuş oyuncu için botun devralmasına kadar 30 sn; AFK için 3 sn.
+        // Bot devraldıysa (M.bt === oyuncu) eylemler BOT_DELAY_MS aralıkla ilerler.
         function setDeadline() {
             M.pz = false;
-            M.dlAt = now() + C.STEP_MS;
+            var g = M.g;
+            var t = now();
+            if (!g || g.stage === 'mini' || g.stage === 'over') { M.dlAt = t + C.STAGE_MS.roll; return; }
+            var cur = R.current(g);
+            var seat = seatOf(cur);
+            var P = g.P[cur];
+            if (M.bt !== cur) M.bt = null;
+            if (seat && !seat.b && !seat.c) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.DISCONNECT_BOT_MS);
+            else if (seat && !seat.b && P && P.afk) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.AFK_BOT_DELAY_MS);
+            else { M.bt = null; M.dlAt = t + (C.STAGE_MS[g.stage] || C.STAGE_MS.act); }
         }
 
         function afterRules(r, quiet) {
@@ -248,7 +283,10 @@
             if (last.length) ranking.push(last);
             M.mn = null;
             var r = R.applyMinigame(M.g, { ranking: ranking }, rctx());
-            if (r.ok) afterRules(r);
+            if (r.ok) {
+                addLog(resultLine(ranking));
+                afterRules(r);
+            }
         }
 
         // ---- Lobi işlemleri (lider) ----
@@ -286,7 +324,7 @@
             M.lg = [];
             M.kk = [];
             M.fx = [];
-            addLog('Oyun başladı! Hedef: ' + M.cf.gl + ' ⭐');
+            addLog('Oyun başladı! Hedef: ' + M.g.goal + ' ⭐');
             M.fq++;
             setDeadline();
             botAt = now() + C.BOT_DELAY_MS;
@@ -312,7 +350,7 @@
                         M.cf.m = a.mode;
                     }
                     if (typeof a.map === 'string' && opts.maps[a.map]) M.cf.mp = a.map;
-                    if (C.GOALS.indexOf(a.goal) >= 0) M.cf.gl = a.goal;
+                    if (a.goal === C.GOAL_AUTO || C.GOALS.indexOf(a.goal) >= 0) M.cf.gl = a.goal;
                     return true;
                 }
                 case 'team': {
@@ -376,6 +414,11 @@
                     M.mn = null;
                     M.fx = [];
                     M.S = M.S.filter(function (s) { return s.b || s.c; });
+                    // oyun sırasında gelip izleyici kalan (bağlı, koltuksuz, atılmamış) oyunculara 8 sınırına kadar koltuk ver
+                    (opts.players || []).forEach(function (p) {
+                        if (M.S.length >= C.MAX_PLAYERS || seatOf(p.id) || M.kk.indexOf(p.id) >= 0 || gone[p.id]) return;
+                        M.S.push(freshSeat(p.id, p.name, false));
+                    });
                     return true;
                 }
                 return false;
@@ -395,6 +438,15 @@
                 return true;
             }
             if (!M.g || !seatOf(by) || !M.g.P[by]) return false;
+            if (a.type === 'back') {
+                // "Ben buradayım": AFK bayrağını ve sayacı temizler, botun elinden turu alır
+                var bp = M.g.P[by];
+                if (!bp.afk && !bp.afkc) return false;
+                bp.afk = false; bp.afkc = 0;
+                if (M.bt === by) M.bt = null;
+                if (M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === by) setDeadline();
+                return true;
+            }
             var allowed = { roll: 1, dir: 1, swap: 1, use: 1, end: 1 };
             if (!allowed[a.type]) return false;
             var act = { type: a.type, by: by };
@@ -404,6 +456,13 @@
             // duraklatılmış (kopan oyuncu bekleniyor) turda yalnızca o oyuncu dışındakiler işlem yapamaz zaten
             var r = R.reduce(M.g, act, rctx());
             if (!r.ok) return false;
+            // insanın kendi eylemi: AFK sayacı/bayrağı temizlenir, bot devri biter
+            var hp = r.state.P[by];
+            if (hp && (hp.afk || hp.afkc)) { hp.afk = false; hp.afkc = 0; }
+            if (M.bt === by) M.bt = null;
+            var mark = M.g.rd + ':' + M.g.turn;
+            if (!(turnMark && turnMark.key === mark)) turnMark = { key: mark, id: by, acted: false, counted: false };
+            turnMark.acted = true;
             afterRules(r, true);
             return true;
         }
@@ -416,6 +475,19 @@
             else changed = handlePlay(a, by);
             if (changed) publish();
             return changed;
+        }
+
+        // Emoji tepkisi: oyun durumuna yazılmaz, yalnızca iletilir (saniyede en çok 1)
+        function emote(e) {
+            if (!M || C.EMOTES.indexOf(e) < 0) return false;
+            var s = seatOf(me.id);
+            if (!s || s.b) return false;
+            var tn = now();
+            if (lastEmote[me.id] !== undefined && tn - lastEmote[me.id] < C.EMOTE_GAP_MS) return false;
+            lastEmote[me.id] = tn;
+            send({ type: 'pt_emote', id: me.id, e: e });
+            onEmote({ id: me.id, e: e });
+            return true;
         }
 
         // ---- Kullanıcı eylemi ----
@@ -469,8 +541,21 @@
                         return;
                     }
                     M = snap;
+                    resyncOk = false;
                     Object.keys(gone).forEach(function (id) { if (M.S.some(function (s) { return s.i === id && s.c; })) delete gone[id]; });
                     emit();
+                    return;
+                }
+                case 'pt_emote': {
+                    // Yalnızca koltuktaki insanlardan, beyaz listedeki emojiler, gönderen başına en çok saniyede 1; durum değişmez.
+                    if (!M || typeof data.id !== 'string' || data.id === me.id) return;
+                    if (data.from !== undefined && data.from !== data.id) return;
+                    var es = seatOf(data.id);
+                    if (!es || es.b || C.EMOTES.indexOf(data.e) < 0) return;
+                    var tn = now();
+                    if (lastEmote[data.id] !== undefined && tn - lastEmote[data.id] < C.EMOTE_GAP_MS) return;
+                    lastEmote[data.id] = tn;
+                    onEmote({ id: data.id, e: data.e });
                     return;
                 }
                 case 'pt_sync': {
@@ -481,6 +566,9 @@
                 case 'pt_action': {
                     if (!M || !isLeader() || typeof data.id !== 'string') return;
                     if (!data.a || typeof data.a !== 'object') return;
+                    // Backend gönderen kimliği eklemez; ileride `from` eklenirse (sunucunun doğruladığı gönderen) data.id ile
+                    // uyuşmak zorundadır, yoksa eski davranış.
+                    if (data.from !== undefined && data.from !== data.id) return;
                     handle(data.a, data.id);
                     return;
                 }
@@ -500,6 +588,7 @@
                     var s = seatOf(data.id);
                     if (s) {
                         s.c = 1; s.dAt = 0;
+                        if (M.g && M.ph === 'play' && M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === data.id) { M.bt = null; setDeadline(); }
                         if (typeof data.name === 'string' && M.ph === 'lobby') s.n = data.name.slice(0, 20);
                     } else if (M.ph === 'lobby') {
                         if (M.S.length >= C.MAX_PLAYERS) {
@@ -529,13 +618,14 @@
                     } else {
                         markDisconnected(seat);
                         addLog(seat.n + ' bağlantısı koptu');
-                        if (M.g && M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === data.id) freeze();
+                        if (M.g && M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === data.id) { M.bt = null; setDeadline(); }
                     }
                     publish();
                     return;
                 }
                 case '_reconnected': {
                     offline = false;
+                    resyncOk = true;
                     gone = {};
                     lastSyncAt = -1e9;
                     if (M) { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }
@@ -550,18 +640,6 @@
                 default:
                     return;
             }
-        }
-
-        function freeze() {
-            if (M.pz) return;
-            M.dlLeft = Math.max(0, M.dlAt - now());
-            M.pz = true;
-        }
-
-        function unfreeze() {
-            if (!M.pz) return;
-            M.pz = false;
-            M.dlAt = now() + (M.dlLeft || C.STEP_MS);
         }
 
         // ---- Zaman ----
@@ -603,11 +681,10 @@
             if (stage === 'over') return;
             var cur = R.current(M.g);
             var seat = seatOf(cur);
-            if (seat && !seat.b && !seat.c) {          // sıradaki oyuncu bağlı değil: bekle
-                freeze();
-                return;
-            }
-            unfreeze();
+            var P = M.g.P[cur];
+            var human = !!seat && !seat.b;
+            var away = human && !seat.c;
+            var afk = human && !!P && !!P.afk;
             if (seat && seat.b) {
                 if (t >= botAt) {
                     var ba = R.botAction(M.g, rctx());
@@ -615,9 +692,33 @@
                 }
                 return;
             }
+            if (away || afk) {
+                // kopmuş ya da AFK oyuncunun turunu, bekleme bitince bot oynar (koltuk 3 dk korunur; insan dönünce devralır)
+                if (t >= M.dlAt) {
+                    M.bt = cur;
+                    var ab = R.botAction(M.g, rctx());
+                    if (ab) runAction(ab);
+                }
+                return;
+            }
             if (t >= M.dlAt) {
                 var aa = R.autoAction(M.g, rctx());
-                if (aa) runAction(aa);
+                if (!aa) return;
+                var r = R.reduce(M.g, aa, rctx());
+                if (!r.ok) return;
+                // üst üste AFK turlar: oyuncu bu turda hiç eylem yapmadan süreler dolduysa sayılır (tur başına bir kez)
+                var key = M.g.rd + ':' + M.g.turn;
+                if (!(turnMark && turnMark.key === key)) turnMark = { key: key, id: cur, acted: false, counted: false };
+                if (human && !turnMark.acted && !turnMark.counted && r.state.P[cur]) {
+                    turnMark.counted = true;
+                    var pp = r.state.P[cur];
+                    pp.afkc = (pp.afkc || 0) + 1;
+                    if (pp.afkc >= C.AFK_TURNS && !pp.afk) {
+                        pp.afk = true;
+                        addLog('💤 ' + nm(cur) + ' uzun süredir yok: bot devraldı');
+                    }
+                }
+                afterRules(r);
             }
         }
 
@@ -633,7 +734,9 @@
             var cur = M.g && M.g.stage !== 'mini' && M.g.stage !== 'over' ? R.current(M.g) : null;
             var curSeat = cur ? seatOf(cur) : null;
             var wait = null;
-            if (curSeat && !curSeat.b && !curSeat.c) wait = { id: cur, name: curSeat.n, left: Math.max(0, curSeat.dAt - t) };
+            if (curSeat && !curSeat.b && !curSeat.c) {
+                wait = { id: cur, name: curSeat.n, left: Math.max(0, curSeat.dAt - t), bot: M.bt === cur, botIn: M.bt === cur ? 0 : Math.max(0, M.dlAt - t) };
+            }
             var dcs = M.S.filter(function (s) { return !s.b && !s.c; }).map(function (s) { return { id: s.i, name: s.n, left: Math.max(0, s.dAt - t) }; });
             return {
                 mode: mode,
@@ -648,7 +751,8 @@
                 phase: M.ph,
                 cur: cur,
                 dlLeft: M.pz ? M.dlLeft : Math.max(0, M.dlAt - t),
-                paused: !!M.pz,
+                paused: false,
+                afk: !!(M.g && M.g.P[me.id] && M.g.P[me.id].afk),
                 wait: wait,
                 disconnected: dcs,
                 mini: M.mn ? { type: M.mn.ty, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1 } : null,
@@ -666,7 +770,7 @@
         else { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }
 
         return {
-            onMessage: onMessage, tick: tick, dispatch: dispatch, getView: getView,
+            onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
             _state: function () { return M; }, _gone: function () { return gone; }
         };
     }

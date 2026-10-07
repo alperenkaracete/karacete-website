@@ -16,7 +16,7 @@ function room(options) {
     const queue = [];
     const roomPlayers = [];
     const api = {
-        nodes, get clock() { return clock; },
+        nodes, emotes: {}, get clock() { return clock; },
         sent: [],
         m(id) { return nodes[id].m; },
         state(id) { return nodes[id].m._state(); },
@@ -37,7 +37,7 @@ function room(options) {
                 }
             });
             node.m = Machine.create({
-                me: { id, name }, players: node.players, now: () => clock, rand, maps, creator: first && !options.noCreator,
+                me: { id, name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: first && !options.noCreator,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -71,7 +71,7 @@ function room(options) {
                 if (o.id !== id && o.online) queue.push({ to: o.id, msg: { type: 'player_joined', id, name: old.name } });
             });
             node.m = Machine.create({
-                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
+                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -133,7 +133,7 @@ test('lobi: oda kurucusu lider; katılanlar koltuk alır, benzersiz avatar; herk
     const seats = r.view('C').seats;
     assert.deepEqual(seats.map((s) => s.i), ['A', 'B', 'C']);
     assert.equal(new Set(seats.map((s) => s.a)).size, 3);
-    assert.equal(r.view('B').cfg.gl, 10);
+    assert.equal(r.view('B').cfg.gl, 0, 'varsayılan hedef otomatik');
 });
 
 test('lobi: avatar benzersiz olmalı; ayarları yalnızca lider değiştirir', () => {
@@ -148,7 +148,7 @@ test('lobi: avatar benzersiz olmalı; ayarları yalnızca lider değiştirir', (
     assert.equal(r.view('A').seats[1].a, free);
     r.m('B').dispatch({ type: 'cfg', goal: 25, map: 'space', mode: 'team' });
     r.flush();
-    assert.equal(r.view('A').cfg.gl, 10);
+    assert.equal(r.view('A').cfg.gl, 0);
     r.m('A').dispatch({ type: 'cfg', goal: 25, map: 'space' });
     r.flush();
     assert.deepEqual([r.view('B').cfg.gl, r.view('B').cfg.mp], [25, 'space']);
@@ -272,12 +272,12 @@ test('süre dolunca otomatik: zar atılır; 20 sn sonra yön/seçim/tur sonu oto
     const r = started(2);
     const cur = curId(r);
     const rd0 = r.state('A').rv;
-    r.advance(C.STEP_MS - 1000);
+    r.advance(C.STAGE_MS.roll - 1000);
     assert.equal(r.state('A').rv, rd0, 'süre dolmadı');
     r.advance(2000);
     assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === cur), 'zar otomatik atıldı');
     // sıradaki evre ne olursa olsun süre dolunca ilerler ve turu devralan oyuncuya geçer
-    for (let i = 0; i < 6 && curId(r) === cur; i++) r.advance(C.STEP_MS + 100);
+    for (let i = 0; i < 6 && curId(r) === cur; i++) r.advance(C.STAGE_MS.roll + 100);
     assert.notEqual(curId(r), cur);
 });
 
@@ -314,7 +314,7 @@ test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, y
     assert.equal(r2.state('A').g.stage, 'mini');
     await r2.settle();
     const mn = r2.view('B').mini;
-    assert.ok(mn && mn.ranking.length === 3, 'çark sonucu herkese gitti');
+    assert.ok(mn && mn.ranking.length === mn.players.length, 'çark sonucu herkese gitti (ffa: 3, düello: 2)');
     assert.ok(['ffa', 'duel'].includes(mn.type));
     const rd = r2.state('A').g.rd;
     r2.advance(C.MINI_HOLD_MS + 500);
@@ -337,10 +337,11 @@ test('kopma: oyun kopan oyuncunun sırasında bekler, süre sayılır; dönünce
     const v = r.view(viewer);
     assert.ok(v.wait && v.wait.id === dcId, 'bekleme bildirimi');
     assert.ok(v.wait.left > 170000 && v.wait.left <= 180000);
-    assert.equal(v.paused, true);
-    r.advance(60000);
-    assert.equal(curId(r), dcId, 'oyun bekliyor, tur geçmedi');
-    assert.ok(r.view('A').wait.left < 125000);
+    assert.equal(v.wait.bot, false);
+    assert.ok(v.wait.botIn > 25000 && v.wait.botIn <= C.DISCONNECT_BOT_MS, 'bot devri sayacı: ' + v.wait.botIn);
+    r.advance(20000);
+    assert.equal(curId(r), dcId, '30 sn dolmadan oyun bekliyor, tur geçmedi');
+    assert.ok(r.view('A').wait.left < 165000, 'koltuk süresi akıyor');
     // geri dönüş: aynı kimlikle; tam durum gelir, sıra yine onda
     r.rejoin(dcId);
     r.flush();
@@ -348,8 +349,8 @@ test('kopma: oyun kopan oyuncunun sırasında bekler, süre sayılır; dönünce
     assert.equal(r.view(dcId).mode, 'play');
     assert.equal(curId(r), dcId);
     assert.equal(r.view('A').wait, null);
-    assert.equal(r.view('A').paused, false);
     assert.equal(r.view(dcId).game.order.length, 3);
+    assert.equal(r.state('A').bt, null, 'bot devri yok');
 });
 
 test('kopma: 3 dk dolunca tur otomatik geçilir ve koltuk boşalır', () => {
@@ -375,7 +376,7 @@ test('kopma: lider "turu geç" ve "at" seçebilir', () => {
     assert.notEqual(victim, 'A');
     r.leave(victim);
     r.flush();
-    assert.equal(r.view('A').paused, true);
+    assert.ok(r.view('A').wait && r.view('A').wait.id === victim);
     r.m('A').dispatch({ type: 'skipturn' });
     r.flush();
     assert.notEqual(curId(r), victim);
@@ -567,4 +568,399 @@ test('backend devralma: tek başına yenilenen kurucu yeni lobi kurar (kaybedece
     r.takeover('A');
     assert.equal(r.view('A').isLeader, true);
     assert.equal(r.view('A').phase, 'lobby');
+});
+
+test('günlük: minioyun sonucu tek satır (🥇A 🥈B 🥉C), tek tek ödül satırı yok', async () => {
+    const r = started(3);
+    let guard = 0;
+    while (r.state('A').g.stage !== 'mini' && guard++ < 200) {
+        r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: G.index(maps.pirate) }));
+        r.flush();
+    }
+    await r.settle();
+    r.advance(C.MINI_HOLD_MS + 500);
+    const log = r.view('A').log;
+    const lines = log.filter((l) => l.startsWith('🎡'));
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+( 🥉\S+)?$/);          // düelloda iki, ffa'da üç madalya
+    assert.ok(!log.some((l) => /minioyunda \d\. oldu/.test(l) || /\(minioyun\)/.test(l)));
+});
+
+test('günlük: ölüm satırı yazılır', () => {
+    const r = started(2);
+    const M = r.state('A');
+    const ids = M.g.order;
+    const g = G.index(maps.pirate);
+    M.g.P[ids[0]].w = ['fist']; M.g.stage = 'act'; M.g.turn = 0;
+    const start = g.starts[0];
+    const other = g.byId[start].next[0];
+    M.g.P[ids[0]].pos = start; M.g.P[ids[1]].pos = other; M.g.P[ids[1]].hp = 5; M.g.P[ids[1]].s = 4;
+    r.m(ids[0]).dispatch({ type: 'use', item: 0, target: ids[1] });
+    r.flush();
+    assert.ok(r.view('B').log.some((l) => /düştü/.test(l)));
+});
+
+test('zaman: tick seyrek (250 ms ya da 1 sn) çağrılsa da süre dolunca lider otomatik ilerler, botlar oynar', () => {
+    for (const step of [250, 1000]) {
+        const r = room();
+        r.join('A', 'Ayse'); r.join('B', 'Bora');
+        r.m('A').dispatch({ type: 'bot_add' });
+        r.m('A').dispatch({ type: 'start' });
+        r.flush();
+        const rv0 = r.state('A').rv;
+        r.advance(C.STAGE_MS.roll * 3, step);
+        assert.ok(r.state('A').rv > rv0 + 2, 'adım ' + step + ': oyun ilerledi');
+        assert.ok(r.state('A').fx.length > 0 || r.state('A').lg.length > 1);
+    }
+});
+
+// ---- hafif mesaj güvenliği ----
+function lastState(r, from) {
+    return JSON.parse(JSON.stringify(r.sent.filter((s) => s.msg.type === 'pt_state' && (!from || s.from === from)).pop().msg));
+}
+
+test('devir: takeOver ep\'yi tam 1 artırır; art arda iki devirde her adım kabul edilir', () => {
+    const r = started(4);
+    assert.equal(r.state('B').ep, 1);
+    r.leave('A'); r.flush();
+    assert.equal(r.state('B').ep, 2);
+    assert.equal(r.state('C').ep, 2, 'takipçi ep+1 yayınını reddetmedi');
+    r.leave('B'); r.flush();
+    assert.equal(r.state('C').ep, 3);
+    assert.equal(r.state('D').ep, 3);
+    assert.equal(r.state('D').ld, 'C');
+});
+
+test('pt_state: ep, M.ep+1\'den büyük atlarsa reddedilir; yeniden bağlanma sonrası ilk görüntü muaf', () => {
+    const r = started(3);
+    const snap = lastState(r, 'A');
+    const jump = Object.assign({}, snap, { ep: 3, rv: snap.rv + 10 });
+    r.m('B').onMessage(jump);
+    assert.equal(r.state('B').ep, 1, 'ep+2 reddedildi');
+    r.m('B').onMessage(Object.assign({}, snap, { ep: 2, rv: snap.rv + 10, ld: 'B' }));
+    assert.equal(r.state('B').ep, 2, 'ep+1 kabul');
+    // yeniden bağlanma: birden çok devir atlamış olabilir
+    r.m('C').onMessage({ type: '_reconnected' });
+    r.m('C').onMessage(Object.assign({}, snap, { ep: 4, rv: snap.rv + 20, ld: 'B' }));
+    assert.equal(r.state('C').ep, 4, 'yeniden bağlanma sonrası ilk görüntü muaf');
+    r.m('C').onMessage(Object.assign({}, snap, { ep: 9, rv: snap.rv + 30, ld: 'B' }));
+    assert.equal(r.state('C').ep, 4, 'muafiyet yalnızca bir kez');
+});
+
+test('pt_state: lider koltukta oturan insan olmalı (bot/koltuksuz reddedilir); bağlı olması aranmaz (yarış)', () => {
+    const r = started(3);
+    const snap = lastState(r, 'A');
+    const bad = (patch) => r.m('B').onMessage(Object.assign({}, snap, { rv: snap.rv + 5, ep: 2 }, patch));
+    bad({ ld: 'Z' });                                             // koltuksuz
+    assert.equal(r.state('B').ep, 1);
+    const withBot = JSON.parse(JSON.stringify(snap));
+    withBot.S.push({ i: 'botx', n: 'Bot', a: '🤖', t: 0, b: 1, c: 1, d: 0 });
+    bad({ S: withBot.S, ld: 'botx' });                            // bot lider
+    assert.equal(r.state('B').ep, 1);
+    // yarış: yeni liderin (B'nin) ilk yayını, alıcı C henüz player_disconnect(A) işlemeden gelir; A hâlâ bağlı görünür
+    assert.equal(r.view('C').seats.find((s) => s.i === 'A').c, 1);
+    r.m('C').onMessage(Object.assign({}, snap, { rv: snap.rv + 5, ep: 2, ld: 'B' }));
+    assert.equal(r.state('C').ld, 'B', 'yeni liderin ilk yayını kabul edildi');
+    assert.equal(r.state('C').ep, 2);
+    // ve ardından gelen gecikmiş player_disconnect(A) bir şeyi bozmaz
+    r.m('C').onMessage({ type: 'player_disconnect', id: 'A' });
+    assert.equal(r.state('C').ld, 'B');
+});
+
+test('pt_action: from alanı varsa id ile eşleşmeli; yoksa eski davranış; kural: __proto__/constructor hedefleri', () => {
+    const r = started(3);
+    const cur = curId(r);
+    const other = ['A', 'B', 'C'].find((x) => x !== cur);
+    const rv = r.state('A').rv;
+    // sahte `from`
+    r.m('A').onMessage({ type: 'pt_action', id: cur, from: other, a: { type: 'roll' } });
+    assert.equal(r.state('A').rv, rv, 'from uyuşmuyor: yok sayıldı');
+    r.m('A').onMessage({ type: 'pt_action', id: cur, from: cur, a: { type: 'roll' } });
+    assert.ok(r.state('A').rv > rv, 'from uyuşuyor: işlendi');
+    const rv2 = r.state('A').rv;
+    // from yok: eski davranış
+    const s = r.state('A').g;
+    const nextCur = R.current(s);
+    r.m('A').onMessage({ type: 'pt_action', id: nextCur, a: { type: 'noop' } });
+    assert.equal(r.state('A').rv, rv2);
+});
+
+function finishGame(r) {
+    const M = r.state('A');
+    M.g.stage = 'over';
+    M.ph = 'over';
+    M.g.winner = { kind: 'player', id: M.g.order[0] };
+}
+
+test('yeniden oyna: oyun sırasında gelen izleyiciler koltuk alır (8 sınırı); atılanlar ve kopanlar almaz', () => {
+    const r = started(2);
+    r.join('Z', 'Gelen1'); r.join('Y', 'Gelen2');
+    r.flush();
+    assert.equal(r.view('Z').mode, 'spectator');
+    finishGame(r);
+    r.m('A').dispatch({ type: 'again' });
+    r.flush();
+    assert.equal(r.view('A').phase, 'lobby');
+    assert.deepEqual(r.view('A').seats.map((s) => s.i).sort(), ['A', 'B', 'Y', 'Z']);
+    assert.equal(r.view('Z').mode, 'lobby');
+    assert.equal(r.view('Y').mode, 'lobby');
+});
+
+test('yeniden oyna: koltuk sayısı 8\'i geçmez; atılan izleyici koltuk almaz', () => {
+    const r = room();
+    ['A', 'B'].forEach((id) => r.join(id, id));
+    r.m('A').dispatch({ type: 'bot_add' });
+    r.m('A').dispatch({ type: 'start' });
+    r.flush();
+    for (let i = 0; i < 8; i++) r.join('S' + i, 'Izleyici' + i);
+    r.flush();
+    // atılmış izleyici: kk listesine yaz
+    r.state('A').kk.push('S0');
+    finishGame(r);
+    r.m('A').dispatch({ type: 'again' });
+    r.flush();
+    const seats = r.view('A').seats;
+    assert.equal(seats.length, 8, '8 sınırı');
+    assert.ok(!seats.some((s) => s.i === 'S0'), 'atılan koltuk almaz');
+    assert.ok(seats.some((s) => s.b), 'bot korunur');
+});
+
+
+// ---- madde 8: aşama süreleri, kopan oyuncu için bot, AFK ----
+function nonLeaderTurn(r) {
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    return curId(r);
+}
+
+test('aşama süreleri: zar 15 sn, yön 8 sn, eylem 15 sn', () => {
+    assert.deepEqual(C.STAGE_MS, { roll: 15000, choose: 8000, act: 15000, swap: 15000 });
+    const r = started(2);
+    const dl = () => r.view('A').dlLeft;
+    assert.ok(dl() > 14000 && dl() <= 15000, 'zar ' + dl());
+    // yön aşaması: dallanmada
+    const M = r.state('A');
+    const cur = curId(r);
+    const g = G.index(maps.pirate);
+    const branch = maps.pirate.nodes.find((n) => n.next.length > 1);
+    const pre = maps.pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === branch.id);
+    M.g.P[cur].pos = pre.id;
+    r.m(cur).dispatch({ type: 'roll' });
+    r.flush();
+    for (let i = 0; i < 6 && r.state('A').g.stage === 'roll'; i++) r.m(curId(r)).dispatch({ type: 'roll' });
+    if (r.state('A').g.stage === 'choose') assert.ok(dl() > 7000 && dl() <= 8000, 'yön ' + dl());
+});
+
+test('yön aşaması süre dolunca (8 sn) rastgele yön seçilir', () => {
+    const r = started(2);
+    const M = r.state('A');
+    const cur = curId(r);
+    const branch = maps.pirate.nodes.find((n) => n.next.length > 1);
+    const pre = maps.pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === branch.id);
+    M.g.P[cur].pos = pre.id;
+    // zar: dallanma sonrası adım kalsın diye birkaç deneme yerine doğrudan 'choose' kur
+    M.g.stage = 'choose'; M.g.choices = branch.next.slice(); M.g.steps = 3; M.g.P[cur].pos = branch.id;
+    r.m('A').dispatch({ type: 'cfg' });         // yayın tetikleme gerekmez; süreyi 8 sn'ye çek
+    M.dlAt = r.clock + C.STAGE_MS.choose;
+    r.advance(C.STAGE_MS.choose + 600);
+    assert.notEqual(r.state('A').g.stage, 'choose', 'süre dolunca yön otomatik seçildi');
+});
+
+test('kopan oyuncunun sırası: 30 sn sonra bot oynar, koltuk 3 dk saklı; bekleme kartında "Bot oynuyor"', () => {
+    const r = started(3);
+    const victim = nonLeaderTurn(r);
+    assert.notEqual(victim, 'A');
+    r.leave(victim);
+    r.flush();
+    r.advance(C.DISCONNECT_BOT_MS - 2000);
+    assert.equal(curId(r), victim, '30 sn dolmadı');
+    assert.equal(r.view('A').wait.bot, false);
+    r.advance(3000);                                     // bot devraldı
+    assert.ok(r.state('A').bt === victim || curId(r) !== victim, 'bot devraldı ya da tur geçti');
+    let sawBotCard = false;
+    for (let i = 0; i < 40 && curId(r) === victim; i++) {
+        const w = r.view('A').wait;
+        if (w && w.bot) sawBotCard = true;
+        r.advance(300);
+    }
+    assert.ok(sawBotCard || curId(r) !== victim, 'kartta "Bot oynuyor" durumu görüldü');
+    assert.notEqual(curId(r), victim, 'bot turu oynayıp bitirdi');
+    assert.ok(r.state('A').S.some((s) => s.i === victim), 'koltuk hâlâ saklı');
+    assert.ok(r.state('A').g.order.includes(victim));
+});
+
+test('kopan oyuncu bot oynarken dönerse turu geri alır', () => {
+    const r = started(3);
+    const victim = nonLeaderTurn(r);
+    r.leave(victim); r.flush();
+    r.advance(C.DISCONNECT_BOT_MS + 400);
+    assert.equal(r.state('A').bt, victim);
+    r.rejoin(victim); r.flush();
+    r.advance(200);
+    assert.equal(r.state('A').bt, null, 'bot devri bitti');
+    if (curId(r) === victim) {
+        const dl = r.view('A').dlLeft;
+        assert.ok(dl > 7000, 'normal aşama süresi döndü: ' + dl);
+    }
+});
+
+const PG = G.index(maps.pirate);
+
+// Dünyayı bir adım ilerlet: `idle` oyuncu hiç eylem yapmaz, diğerleri (insan) otomatik oynar, minioyun tamamlanır.
+async function stepWorld(r, idle) {
+    const g = r.state('A').g;
+    if (g.stage === 'mini') {
+        await r.settle();
+        r.advance(C.MINI_HOLD_MS + 300, 300);
+        return;
+    }
+    const cur = R.current(g);
+    if (cur !== idle) {
+        const act = R.autoAction(g, { g: PG });
+        if (act) r.m(cur).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+        r.flush();
+    }
+    r.advance(cur === idle ? 1000 : 200, 200);
+}
+
+test('AFK: üst üste 2 turda hiç eylem yapmayan insanı bot devralır; "Ben buradayım" ile geri döner (bot 3 sn bekler)', async () => {
+    const r = room();
+    r.join('A', 'A'); r.join('B', 'B'); r.join('C', 'C');
+    r.m('A').dispatch({ type: 'start' }); r.flush();
+    const target = 'B';
+    const turnsSeen = new Set();
+    let guard = 0;
+    while (!r.state('A').g.P[target].afk && guard++ < 3000) {
+        const g = r.state('A').g;
+        if (g.stage !== 'mini' && R.current(g) === target) turnsSeen.add(g.rd);
+        await stepWorld(r, target);
+    }
+    assert.ok(r.state('A').g.P[target].afk, 'B AFK oldu');
+    assert.equal(turnsSeen.size, C.AFK_TURNS, 'tam ' + C.AFK_TURNS + ' AFK turdan sonra');
+    assert.ok(r.view('A').log.some((l) => /bot devraldı/.test(l)));
+    assert.equal(r.view('B').afk, true, 'B kendi ekranında "Ben buradayım" görür');
+    assert.equal(r.view('A').afk, false);
+    // sıra B'ye gelince bot önce 3 sn bekler
+    guard = 0;
+    while ((r.state('A').g.stage === 'mini' || R.current(r.state('A').g) !== target) && guard++ < 3000) await stepWorld(r, target);
+    assert.equal(R.current(r.state('A').g), target);
+    r.advance(C.AFK_BOT_DELAY_MS - 1200, 200);
+    assert.notEqual(r.state('A').bt, target, '3 sn dolmadan bot oynamaz');
+    r.m(target).dispatch({ type: 'back' });
+    r.flush();
+    assert.equal(r.state('A').g.P[target].afk, false);
+    assert.equal(r.state('A').g.P[target].afkc, 0);
+    r.advance(C.AFK_BOT_DELAY_MS + 1000, 200);
+    assert.notEqual(r.state('A').bt, target, 'bot devralmadı');
+    assert.equal(R.current(r.state('A').g), target, 'sıra hâlâ insanda');
+    assert.ok(r.view('A').dlLeft > 8000, 'normal aşama süresi geri geldi: ' + r.view('A').dlLeft);
+});
+
+test('AFK: bot devralmışken insanın herhangi geçerli eylemi bayrağı kaldırır ve botu durdurur', async () => {
+    const r = room();
+    r.join('A', 'A'); r.join('B', 'B');
+    r.m('A').dispatch({ type: 'start' }); r.flush();
+    const target = 'B';
+    let guard = 0;
+    // bayrak, B'nin turu başlamadan önce konsun (gerçek akışta bayrak önceki turların sonunda konur)
+    while (R.current(r.state('A').g) === target && guard++ < 50) {
+        r.m(target).dispatch(R.autoAction(r.state('A').g, { g: PG })); r.flush();
+    }
+    r.state('A').g.P[target].afk = true;
+    r.state('A').g.P[target].afkc = 2;
+    guard = 0;
+    while (R.current(r.state('A').g) !== target && guard++ < 500) await stepWorld(r, target);
+    r.advance(C.AFK_BOT_DELAY_MS + 300, 100);       // bot devraldı ve zarı attı
+    assert.equal(r.state('A').bt, target);
+    assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === target));
+    const g = r.state('A').g;
+    // bot zar attıktan sonra kalan aşamayı insan oynar
+    const act = R.autoAction(g, { g: PG });
+    r.m(target).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+    r.flush();
+    assert.equal(r.state('A').g.P[target].afk, false, 'eylem AFK bayrağını kaldırdı');
+    assert.equal(r.state('A').bt, null);
+});
+
+test('AFK: eylem yapan oyuncu AFK sayılmaz; sayaç sıfırlanır', () => {
+    const r = started(2);
+    r.state('A').g.P.B.afkc = 1;
+    let guard = 0;
+    while (curId(r) !== 'B' && guard++ < 100) { r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: PG })); r.flush(); }
+    r.m('B').dispatch({ type: 'roll' });
+    r.flush();
+    assert.equal(r.state('A').g.P.B.afkc, 0);
+    assert.equal(r.view('B').afk, false);
+});
+
+test('otomatik hedef: başlarken oyuncu sayısına göre 15 / 10; elle seçilen hedef korunur ve "otomatik"e dönülebilir', () => {
+    const two = started(2);
+    assert.equal(two.view('A').cfg.gl, 0);
+    assert.equal(two.state('A').g.goal, 15);
+    assert.equal(two.view('B').game.goal, 15, 'takipçi de aynı hedefi görür');
+    const four = started(4);
+    assert.equal(four.state('A').g.goal, 10);
+    const fixed = room();
+    ['A', 'B', 'C'].forEach((id) => fixed.join(id, id));
+    fixed.m('A').dispatch({ type: 'cfg', goal: 5 });
+    fixed.m('A').dispatch({ type: 'start' });
+    fixed.flush();
+    assert.equal(fixed.state('A').g.goal, 5);
+    const back = room();
+    back.join('A', 'A'); back.join('B', 'B');
+    back.m('A').dispatch({ type: 'cfg', goal: 20 });
+    back.m('A').dispatch({ type: 'cfg', goal: 0 });
+    back.flush();
+    assert.equal(back.view('B').cfg.gl, 0);
+});
+
+
+// ---- madde 10a: emoji tepkileri ----
+test('emote: gönderilir, alıcıda görünür, oyun durumuna yazılmaz; saniyede en çok 1', () => {
+    const r = started(3);
+    const rv = r.state('A').rv;
+    const g0 = JSON.stringify(r.state('A').g);
+    assert.equal(r.m('B').emote('😂'), true);
+    r.flush();
+    assert.deepEqual(r.emotes.A, [{ id: 'B', e: '😂' }]);
+    assert.deepEqual(r.emotes.C, [{ id: 'B', e: '😂' }]);
+    assert.deepEqual(r.emotes.B, [{ id: 'B', e: '😂' }], 'gönderen kendi balonunu da görür');
+    assert.equal(r.state('A').rv, rv, 'durum yayını yok');
+    assert.equal(JSON.stringify(r.state('A').g), g0);
+    // hız sınırı (gönderende)
+    assert.equal(r.m('B').emote('👏'), false);
+    r.flush();
+    assert.equal(r.emotes.A.length, 1);
+    r.advance(C.EMOTE_GAP_MS + 50, 100);
+    assert.equal(r.m('B').emote('👏'), true);
+    r.flush();
+    assert.equal(r.emotes.A.length, 2);
+    assert.ok(!r.sent.some((x) => x.msg.type === 'pt_state' && x.msg.emote));
+});
+
+test('emote: alıcıda da hız sınırı; beyaz liste dışı emoji, koltuksuz/bot gönderen, sahte from yok sayılır', () => {
+    const r = started(3);
+    const n0 = (r.emotes.A || []).length;
+    r.m('A').onMessage({ type: 'pt_emote', id: 'B', e: '😂' });
+    r.m('A').onMessage({ type: 'pt_emote', id: 'B', e: '😂' });                 // hemen tekrar: reddedilir
+    assert.equal(r.emotes.A.length - n0, 1);
+    for (const bad of ['💩', '<img>', '', null, 5, '😂😂', { x: 1 }]) r.m('A').onMessage({ type: 'pt_emote', id: 'C', e: bad });
+    assert.equal(r.emotes.A.length - n0, 1, 'geçersiz emoji');
+    r.m('A').onMessage({ type: 'pt_emote', id: 'Z', e: '🤡' });                  // koltuksuz
+    r.m('A').onMessage({ type: 'pt_emote', id: 5, e: '🤡' });
+    r.m('A').onMessage({ type: 'pt_emote', id: 'C', from: 'B', e: '🤡' });       // from uyuşmuyor
+    assert.equal(r.emotes.A.length - n0, 1);
+    r.m('A').onMessage({ type: 'pt_emote', id: 'C', e: '🤡' });
+    assert.equal(r.emotes.A.length - n0, 2, 'geçerli emote: farklı gönderen, ayrı sayaç');
+    // izleyici emote atamaz
+    r.join('S', 'Izleyici'); r.flush();
+    assert.equal(r.m('S').emote('😱'), false);
+    assert.equal(r.m('B').emote('💩'), false);
+});
+
+test('emote: kendine ait bot yok; lobi dahil (durum varsa) koltuklu herkes atabilir', () => {
+    const r = lobby3();
+    assert.equal(r.m('C').emote('😱'), true);
+    r.flush();
+    assert.equal((r.emotes.A || []).length, 1);
 });

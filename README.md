@@ -145,19 +145,25 @@ canvas ile çizilir, HTML'e yazılmaz. Kamera izni verilmezse ya da kamera yoksa
 
 **Kurallar.** Tur = herkesin sırayla bir hamlesi: 🎲 zar (1-6) → zar kadar adım yürü (dallanmada yön seç) → durduğun
 kutucuğun etkisi → isteğe bağlı bir silah → turu bitir. Her adım için **20 sn** vardır; dolunca otomatik oynanır (zar atılır,
-yön rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüller → yeni sandıklar.
+yön rastgele, silah kullanılmaz). Süreler aşamaya göre: zar 15 sn, yön 8 sn, eylem 15 sn. Herkes oynayınca tur biter: minioyun →
+ödüller → yeni sandıklar. Tur başı sırası her turda bir kayar (ilk oynayan sona geçer), böylece sabit ilk sıra avantajı olmaz.
 - **Kutucuklar:** başlangıç 🏁, hazine ✨ (sandık çıkar), silah bölgesi ⚔️ (rastgele silah), olay 🎁 (rastgele küçük olay:
   +1 ⭐, 15 hasar, başlangıca ışınlanma, silah, bir tur dinlenme).
-- **Sandıklar:** her tur başında boş hazine noktalarına 2 yıldız sandığı (1 ya da 2 ⭐, %70/%30) ve 1 silah sandığı çıkar.
+- **Sandıklar:** her tur başında boş hazine noktalarına `ceil(oyuncu/2)+1` yıldız sandığı (1 ya da 2 ⭐, %70/%30) ve 1 silah sandığı çıkar.
   Üzerinden geçen ya da orada duran alır. Envanter (en çok 3) doluysa bir öğeyi bırakma ya da vazgeçme seçeneği sunulur.
 - **Silahlar** (tek atımlık, can 100; menzil = tahtadaki en kısa adım sayısı): 👊 Yumruk menzil 1 / 30 · 🔫 Pompalı menzil 3,
   1/2/3 adımda 45/30/15 · 🏹 Yay menzil 5 / 20 · 💣 Bomba menzil 4, seçilen kutucuktaki herkese (kendine de) 30 · 🛡️ Kalkan
   bir sonraki saldırıyı engeller (kurmak turu harcamaz). Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
-- **Ölüm:** can 0 olunca yıldızların yarısı (aşağı) saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
-  can dolar, bir tur atlanır, envanter korunur.
-- **Kazanma:** bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
-- **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: kalkan (düelloda kazanan 1., kaybeden 2.).
-  Envanter doluysa silah ödülü kaybolur, kalkan hemen kurulur.
+- **Ölüm:** can 0 olunca `min(3, yıldız/2 aşağı)` yıldız saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
+  can dolar, envanter korunur; tur atlatılmaz.
+- **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
+- **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.).
+  Envanter doluysa silah ödülü kaybolur.
+- **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
+  ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
+- **Emoji tepkileri:** 😂 😱 👏 🤡 (`pt_emote {id, e}`): oyun durumuna yazılmaz, yalnızca iletilir; oyuncu başına en çok saniyede 1;
+  tahtada oyuncunun jetonunun üstünde ~2 sn baloncuk olarak görünür. Yalnızca koltuktaki insanlar atabilir.
+- **Silah düşme ağırlıkları:** yumruk 1, pompalı 3, yay 3, bomba 2, kalkan 2.
 - **Lobi:** lider mod (Bireysel / 2'şerli Takım), harita (Korsan Adası / Uzay), hedef ⭐ (5-25), bot ekleme/çıkarma ve oyuncu
   atma işlemlerini yapar; herkes benzersiz bir emoji avatar seçer. Takım modunda sayı çift ve her takımda tam 2 kişi olmalıdır.
 
@@ -285,6 +291,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   anda 2 dk'dan uzun düşerse oda ve oyun kaybolur (durum yalnızca istemcilerdedir).
 - Parti: gönderen kimliği sunucuca doğrulanmaz (mesajda taşınır) ve backend kimlik devralmaya izin verir; kötü niyetli bir oyuncu
   başkası adına eylem gönderebilir ya da onun oturumunu düşürebilir. Arkadaşlarla oynamak için kabul edilmiştir.
+- Parti: gelen `pt_state` hafifçe doğrulanır (`ep` en çok +1 ilerler, lider koltuklarda oturan bir insan olmalı) ve kural tarafı
+  düğüm/hedef kimliklerini yalnızca kendi özellikleriyle eşler. Gönderen kimliği hâlâ mesajdaki `id`'dir; `pt_action`'da `from`
+  alanı varsa `id` ile aynı olmak zorundadır. **Backend gönderen kimliğini (`from`) kendisi eklemeli** (sunucunun bildiği oturum
+  kimliği); o zaman sahte `id` ile eylem göndermek mümkün olmaz. Şu an backend'e dokunulmadı.
 - Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
   koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.
