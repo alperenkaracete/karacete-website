@@ -220,7 +220,7 @@ test('initial: kedi oda kurucusudur, solda; köpek sağda; canlar 100, beklemele
     assert.ok(b.players[0].x < b.players[1].x);
     for (const p of b.players) {
         assert.equal(p.hp, 100);
-        assert.deepEqual(p.cd, { heal: 0, wind: 0, double: 0, big: 0 });
+        assert.deepEqual(p.cd, { heal: 0, wind: 0, double: 0, big: 0, guide: 0 });
     }
     const swapped = R.initial({ seed: 5, order: ['B', 'A'], cat: 'A' });   // başlayan B, kedi A
     assert.equal(swapped.catIndex, 1);
@@ -385,4 +385,98 @@ test('uçtan uca kural akışı: isabetli atışlarla oyun biter', () => {
     }
     assert.deepEqual(R.result(b), { status: 'win', winner: 0 });
     assert.equal(b.players[1].hp, 0);
+});
+
+// ---- 1b: güç başına bekleme, Nişan Rehberi, nişan izi ----
+const shotMv = (b, powerUp) => ({ kind: 'shot', turn: b.turn, angle: 45, power: 50, powerUp: powerUp || null });
+const oppMove = (b) => R.apply(b, { kind: 'shot', turn: b.turn, angle: 135, power: 40, powerUp: null }, 1).board;
+const myMove = (b) => R.apply(b, shotMv(b), 0).board;
+
+test('bekleme tablosu: rüzgârsız 1 tur, nişan rehberi 4 tur, diğerleri 3 tur', () => {
+    assert.deepEqual(R.COOLDOWNS, { heal: 3, wind: 1, double: 3, big: 3, guide: 4 });
+    for (const [key, turns] of [['wind', 1], ['double', 3], ['big', 3], ['guide', 4]]) {
+        let b = startBoard(1);
+        b = R.apply(b, shotMv(b, key), 0).board;
+        assert.equal(b.players[0].cd[key], turns, key + ' kurulum');
+        for (let i = 0; i < turns; i++) {
+            b = oppMove(b);
+            assert.equal(R.validate(b, shotMv(b, key), 0), false, key + ' kapalı, ' + (i + 1) + '. tur');
+            b = myMove(b);
+        }
+        b = oppMove(b);
+        assert.equal(b.players[0].cd[key], 0, key + ' bitti');
+        assert.equal(R.validate(b, shotMv(b, key), 0), true, key + ' tekrar açık');
+    }
+});
+
+test('rüzgârsız: bir sonraki hamlede kapalı, ondan sonra açık; diğer güçleri etkilemez', () => {
+    let b = startBoard(1);
+    b = R.apply(b, shotMv(b, 'wind'), 0).board;
+    b = oppMove(b);
+    assert.equal(R.validate(b, shotMv(b, 'wind'), 0), false);
+    assert.equal(R.validate(b, shotMv(b, 'guide'), 0), true);
+    assert.equal(R.validate(b, shotMv(b, 'double'), 0), true);
+    b = myMove(b);
+    b = oppMove(b);
+    assert.equal(R.validate(b, shotMv(b, 'wind'), 0), true);
+});
+
+test('nişan rehberi: parse/validate kabul, bekleme sırasında red, iksir atış gücü olamaz, kullanım diğer sayaçlara dokunmaz', () => {
+    const msg = R.toMessage({ kind: 'shot', turn: 0, angle: 45, power: 50, powerUp: 'guide' });
+    assert.deepEqual(R.parse(msg), { kind: 'shot', turn: 0, angle: 45, power: 50, powerUp: 'guide' });
+    let b = startBoard(1);
+    assert.equal(R.validate(b, shotMv(b, 'guide'), 0), true);
+    assert.equal(R.validate(b, shotMv(b, 'heal'), 0), false);
+    b = R.apply(b, shotMv(b, 'guide'), 0).board;
+    assert.deepEqual(b.players[0].cd, { heal: 0, wind: 0, double: 0, big: 0, guide: 4 });
+    assert.deepEqual(b.players[1].cd, { heal: 0, wind: 0, double: 0, big: 0, guide: 0 });
+    assert.equal(R.validate(oppMove(b), shotMv(oppMove(b), 'guide'), 0), false);
+    assert.equal(b.last.powerUp, 'guide');
+});
+
+test("nişan rehberi fiziği değiştirmez: simulateShot('guide') ile null birebir aynı", () => {
+    const board = startBoard(7);
+    for (const [angle, power] of [[45, 60], [30, 90], [80, 40], [10, 100]]) {
+        const base = { seed: board.seed, turn: 2, shooter: 0, angle, power, positions: positionsOf(board), hp: [100, 100] };
+        const plain = R.simulateShot({ ...base, powerUp: null });
+        const guide = R.simulateShot({ ...base, powerUp: 'guide' });
+        assert.deepEqual({ ...guide, powerUp: null }, plain, angle + '/' + power);
+    }
+});
+
+test('aimPath: kesir gerçek atışın yörüngesinin ön eki; 1 = tam yol; deterministik', () => {
+    const board = startBoard(11);
+    const sim = (angle, power, powerUp) => R.simulateShot({
+        seed: board.seed, turn: board.turn, shooter: 0, angle, power, powerUp: powerUp || null,
+        positions: positionsOf(board), hp: [100, 100]
+    }).shots[0];
+    for (const [angle, power] of [[45, 60], [60, 80], [25, 100]]) {
+        const real = sim(angle, power).trajectory;
+        const part = R.aimPath(board, 0, angle, power, null, R.TRAIL_FRACTION);
+        assert.equal(R.TRAIL_FRACTION, 0.3);
+        assert.deepEqual(part.points, real.slice(0, part.points.length), 'ön ek');
+        assert.ok(part.points.length >= 2 && part.points.length < real.length);
+        const segs = part.points.length - 1;
+        const want = 0.3 * (real.length - 1);
+        assert.ok(segs >= want - 1e-9 && segs < Math.max(want, 1) + 1, 'yolun ilk ~%30 (parça sayısı yukarı yuvarlanır): ' + segs + ' / ' + want);
+        assert.equal(part.full, false);
+        const full = R.aimPath(board, 0, angle, power, 'guide', 1);
+        assert.deepEqual(full.points, real, 'tam yol');
+        assert.equal(full.full, true);
+        assert.deepEqual(R.aimPath(board, 0, angle, power, null, 0.3), part, 'deterministik');
+    }
+});
+
+test('aimPath: rüzgârsız seçiliyse rüzgâr 0 yolu; çok kısa atışta en az 2 nokta', () => {
+    const board = startBoard(11);
+    let turn = 0;
+    while (R.windFor(board.seed, turn) === 0) turn++;
+    const b = { ...board, turn };
+    const withWind = R.aimPath(b, 0, 45, 70, null, 1);
+    const noWind = R.aimPath(b, 0, 45, 70, 'wind', 1);
+    assert.equal(withWind.wind, R.windFor(b.seed, turn));
+    assert.equal(noWind.wind, 0);
+    assert.notDeepEqual(noWind.points, withWind.points);
+    const tiny = R.aimPath(b, 0, 45, 0, null, 0.3);
+    assert.ok(tiny.points.length >= 2);
 });

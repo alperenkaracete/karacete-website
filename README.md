@@ -89,12 +89,17 @@ Sunucu adresini değiştirmek için yalnızca `config.js` düzenlenir.
 - **Atış:** açı 0–180° (0 = sağ, 90 = yukarı), güç 0–100. Mermi araziye çarparsa ya da sahne dışına çıkarsa pas geçer.
   Rakibe doğrudan isabet **30** hasar; yakına düşerse mesafeyle doğrusal azalan alan hasarı (yarıçap 40 px).
   Kendine hasar yoktur. Can 0 olunca oyun biter, rövanşta başlayan taraf değişir ve yeni sahne gelir.
-- **Nişan:** kaydırıcılarla ya da sahnede sürükleyerek (sürüklediğin yön = açı, uzaklık = güç).
-- **Özel güçler** (kullanımdan sonra o oyuncunun sonraki **3 turunda** kapalı, buton gri ve kalan tur yazar):
+- **Nişan:** kaydırıcılarla ya da sahnede sürükleyerek (sürüklediğin yön = açı, uzaklık = güç). Sırası gelen oyuncu seçili açı/güçle
+  atışın yolunun **ilk ~%30'unu noktalı iz** olarak görür (güç gerektirmez, rüzgâr dahil; `CatDogRules.aimPath`, fizikle aynı hesap,
+  `TRAIL_FRACTION`). İz yalnızca kendi ekranındadır (nişan ağda gitmez).
+- **Özel güçler** (kullanımdan sonra o oyuncunun sonraki turlarında kapalı, buton gri ve kalan tur yazar; bekleme `COOLDOWNS` tablosunda:
+  can iksiri 3, rüzgârsız **1**, çift atış 3, büyük patlama 3, nişan rehberi **4** tur):
   - 🧪 **Can iksiri:** +25 can (en fazla 100). Atış yapılmaz, sıra otomatik rakibe geçer.
   - 🎯 **Rüzgârsız atış:** o atışta rüzgâr 0.
   - ✌️ **Çift atış:** aynı açı ve güçle iki kez art arda atılır (ilk atış öldürürse ikincisi yapılmaz).
   - 💥 **Büyük patlama:** hasar alanı yarıçapı 2 katı.
+  - 🧭 **Nişan rehberi:** seçilince yolun **tamamı** (çarpma noktası ✕ ile) çizilir; atış fiziği ve hasar normal atışla birebir aynıdır
+    (`simulateShot` `null` ile aynı sonucu verir). Atış gücü olarak sayılır; bu atışta başka güçle birlikte kullanılamaz.
   Atışla kullanılan güçlerden turda en fazla biri seçilir; seçim iptal edilebilir.
 
 **Senkronizasyon:** ağda yalnızca `cd_start` (host: tohum + kedi + ilk sıra), `cd_shot { turn, angle, power, powerUp }`

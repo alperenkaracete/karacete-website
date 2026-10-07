@@ -36,9 +36,12 @@
     var DIRECT_DAMAGE = 30;
     var BLAST_RADIUS = 40;
     var HEAL_AMOUNT = 25;
-    var COOLDOWN = 3;
-    var POWERUPS = ['wind', 'double', 'big'];   // atışla kullanılanlar
-    var POWER_KEYS = ['heal', 'wind', 'double', 'big'];
+    var COOLDOWN = 3;                       // varsayılan bekleme (tur); güç başına değerler COOLDOWNS'ta
+    // Güç başına bekleme: oyuncunun KENDİ sonraki hamleleri boyunca kapalı (wind 1 = bir tur atlar).
+    var COOLDOWNS = { heal: 3, wind: 1, double: 3, big: 3, guide: 4 };
+    var POWERUPS = ['wind', 'double', 'big', 'guide'];   // atışla kullanılanlar ('guide' fiziği değiştirmez, yalnız tam yolu gösterir)
+    var POWER_KEYS = ['heal', 'wind', 'double', 'big', 'guide'];
+    var TRAIL_FRACTION = 0.3;               // herkese açık nişan izi: yolun ilk %30'u
 
     // ---- Rastgele sayı üreteci (mulberry32) ----
     function mulberry32(seed) {
@@ -214,6 +217,21 @@
         return { seed: p.seed, turn: p.turn, shooter: shooter, wind: wind, powerUp: p.powerUp || null, shots: shots, hpAfter: hp };
     }
 
+    // Nişan izi (yalnız çizim yardımı): index'in verilen açı/güçle ATACAĞI ilk merminin yolu, simulateShot ile aynı hesap.
+    // fraction (0-1): yolun ilk kısmı, örnek noktası sayısına göre (en az 2 nokta); 1 = tam yol. powerUp 'wind' seçiliyse
+    // rüzgâr 0 ile hesaplanır. Fizik değişmez: dönen nokta dizisi gerçek atışın trajectory'sinin ön ekidir.
+    function aimPath(board, index, angle, power, powerUp, fraction) {
+        var sim = simulateShot({
+            seed: board.seed, turn: board.turn, shooter: index, angle: angle, power: power, powerUp: powerUp || null,
+            positions: board.players, hp: [MAX_HP, MAX_HP]
+        });
+        var shot = sim.shots[0];
+        var traj = shot.trajectory;
+        var f = fraction === undefined ? 1 : Math.max(0, Math.min(1, fraction));
+        var n = Math.max(2, Math.min(traj.length, Math.ceil(f * (traj.length - 1)) + 1));
+        return { points: traj.slice(0, n), full: n === traj.length, end: shot.end, wind: sim.wind };
+    }
+
     // ---- Duel kuralları arayüzü ----
     function initial(start) {
         start = start || {};
@@ -229,7 +247,7 @@
                 x: scene[char].x,
                 y: scene[char].y,
                 hp: MAX_HP,
-                cd: { heal: 0, wind: 0, double: 0, big: 0 }
+                cd: { heal: 0, wind: 0, double: 0, big: 0, guide: 0 }
             });
         }
         return { seed: seed, turn: 0, catIndex: catIndex, players: players, last: null };
@@ -284,7 +302,7 @@
 
     function apply(board, move, index) {
         var players = board.players.map(function (pl) {
-            return { char: pl.char, x: pl.x, y: pl.y, hp: pl.hp, cd: { heal: pl.cd.heal, wind: pl.cd.wind, double: pl.cd.double, big: pl.cd.big } };
+            return { char: pl.char, x: pl.x, y: pl.y, hp: pl.hp, cd: { heal: pl.cd.heal, wind: pl.cd.wind, double: pl.cd.double, big: pl.cd.big, guide: pl.cd.guide || 0 } };
         });
         var me = players[index];
         var used = null;
@@ -310,9 +328,9 @@
             };
         }
 
-        // Bekleme: oyuncunun her hamlesinden sonra azalır; bu hamlede kullanılan 3'e kurulur.
+        // Bekleme: oyuncunun her hamlesinden sonra azalır; bu hamlede kullanılan güç COOLDOWNS değerine kurulur.
         POWER_KEYS.forEach(function (key) { if (me.cd[key] > 0) me.cd[key]--; });
-        if (used) me.cd[used] = COOLDOWN;
+        if (used) me.cd[used] = COOLDOWNS[used] === undefined ? COOLDOWN : COOLDOWNS[used];
 
         return {
             board: { seed: board.seed, turn: board.turn + 1, catIndex: board.catIndex, players: players, last: last },
@@ -330,11 +348,11 @@
         WIDTH: WIDTH, HEIGHT: HEIGHT, PLATFORM_LEFT: PLATFORM_LEFT, PLATFORM_RIGHT: PLATFORM_RIGHT,
         GRAVITY: GRAVITY, SPEED_PER_POWER: SPEED_PER_POWER, WIND_ACCEL: WIND_ACCEL, WIND_MAX: WIND_MAX,
         DT: DT, SAMPLE_EVERY: SAMPLE_EVERY, MAX_HP: MAX_HP, HIT_RADIUS: HIT_RADIUS, DIRECT_DAMAGE: DIRECT_DAMAGE,
-        BLAST_RADIUS: BLAST_RADIUS, HEAL_AMOUNT: HEAL_AMOUNT, COOLDOWN: COOLDOWN, POWERUPS: POWERUPS,
+        BLAST_RADIUS: BLAST_RADIUS, HEAL_AMOUNT: HEAL_AMOUNT, COOLDOWN: COOLDOWN, COOLDOWNS: COOLDOWNS, TRAIL_FRACTION: TRAIL_FRACTION, POWERUPS: POWERUPS,
         BODY_OFFSET: BODY_OFFSET, MUZZLE_OFFSET: MUZZLE_OFFSET,
         messageTypes: ['cd_shot', 'cd_heal'],
         mulberry32: mulberry32, generateScene: generateScene, groundAt: groundAt, bodyCenter: bodyCenter,
-        windFor: windFor, shotWind: shotWind, simulateShot: simulateShot,
+        windFor: windFor, shotWind: shotWind, simulateShot: simulateShot, aimPath: aimPath,
         initial: initial, createStart: createStart, parseStart: parseStart,
         parse: parse, toMessage: toMessage, validate: validate, apply: apply, result: result
     };
