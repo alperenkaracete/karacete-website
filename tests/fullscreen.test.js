@@ -1,6 +1,8 @@
 // Genel tam ekran yardımcısı: mod seçimi (saf) + sahte doc/win/target ile giriş-çıkış, yatay kilit, dış çıkış eşitleme, sahte mod.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const FS = require('../core/fullscreen.js');
 
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36';
@@ -174,4 +176,20 @@ test('destroy: etkinken çıkar, dinleyiciler bırakılır, sonraki olaylar etki
     await g.enter();
     g.destroy();
     assert.ok(!f.classes.has('fs-active') && !f.classes.has('fs-fake'));
+});
+
+// ---- Bağlantı (statik): ⛶ tüm oyunlar için oda çubuğunda; Parti'ye özel ikinci düğme yok ----
+test('⛶ düğmesi oda çubuğunda (varsayılan gizli), betik main.js dosyasından önce, Parti kendi düğmesini taşımaz, genel tam ekran düzeni var', () => {
+    const root = path.join(__dirname, '..');
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const bar = html.slice(html.indexOf('id="room-bar"'), html.indexOf('id="game-root"'));
+    assert.ok(/id="fullscreen-btn"[^>]*hidden/.test(bar), 'oda çubuğunda, başta gizli');
+    assert.ok(html.indexOf('core/fullscreen.js') > 0 && html.indexOf('core/fullscreen.js') < html.indexOf('core/main.js'));
+    const main = fs.readFileSync(path.join(root, 'core', 'main.js'), 'utf8');
+    assert.ok(/Fullscreen\.create/.test(main) && /teardownFullscreen\(\);\s*root\.innerHTML/.test(main.replace(/\r/g, '')), 'oyun başlayınca kurulur, çıkışta yıkılır');
+    const parti = fs.readFileSync(path.join(root, 'games', 'parti', 'ui.js'), 'utf8');
+    assert.ok(!/Fullscreen|pt-fsbtn/.test(parti), 'Parti ayrı düğme taşımaz');
+    const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
+    assert.ok(/html\.fs-active #game-container h1\s*\{\s*display:\s*none/.test(css), 'başlık tam ekranda gizli');
+    assert.ok(/html.fs-active #game-canvas/.test(css), 'Bomberman tuvali tam ekranda sığar');
 });

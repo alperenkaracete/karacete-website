@@ -4,6 +4,64 @@
     var root = document.getElementById('game-root');
     var session = null;
 
+    // ---- Tam ekran (⛶): oda çubuğundaki düğme, TÜM oyunlar için (core/fullscreen.js) ----
+    // Android: gerçek tam ekran + yatay kilit. iPhone: sahte tam ekran (adres çubuğu gizlenemez; "Ana Ekrana Ekle" önerilir).
+    // Destek yoksa / ana ekran uygulamasındaysa / dokunmatik değilse düğme gizli kalır.
+    var fsBtn = document.getElementById('fullscreen-btn');
+    var fsCtl = null;
+    var fsHintTimer = null;
+
+    function updateFsBtn() {
+        if (!fsBtn) return;
+        var on = !!fsCtl && fsCtl.supported();
+        fsBtn.hidden = !on;
+        var active = on && fsCtl.isActive();
+        fsBtn.textContent = active ? '🗗' : '⛶';
+        fsBtn.title = fsBtn.ariaLabel = active ? 'Tam ekrandan çık' : 'Tam ekran';
+        fsBtn.setAttribute('aria-label', fsBtn.title);
+    }
+
+    function showFsHint(text) {
+        if (!text) return;
+        var old = document.querySelector('.fs-hint');
+        if (old) old.remove();
+        var h = document.createElement('div');
+        h.className = 'fs-hint';
+        h.textContent = text;
+        document.body.appendChild(h);
+        if (fsHintTimer) clearTimeout(fsHintTimer);
+        fsHintTimer = setTimeout(function () { fsHintTimer = null; if (h.parentNode) h.remove(); }, 8000);
+    }
+
+    function teardownFullscreen() {
+        if (fsHintTimer) { clearTimeout(fsHintTimer); fsHintTimer = null; }
+        var old = document.querySelector('.fs-hint');
+        if (old) old.remove();
+        if (fsCtl) { fsCtl.destroy(); fsCtl = null; }
+        updateFsBtn();
+    }
+
+    function setupFullscreen() {
+        teardownFullscreen();
+        if (!window.Fullscreen) return;
+        fsCtl = Fullscreen.create({
+            target: document.documentElement,
+            // sahte modda pencere boyutu değişmez ama düzen değişir: canvas oyunları yeniden ölçsün
+            onChange: function () { updateFsBtn(); setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 60); }
+        });
+        updateFsBtn();
+    }
+
+    if (fsBtn) {
+        fsBtn.addEventListener('click', function () {
+            if (!fsCtl) return;
+            var entering = !fsCtl.isActive();
+            fsCtl.toggle().then(function () {
+                if (entering && fsCtl && fsCtl.isActive()) showFsHint(fsCtl.hint());
+            });
+        });
+    }
+
     // Oyuncu kimliği sekme başına saklanır (sessionStorage): aynı sekmede yenileme/kopma sonrası aynı kimlikle odaya dönülebilir,
     // farklı sekmeler ayrı kimlik alır (aynı tarayıcıda çoklu sekmeyle test).
     var ID_KEY = 'karacete.pid';
@@ -41,6 +99,7 @@
         if (s.conn) s.conn.close();
         store(SESSION_KEY, null);
         if (s.state === 'playing') s.def.destroy();
+        teardownFullscreen();
         root.innerHTML = '';
         Lobby.hideRoom();
     }
@@ -56,6 +115,7 @@
             closeSession();
             Lobby.show();
         });
+        setupFullscreen();
         def.init({
             root: root,
             send: function (msg) { if (s.conn) s.conn.send(msg); },
