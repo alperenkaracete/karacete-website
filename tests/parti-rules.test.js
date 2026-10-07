@@ -154,14 +154,25 @@ function duelSetup(weapon, dist) {
     return s;
 }
 
-test('yumruk: menzil 1, hasar 30; menzil dışı reddedilir', () => {
-    const s = duelSetup('fist', 1);
-    const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
-    assert.equal(r.state.P.p1.hp, 70);
-    assert.equal(r.state.P.p0.w.length, 0, 'tek atımlık');
-    assert.equal(r.state.stage === 'act', false, 'saldırı turu bitirir');
+test('yumruk: menzil 0-1 (aynı ya da komşu kutucuk), tek vuruş 100 hasar (öldürür); menzil dışı reddedilir; kalkan engeller', () => {
+    for (const d of [0, 1]) {
+        const s = duelSetup('fist', d);
+        s.P.p1.s = 4;
+        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        assert.ok(r.events.some((e) => e.t === 'dmg' && e.id === 'p1' && e.n === 100), 'mesafe ' + d + ': 100 hasar');
+        assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'), 'tek vuruşta ölür');
+        assert.equal(r.state.P.p1.s, 2);
+        assert.equal(r.state.P.p0.w.length, 0, 'tek atımlık');
+        assert.equal(r.state.stage === 'act', false, 'saldırı turu bitirir');
+    }
     const far = duelSetup('fist', 2);
     assert.equal(R.reduce(far, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false);
+    const sh = duelSetup('fist', 1);
+    sh.P.p1.shield = true;
+    const rs = apply(sh, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+    assert.equal(rs.state.P.p1.hp, 100);
+    assert.equal(rs.state.P.p1.shield, false);
+    assert.ok(rs.events.some((e) => e.t === 'block') && !rs.events.some((e) => e.t === 'death'));
 });
 
 test('pompalı: 1/2/3 adımda 45/30/15; 4 adım menzil dışı (mesafe düşüşü)', () => {
@@ -739,12 +750,13 @@ test('Son Çılgınlık: takım modunda takımın toplamı hedefe ≤3 kalınca 
 
 // ---- acil hata: aynı kutucukta saldırı (mesafe 0) NaN üretmemeli ----
 test('aynı kutucukta (mesafe 0) yumruk/pompalı/yay vurur: can düşer, NaN yok', () => {
-    const want = { fist: 30, shotgun: 45, bow: 20 };
+    const want = { fist: 100, shotgun: 45, bow: 20 };
     for (const w of ['fist', 'shotgun', 'bow']) {
         const s = duelSetup(w, 0);
         assert.equal(s.P.p0.pos, s.P.p1.pos);
         const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
-        assert.equal(r.state.P.p1.hp, 100 - want[w], w);
+        if (w === 'fist') assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'), 'yumruk 100: öldürür');
+        else assert.equal(r.state.P.p1.hp, 100 - want[w], w);
         assert.ok(Number.isFinite(r.state.P.p1.hp));
         const dmgEv = r.events.find((e) => e.t === 'dmg');
         assert.ok(dmgEv && Number.isFinite(dmgEv.n) && dmgEv.n === want[w], 'olay hasarı sonlu');
@@ -766,7 +778,8 @@ test('aynı kutucukta hasar 0\'da ölümle biter (NaN ölümsüzlük yok); botla
     assert.equal(act.type, 'use');
     assert.equal(act.target, 'p1');
     const r = apply(s, act);
-    assert.ok(Number.isFinite(r.state.P.p1.hp) && r.state.P.p1.hp < 100);
+    assert.ok(Number.isFinite(r.state.P.p1.hp));
+    assert.ok(r.events.some((e) => e.t === 'dmg' && e.id === 'p1'), 'bot aynı kutucuktakine vurdu');
 });
 
 test('hit güvenliği: geçersiz hasar yok sayılır, bozuk (NaN) can onarılır; weaponDamage mesafe 0 = mesafe 1', () => {
@@ -782,11 +795,12 @@ test('hit güvenliği: geçersiz hasar yok sayılır, bozuk (NaN) can onarılır
     try {
         assert.equal(R.reduce(bad, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false);
     } finally { C.WEAPONS.fist.dmg = original; }
-    for (const [w, d1] of [['fist', 30], ['shotgun', 45], ['bow', 20]]) {
+    for (const [w, d1] of [['fist', 100], ['shotgun', 45], ['bow', 20]]) {
         const a = apply(duelSetup(w, 0), { type: 'use', by: 'p0', item: 0, target: 'p1' });
         const b = apply(duelSetup(w, 1), { type: 'use', by: 'p0', item: 0, target: 'p1' });
-        assert.equal(100 - a.state.P.p1.hp, d1);
-        assert.equal(100 - b.state.P.p1.hp, d1);
+        const dmgOf = (r) => r.events.find((e) => e.t === 'dmg').n;
+        assert.equal(dmgOf(a), d1, w + ' mesafe 0');
+        assert.equal(dmgOf(b), d1, w + ' mesafe 1');
     }
 });
 
@@ -800,7 +814,7 @@ test('özellik testi: 300 rastgele hamlede (aynı kutucuk dahil) tüm can/yıld�
         if (st.stage === 'over') break;
         if (st.stage === 'mini') { st = R.applyMinigame(st, { ranking: [st.order.slice()] }, ctx()).state; continue; }
         // oyuncuları dar bir bölgede topla (sık aynı kutucuk) ve silah ver
-        if (rnd() < 0.5) st.P[st.order[Math.floor(rnd() * st.order.length)]].pos = nodes[Math.floor(rnd() * nodes.length)];
+        if (st.stage !== 'choose' && rnd() < 0.8) st.order.forEach((pid) => { st.P[pid].pos = nodes[Math.floor(rnd() * nodes.length)]; });      // sık aynı kutucuk
         const cur = R.current(st);
         if (st.P[cur].w.length < 3 && rnd() < 0.5) st.P[cur].w.push(C.WEAPON_IDS[Math.floor(rnd() * 4)]);
         if (st.stage === 'roll' && rnd() < 0.4) st.stage = 'act';          // saldırı aşamasına sık gir
@@ -931,10 +945,10 @@ test('güvenli bölge: başlangıçtaki oyuncu hasar almaz; hedef sunulmaz; her 
 });
 
 test('başlangıçtan çıkınca hasar alınır (güvenli bölge yalnızca başlangıç düğümünde)', () => {
-    const s = startSetup('fist', 0);
+    const s = startSetup('bow', 0);
     const next = nodeAt(g.start, 1, [g.start]);
     s.P.p0.pos = next; s.P.p1.pos = next;
-    assert.equal(apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }).state.P.p1.hp, 70);
+    assert.equal(apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }).state.P.p1.hp, 80);
 });
 
 test('başlangıç düğümünden en az 2 dal çıkar: ilk hamle yön seçtirir', () => {
