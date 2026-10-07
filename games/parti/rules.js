@@ -17,6 +17,11 @@
 
     function clone(x) { return JSON.parse(JSON.stringify(x)); }
 
+    // Dışarıdan gelen anahtarlar yalnızca kendi özellikleriyle eşleşsin ('__proto__', 'constructor' vb. reddedilir).
+    function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+    function validNode(g, id) { return Number.isInteger(id) && has(g.byId, id); }
+    function validPlayer(state, id) { return typeof id === 'string' && has(state.P, id) && state.order.indexOf(id) >= 0; }
+
     // ctx: { g: graf indeksi, rand?: () => [0,1) (testler için) }
     function Rng(state, ctx) {
         var f = ctx && ctx.rand ? ctx.rand : function () { return nextRand(state); };
@@ -312,8 +317,9 @@
             }
             case 'dir': {
                 if (state.stage !== 'choose') return fail('yön seçilemez');
+                if (!validNode(g, action.to) || state.choices.indexOf(action.to) < 0) return fail('geçersiz yön');
                 var w = G.walkVia(g, p.pos, state.steps, action.to);
-                if (!w || state.choices.indexOf(action.to) < 0) return fail('geçersiz yön');
+                if (!w) return fail('geçersiz yön');
                 move(state, g, id, w, rng, evts);
                 return done();
             }
@@ -340,8 +346,8 @@
                     return done();            // tur harcanmaz
                 }
                 if (def.kind === 'target') {
+                    if (!validPlayer(state, action.target) || action.target === id) return fail('geçersiz hedef');
                     var tgt = state.P[action.target];
-                    if (!tgt || action.target === id) return fail('geçersiz hedef');
                     if (isTeammate(state, id, action.target)) return fail('takım arkadaşına saldırılamaz');
                     var d = G.distance(g, p.pos, tgt.pos);
                     if (d > def.range) return fail('hedef menzil dışında');
@@ -350,7 +356,7 @@
                     hit(state, action.target, def.dmg[d], id, evts);
                 } else {
                     var node = action.node;
-                    if (!g.byId[node]) return fail('geçersiz kutucuk');
+                    if (!validNode(g, node)) return fail('geçersiz kutucuk');
                     if (G.distance(g, p.pos, node) > def.range) return fail('hedef menzil dışında');
                     p.w.splice(idx, 1);
                     evts.push({ t: 'attack', id: id, w: def.id, node: node });

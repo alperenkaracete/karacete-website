@@ -578,3 +578,22 @@ test('attackOptions: bomba için atanın kendi kutucuğu sunulmaz (aynı kutucuk
     // insan reduce ile yine kendi kutucuğuna atabilir (kural değişmedi)
     assert.equal(R.reduce(s, { type: 'use', by: 'p0', item: 0, node: a }, ctx()).ok, true);
 });
+
+test('prototip anahtarları ve geçersiz tipler hedef/düğüm/yön olarak reddedilir', () => {
+    const s = duelSetup('fist', 1);
+    for (const bad of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 5, null, undefined, {}, [], 1.5]) {
+        assert.equal(R.reduce(s, { type: 'use', by: 'p0', item: 0, target: bad }, ctx()).ok, false, 'target ' + String(bad));
+    }
+    const b = duelSetup('bomb', 1);
+    for (const bad of ['__proto__', 'constructor', '0', -1, 1e9, 1.5, NaN, null, {}, []]) {
+        assert.equal(R.reduce(b, { type: 'use', by: 'p0', item: 0, node: bad }, ctx()).ok, false, 'node ' + String(bad));
+    }
+    const c = game(2);
+    c.stage = 'choose'; c.choices = [3, 4]; c.steps = 2;
+    for (const bad of ['__proto__', 'constructor', '3', 3.5, null, {}, [3]]) {
+        assert.equal(R.reduce(c, { type: 'dir', by: 'p0', to: bad }, ctx()).ok, false, 'to ' + String(bad));
+    }
+    // geçerli hâlâ çalışır
+    assert.equal(R.reduce(duelSetup('fist', 1), { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, true);
+    assert.equal(R.reduce(duelSetup('bomb', 1), { type: 'use', by: 'p0', item: 0, node: loopNode.id }, ctx()).ok, true);
+});

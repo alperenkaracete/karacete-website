@@ -36,6 +36,7 @@
         var offline = false;
         var botAt = 0;
         var botSeq = 0;
+        var resyncOk = false;         // _reconnected sonrası ilk pt_state ep sınırından muaf
 
         function send(msg) { opts.send(msg); }
         function isLeader() { return !!M && M.ld === me.id; }
@@ -105,6 +106,9 @@
         function unpack(msg) {
             if (!msg || !isInt(msg.ep, 0, 1e6) || !isInt(msg.rv, 0, 1e9)) return null;
             if (typeof msg.ld !== 'string' || PHASES.indexOf(msg.ph) < 0) return null;
+            // Devir en çok bir adım ilerler (takeOver ep'yi tam 1 artırır). Yeniden bağlanma sonrası ilk görüntü muaf:
+            // uzun kopan oyuncu birden çok devri kaçırmış olabilir.
+            if (M && !resyncOk && msg.ep > M.ep + 1) return null;
             if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || C.GOALS.indexOf(msg.cf.gl) < 0) return null;
             if (!Array.isArray(msg.S) || msg.S.length > C.MAX_PLAYERS) return null;
             var t = now();
@@ -115,6 +119,9 @@
                 if (!isInt(s.t, 0, 3) || !isInt(s.d, 0, C.DISCONNECT_MS)) return null;
                 seats.push({ i: s.i, n: s.n.slice(0, 20), a: s.a.slice(0, 8), t: s.t, b: s.b ? 1 : 0, c: s.c ? 1 : 0, dAt: t + s.d });
             }
+            // Lider, görüntüdeki koltuklarda oturan bir İNSAN olmalı. Bağlı olup olmadığına bakılmaz: alıcı
+            // player_disconnect/player_joined'u henüz işlememiş olabilir ve yeni liderin ilk yayını reddedilirdi.
+            if (!seats.some(function (x) { return x.i === msg.ld && !x.b; })) return null;
             if (msg.g !== null && (typeof msg.g !== 'object' || !msg.g.P || !Array.isArray(msg.g.order))) return null;
             if (!isInt(msg.dl, 0, 3600000)) return null;
             var mn = null;
@@ -484,6 +491,7 @@
                         return;
                     }
                     M = snap;
+                    resyncOk = false;
                     Object.keys(gone).forEach(function (id) { if (M.S.some(function (s) { return s.i === id && s.c; })) delete gone[id]; });
                     emit();
                     return;
@@ -496,6 +504,9 @@
                 case 'pt_action': {
                     if (!M || !isLeader() || typeof data.id !== 'string') return;
                     if (!data.a || typeof data.a !== 'object') return;
+                    // Backend gönderen kimliği eklemez; ileride `from` eklenirse (sunucunun doğruladığı gönderen) data.id ile
+                    // uyuşmak zorundadır, yoksa eski davranış.
+                    if (data.from !== undefined && data.from !== data.id) return;
                     handle(data.a, data.id);
                     return;
                 }
@@ -551,6 +562,7 @@
                 }
                 case '_reconnected': {
                     offline = false;
+                    resyncOk = true;
                     gone = {};
                     lastSyncAt = -1e9;
                     if (M) { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }

@@ -285,6 +285,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   anda 2 dk'dan uzun düşerse oda ve oyun kaybolur (durum yalnızca istemcilerdedir).
 - Parti: gönderen kimliği sunucuca doğrulanmaz (mesajda taşınır) ve backend kimlik devralmaya izin verir; kötü niyetli bir oyuncu
   başkası adına eylem gönderebilir ya da onun oturumunu düşürebilir. Arkadaşlarla oynamak için kabul edilmiştir.
+- Parti: gelen `pt_state` hafifçe doğrulanır (`ep` en çok +1 ilerler, lider koltuklarda oturan bir insan olmalı) ve kural tarafı
+  düğüm/hedef kimliklerini yalnızca kendi özellikleriyle eşler. Gönderen kimliği hâlâ mesajdaki `id`'dir; `pt_action`'da `from`
+  alanı varsa `id` ile aynı olmak zorundadır. **Backend gönderen kimliğini (`from`) kendisi eklemeli** (sunucunun bildiği oturum
+  kimliği); o zaman sahte `id` ile eylem göndermek mümkün olmaz. Şu an backend'e dokunulmadı.
 - Parti: aşama 1'de minioyun yer tutucudur (Şans Çarkı); sürerken gelen yeni oyuncu yalnızca izleyici olur; kopmuş oyuncunun
   koltuğu 3 dk sonra düşer.
 - Bomberman: oyuncular köşelere rastgele yerleşir; aynı köşeye denk gelebilirler.

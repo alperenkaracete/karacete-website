@@ -612,3 +612,74 @@ test('zaman: tick seyrek (250 ms ya da 1 sn) çağrılsa da süre dolunca lider 
         assert.ok(r.state('A').fx.length > 0 || r.state('A').lg.length > 1);
     }
 });
+
+// ---- hafif mesaj güvenliği ----
+function lastState(r, from) {
+    return JSON.parse(JSON.stringify(r.sent.filter((s) => s.msg.type === 'pt_state' && (!from || s.from === from)).pop().msg));
+}
+
+test('devir: takeOver ep\'yi tam 1 artırır; art arda iki devirde her adım kabul edilir', () => {
+    const r = started(4);
+    assert.equal(r.state('B').ep, 1);
+    r.leave('A'); r.flush();
+    assert.equal(r.state('B').ep, 2);
+    assert.equal(r.state('C').ep, 2, 'takipçi ep+1 yayınını reddetmedi');
+    r.leave('B'); r.flush();
+    assert.equal(r.state('C').ep, 3);
+    assert.equal(r.state('D').ep, 3);
+    assert.equal(r.state('D').ld, 'C');
+});
+
+test('pt_state: ep, M.ep+1\'den büyük atlarsa reddedilir; yeniden bağlanma sonrası ilk görüntü muaf', () => {
+    const r = started(3);
+    const snap = lastState(r, 'A');
+    const jump = Object.assign({}, snap, { ep: 3, rv: snap.rv + 10 });
+    r.m('B').onMessage(jump);
+    assert.equal(r.state('B').ep, 1, 'ep+2 reddedildi');
+    r.m('B').onMessage(Object.assign({}, snap, { ep: 2, rv: snap.rv + 10, ld: 'B' }));
+    assert.equal(r.state('B').ep, 2, 'ep+1 kabul');
+    // yeniden bağlanma: birden çok devir atlamış olabilir
+    r.m('C').onMessage({ type: '_reconnected' });
+    r.m('C').onMessage(Object.assign({}, snap, { ep: 4, rv: snap.rv + 20, ld: 'B' }));
+    assert.equal(r.state('C').ep, 4, 'yeniden bağlanma sonrası ilk görüntü muaf');
+    r.m('C').onMessage(Object.assign({}, snap, { ep: 9, rv: snap.rv + 30, ld: 'B' }));
+    assert.equal(r.state('C').ep, 4, 'muafiyet yalnızca bir kez');
+});
+
+test('pt_state: lider koltukta oturan insan olmalı (bot/koltuksuz reddedilir); bağlı olması aranmaz (yarış)', () => {
+    const r = started(3);
+    const snap = lastState(r, 'A');
+    const bad = (patch) => r.m('B').onMessage(Object.assign({}, snap, { rv: snap.rv + 5, ep: 2 }, patch));
+    bad({ ld: 'Z' });                                             // koltuksuz
+    assert.equal(r.state('B').ep, 1);
+    const withBot = JSON.parse(JSON.stringify(snap));
+    withBot.S.push({ i: 'botx', n: 'Bot', a: '🤖', t: 0, b: 1, c: 1, d: 0 });
+    bad({ S: withBot.S, ld: 'botx' });                            // bot lider
+    assert.equal(r.state('B').ep, 1);
+    // yarış: yeni liderin (B'nin) ilk yayını, alıcı C henüz player_disconnect(A) işlemeden gelir; A hâlâ bağlı görünür
+    assert.equal(r.view('C').seats.find((s) => s.i === 'A').c, 1);
+    r.m('C').onMessage(Object.assign({}, snap, { rv: snap.rv + 5, ep: 2, ld: 'B' }));
+    assert.equal(r.state('C').ld, 'B', 'yeni liderin ilk yayını kabul edildi');
+    assert.equal(r.state('C').ep, 2);
+    // ve ardından gelen gecikmiş player_disconnect(A) bir şeyi bozmaz
+    r.m('C').onMessage({ type: 'player_disconnect', id: 'A' });
+    assert.equal(r.state('C').ld, 'B');
+});
+
+test('pt_action: from alanı varsa id ile eşleşmeli; yoksa eski davranış; kural: __proto__/constructor hedefleri', () => {
+    const r = started(3);
+    const cur = curId(r);
+    const other = ['A', 'B', 'C'].find((x) => x !== cur);
+    const rv = r.state('A').rv;
+    // sahte `from`
+    r.m('A').onMessage({ type: 'pt_action', id: cur, from: other, a: { type: 'roll' } });
+    assert.equal(r.state('A').rv, rv, 'from uyuşmuyor: yok sayıldı');
+    r.m('A').onMessage({ type: 'pt_action', id: cur, from: cur, a: { type: 'roll' } });
+    assert.ok(r.state('A').rv > rv, 'from uyuşuyor: işlendi');
+    const rv2 = r.state('A').rv;
+    // from yok: eski davranış
+    const s = r.state('A').g;
+    const nextCur = R.current(s);
+    r.m('A').onMessage({ type: 'pt_action', id: nextCur, a: { type: 'noop' } });
+    assert.equal(r.state('A').rv, rv2);
+});
