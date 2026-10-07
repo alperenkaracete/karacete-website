@@ -425,7 +425,7 @@
             stats.appendChild(el('span', '', '❤️' + p.hp + ' ⭐' + p.s));
             var items = '';
             invList(p).forEach(function (e) { items += C.WEAPONS[e[0]].emoji + (e[1] > 1 ? '×' + e[1] : ''); });
-            if (p.shield) items += '🛡️';
+            if (p.shield) items += '🛡️' + (p.shl > 0 ? p.shl : '');
             stats.appendChild(el('span', 'pt-items', items || '·'));
             cardEl.appendChild(stats);
             var status = '';
@@ -487,7 +487,7 @@
         var opts = g.atk ? [] : R.attackOptions(g, rctx);
         var usable = g.atk ? [] : invList(p).filter(function (e) {
             var def = C.WEAPONS[e[0]];
-            return def.kind === 'shield' ? !p.shield : opts.some(function (o) { return o.w === e[0]; });
+            return def.kind === 'shield' ? !(p.shield || p.scd > 0) : opts.some(function (o) { return o.w === e[0]; });
         });
         if (!usable.length) targeting = null;
         if (usable.length) {

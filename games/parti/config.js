@@ -66,6 +66,8 @@
         INVENTORY_PER_TYPE: 3,       // sınırsız envanter: tür başına en çok 3
         INVENTORY_TOTAL: 6,          // toplam en çok 6 (fazlası 'kaçtı')
         SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
+        SHIELD_TURNS: 3,             // kurulu kalkan 3 kendi tur sonra düşer
+        SHIELD_COOLDOWN_TURNS: 2,    // kalkan kırılınca 2 kendi tur yeniden kurulamaz
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
         STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)

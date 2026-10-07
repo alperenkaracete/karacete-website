@@ -118,6 +118,8 @@
                 if (!p || typeof p !== 'object') return false;
                 if (typeof p.hp !== 'number' || !isFinite(p.hp) || p.hp < 0 || p.hp > C.MAX_HP) return false;
                 if (!isInt(p.s, 0, 999) || !isInt(p.pos, 0, 999) || !isInt(p.home, 0, 999)) return false;
+                if (p.shl !== undefined && !isInt(p.shl, 0, 9)) return false;
+                if (p.scd !== undefined && !isInt(p.scd, 0, 9)) return false;
                 if (!Array.isArray(p.w) && (!p.w || typeof p.w !== 'object')) return false;
                 if (!Array.isArray(p.w)) {
                     var wk = Object.keys(p.w);
@@ -148,6 +150,10 @@
                     p.w = counts;
                 }
                 delete p.offers;
+                // kalkan sayaçları: eski görüntülerde yok -> kurulu kalkan 3 tur, bekleme 0
+                if (p.shield && !Number.isFinite(p.shl)) p.shl = C.SHIELD_TURNS;
+                if (!Number.isFinite(p.shl)) p.shl = 0;
+                if (!Number.isFinite(p.scd)) p.scd = 0;
                 if (!Object.prototype.hasOwnProperty.call(gr.byId, p.pos)) p.pos = start;
                 if (!Object.prototype.hasOwnProperty.call(gr.byId, p.home)) p.home = start;
             });
@@ -204,7 +210,8 @@
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
                 case 'attack': return nm(e.id) + ' ' + wn(e.w) + ' kullandı' + (e.target ? ' → ' + nm(e.target) : '');
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
-                case 'block': return nm(e.id) + ' kalkanla korundu';
+                case 'block': return nm(e.id) + ' kalkanla korundu (kalkan kırıldı)';
+                case 'shieldend': return nm(e.id) + ' kalkanının süresi doldu';
                 case 'shield': return nm(e.id) + ' 🛡️ kalkanını kurdu';
                 case 'frenzy': return '🔥 SON ÇILGINLIK! Sandıklar ×2';
                 case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;

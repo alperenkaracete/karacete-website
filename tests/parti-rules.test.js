@@ -1116,3 +1116,117 @@ test('öldürme turu bitirmez: öldüren hâlâ zar atabilir; ölünce tur başl
     const r2 = apply(r.state, { type: 'roll', by: 'p0' }, { dice: () => 1 });
     assert.equal(R.current(r2.state), 'p1');
 });
+
+// ---- kalkan: süre ve bekleme ----
+// id'nin n. sonraki kendi turunun BAŞINA kadar (diğerleri otomatik oynar) ilerletir; geçen olayları toplar.
+function toOwnTurnStart(st, id, n, evtsOut) {
+    let seen = 0;
+    let last = null;
+    for (let i = 0; i < 400; i++) {
+        if (st.stage === 'mini') {
+            const mr = R.applyMinigame(st, { ranking: [st.order.slice()] }, ctx());
+            if (evtsOut) mr.events.forEach((e) => evtsOut.push(e));
+            st = mr.state; st.chests = {};
+            continue;
+        }
+        const key = st.rd + ':' + st.turn;
+        if (R.current(st) === id && st.stage === 'roll' && key !== last && (i > 0)) {
+            last = key;
+            seen++;
+            if (seen === n) return st;
+        }
+        const r = apply(st, R.autoAction(st, ctx()), { dice: () => 1 });
+        if (evtsOut) r.events.forEach((e) => evtsOut.push(e));
+        st = r.state;
+    }
+    throw new Error('tur başına ulaşılamadı');
+}
+
+function shieldGame() {
+    const s = game(2);
+    s.chests = {};
+    s.P.p0.pos = loopNode.id; s.P.p1.pos = nodeAt(loopNode.id, 40) || loopNode.id;
+    s.P.p0.w = inv('shield', 'shield');
+    return s;
+}
+
+test('kalkan: kurulu kalkan 3 kendi tur sonra düşer (süre bitince bekleme yok)', () => {
+    let s = shieldGame();
+    s.turn = 0; s.stage = 'roll'; s.atk = 0;
+    let r = apply(s, { type: 'use', by: 'p0', w: 'shield' });
+    assert.equal(r.state.P.p0.shield, true);
+    assert.equal(r.state.P.p0.shl, 3);
+    assert.equal(r.state.atk, 1, 'saldırı hakkı harcandı');
+    let st = apply(r.state, { type: 'roll', by: 'p0' }, { dice: () => 1 }).state;
+    const ev = [];
+    st = toOwnTurnStart(st, 'p0', 1, ev);       // T+1 başı: 2 kaldı
+    assert.equal(st.P.p0.shield, true); assert.equal(st.P.p0.shl, 2);
+    st = toOwnTurnStart(st, 'p0', 1, ev);       // T+2 başı: 1 kaldı
+    assert.equal(st.P.p0.shield, true); assert.equal(st.P.p0.shl, 1);
+    st = toOwnTurnStart(st, 'p0', 1, ev);       // T+3 başı: düştü
+    assert.equal(st.P.p0.shield, false, '3. kendi turun başında kalkan düştü');
+    assert.ok(ev.some((e) => e.t === 'shieldend' && e.id === 'p0'));
+    assert.equal(st.P.p0.scd, 0, 'süre dolması bekleme getirmez');
+    // hemen yeniden kurulabilir
+    st.P.p0.w = inv('shield');
+    assert.ok(reduceT(st, { type: 'use', by: 'p0', w: 'shield' }, ctx()).ok);
+});
+
+test('kalkan: kırılınca 2 kendi tur yeniden kurulamaz, 3. turda kurulabilir', () => {
+    let s = shieldGame();
+    s.P.p0.shield = true; s.P.p0.shl = 3;
+    s.P.p1.pos = s.P.p0.pos;
+    s.P.p1.w = inv('bow');
+    s.turn = 1; s.stage = 'roll'; s.atk = 0;
+    const r = apply(s, { type: 'use', by: 'p1', w: 'bow', target: 'p0' });
+    assert.ok(r.events.some((e) => e.t === 'block'));
+    assert.equal(r.state.P.p0.shield, false);
+    assert.ok(r.state.P.p0.scd > 0, 'bekleme başladı');
+    let st = r.state;
+    st.P.p0.w = inv('shield', 'shield');
+    // kırıldığı turun kalanı + sonraki iki kendi tur: kurulamaz
+    st = toOwnTurnStart(st, 'p0', 1);
+    assert.equal(reduceT(st, { type: 'use', by: 'p0', w: 'shield' }, ctx()).ok, false, '1. kendi tur: bekleme');
+    assert.ok(!R.attackOptions(st, ctx()).some((o) => o.w === 'shield'));
+    st = toOwnTurnStart(st, 'p0', 1);
+    assert.equal(reduceT(st, { type: 'use', by: 'p0', w: 'shield' }, ctx()).ok, false, '2. kendi tur: bekleme');
+    st = toOwnTurnStart(st, 'p0', 1);
+    assert.equal(st.P.p0.scd, 0);
+    const ok = apply(st, { type: 'use', by: 'p0', w: 'shield' });
+    assert.equal(ok.state.P.p0.shield, true, '3. kendi tur: yeniden kurulabilir');
+});
+
+test('kalkan: bot bekleme sürerken kalkan kurmaz; kuruluyken de kurmaz', () => {
+    const s = shieldGame();
+    s.P.p0.pos = loopNode.id; s.P.p1.pos = nodeAt(loopNode.id, 2);
+    s.turn = 0; s.stage = 'roll'; s.atk = 0;
+    assert.equal(R.botAction(s, ctx()).w, 'shield');
+    s.P.p0.scd = 2;
+    assert.equal(R.botAction(s, ctx()).type, 'roll');
+    s.P.p0.scd = 0; s.P.p0.shield = true; s.P.p0.shl = 2;
+    assert.equal(R.botAction(s, ctx()).type, 'roll');
+});
+
+test('kalkan: kurmak saldırı hakkını harcar — aynı turda silah kullanılamaz; silahtan sonra kalkan da kurulamaz', () => {
+    const s = shieldGame();
+    s.turn = 0; s.stage = 'roll'; s.atk = 0;
+    s.P.p0.w = inv('shield', 'bow');
+    s.P.p1.pos = s.P.p0.pos;
+    const r = apply(s, { type: 'use', by: 'p0', w: 'shield' });
+    assert.equal(reduceT(r.state, { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false, 'kalkandan sonra silah yok');
+    const r2 = apply(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    assert.equal(reduceT(r2.state, { type: 'use', by: 'p0', w: 'shield' }, ctx()).ok, false, 'silahtan sonra kalkan yok');
+});
+
+test('kalkan: başlangıç güvenli bölgesinde duran kalkanı harcanmaz (bekleme de başlamaz)', () => {
+    const s = game(2);
+    s.P.p1.shield = true; s.P.p1.shl = 3;
+    s.P.p1.pos = s.home;
+    s.P.p0.pos = loopNode.id; s.P.p0.w = inv('bomb'); s.turn = 0; s.stage = 'roll';
+    s.P.p1.pos = s.home;
+    const ev = [];
+    const bombed = apply(Object.assign(s, {}), { type: 'use', by: 'p0', w: 'bomb', node: nodeAt(loopNode.id, 1, [s.home]) });
+    assert.equal(bombed.state.P.p1.shield, true);
+    assert.equal(bombed.state.P.p1.scd, 0);
+    assert.ok(ev.length === 0);
+});

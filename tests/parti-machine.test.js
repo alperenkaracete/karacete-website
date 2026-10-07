@@ -1137,3 +1137,26 @@ test('silah kullanmak turu bitirmez: takipçi use gönderir, ardından zar atar 
     r.flush();
     assert.notEqual(curId(r), who);
 });
+
+test('eski anlık görüntü göçü: kurulu kalkan 3 tur sayacı alır, bekleme 0; geçersiz sayaç reddedilir', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const id = snap.g.order[0];
+    snap.g.P[id].shield = true;
+    delete snap.g.P[id].shl; delete snap.g.P[id].scd;
+    snap.rv += 300;
+    r.m('B').onMessage(snap);
+    assert.equal(r.state('B').g.P[id].shl, C.SHIELD_TURNS);
+    assert.equal(r.state('B').g.P[id].scd, 0);
+    const bad = lastState(r, 'A');
+    bad.g.P[id].shl = -2;
+    bad.rv += 400;
+    const before = r.state('B').rv;
+    r.m('B').onMessage(bad);
+    assert.equal(r.state('B').rv, before);
+    const bad2 = lastState(r, 'A');
+    bad2.g.P[id].scd = 'x';
+    bad2.rv += 500;
+    r.m('B').onMessage(bad2);
+    assert.equal(r.state('B').rv, before);
+});

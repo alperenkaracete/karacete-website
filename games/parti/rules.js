@@ -59,7 +59,7 @@
             state.P[s.id] = {
                 id: s.id, n: s.name, av: s.av, t: state.mode === 'team' ? s.t : -1, bot: !!s.bot,
                 hp: C.MAX_HP, s: 0, w: {}, pos: g.start, home: g.start,
-                sk: 0, shield: false, dmg: {}
+                sk: 0, shield: false, shl: 0, scd: 0, dmg: {}
             };
         });
         var evts = [];
@@ -243,6 +243,8 @@
         if (isSafe(state, p)) return false;          // güvenli bölge: kalkan harcanmaz, hasar yok
         if (p.shield) {
             p.shield = false;
+            p.shl = 0;
+            p.scd = C.SHIELD_COOLDOWN_TURNS + 1;       // kırıldı: sonraki 2 kendi turda yeniden kurulamaz (tur başı sayaç 3→0)
             evts.push({ t: 'block', id: victim, by: attacker });
             return false;
         }
@@ -255,6 +257,21 @@
     }
 
     // ---- Tur akışı ----
+    // Her kendi tur başında: kurulu kalkanın süresi azalır (0'da düşer); kırılma sonrası bekleme sayacı azalır.
+    function tickShield(p, evts) {
+        if (p.shield) {
+            p.shl = (Number.isFinite(p.shl) ? p.shl : C.SHIELD_TURNS) - 1;
+            if (p.shl <= 0) {
+                p.shield = false;
+                p.shl = 0;
+                evts.push({ t: 'shieldend', id: p.id });       // süre doldu: bekleme yok
+            }
+        }
+        if (p.scd > 0) p.scd--;
+    }
+
+    function shieldBlocked(p) { return !!p.shield || p.scd > 0; }
+
     function nextTurn(state, g, rng, evts) {
         state.choices = null;
         state.steps = 0;
@@ -267,6 +284,7 @@
                 return;
             }
             var p = state.P[state.order[idx]];
+            tickShield(p, evts);                       // kendi tur sayacı (kalkan süresi / bekleme)
             if (p.sk > 0) {
                 p.sk--;
                 evts.push({ t: 'skip', id: p.id });
@@ -381,8 +399,10 @@
                 var def = C.WEAPONS[wid];
                 if (def.kind === 'shield') {
                     if (p.shield) return fail('zaten kalkanın var');
+                    if (p.scd > 0) return fail('kalkan henüz yeniden kurulamaz');
                     takeItem(p, wid);
                     p.shield = true;
+                    p.shl = C.SHIELD_TURNS;
                     state.atk = 1;            // kalkan kurmak da turun saldırı hakkını harcar (zar atmak serbest)
                     evts.push({ t: 'shield', id: id });
                     return done();
@@ -475,7 +495,7 @@
         var auto = autoAction(state, ctx);
         if (!auto || state.stage !== 'roll' || state.atk) return auto;
         var p = state.P[id];
-        if (invCount(p, 'shield') > 0 && !p.shield && rivalNear(state, ctx, 3)) return { type: 'use', by: id, w: 'shield' };
+        if (invCount(p, 'shield') > 0 && !shieldBlocked(p) && rivalNear(state, ctx, 3)) return { type: 'use', by: id, w: 'shield' };
         var opts = attackOptions(state, ctx);
         if (opts.length && rng.f() < 0.5) return rng.pick(opts);
         return auto;
