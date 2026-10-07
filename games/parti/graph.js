@@ -22,7 +22,7 @@
                 if (undirected[to].indexOf(n.id) < 0) undirected[to].push(n.id);
             });
         });
-        return { map: map, byId: byId, undirected: undirected, starts: starts, cache: {} };
+        return { map: map, byId: byId, undirected: undirected, starts: starts, start: starts.length ? starts[0] : null, cache: {} };
     }
 
     // Tahtadaki en kısa adım sayısı (yön gözetmeden: menzil için); ulaşılamazsa Infinity
@@ -71,6 +71,29 @@
         return { path: [to].concat(rest.path), pos: rest.pos, remaining: rest.remaining, choices: rest.choices };
     }
 
+    // Yön seçimi önizlemesi: `pos` bir dallanma düğümü, `steps` o noktada kalan adım sayısı. Her çıkış için
+    //   { choice: ilk düğüm, path: seçimden sonra yürünen düğümler (sonraki dallanmaya ya da adım bitimine kadar),
+    //     ends: o yönde olası TÜM bitiş düğümleri (sonraki dallanmalar da dahil, tekil), more: path sonrası yeni bir dallanma var mı }
+    function preview(g, pos, steps) {
+        var node = g.byId[pos];
+        var out = [];
+        if (!node || !(steps >= 1)) return out;
+        node.next.forEach(function (c) {
+            var w = walkVia(g, pos, steps, c);
+            if (!w) return;
+            var ends = {};
+            (function collect(w2, depth) {
+                if (!w2.choices || depth > 8) { ends[w2.pos] = true; return; }
+                w2.choices.forEach(function (c2) {
+                    var nxt = walkVia(g, w2.pos, w2.remaining, c2);
+                    if (nxt) collect(nxt, depth + 1);
+                });
+            })(w, 0);
+            out.push({ choice: c, path: w.path.slice(), ends: Object.keys(ends).map(Number), more: !!w.choices });
+        });
+        return out;
+    }
+
     // Haritayı doğrular; hata mesajları dizisi döner (boş = geçerli).
     function validate(map) {
         var errors = [];
@@ -84,7 +107,11 @@
             if (!n.next.length) errors.push('çıkışsız düğüm ' + n.id);
             n.next.forEach(function (to) { if (!g.byId[to]) errors.push('bilinmeyen hedef ' + n.id + '->' + to); });
         });
-        if (g.starts.length < 8) errors.push('en az 8 başlangıç düğümü gerekir: ' + g.starts.length);
+        // tek ortak başlangıç düğümü, en az 2 çıkış (ilk hamlede yön seçimi)
+        if (g.starts.length !== 1) errors.push('tam 1 başlangıç düğümü gerekir: ' + g.starts.length);
+        g.starts.forEach(function (sid) {
+            if (g.byId[sid].next.length < 2) errors.push('başlangıçtan en az 2 dal çıkmalı: ' + sid);
+        });
         var branching = map.nodes.filter(function (n) { return n.next.length > 1; }).length;
         if (branching < 2) errors.push('en az 2 dallanma gerekir: ' + branching);
         ['treasure', 'weapon', 'event'].forEach(function (t) {
@@ -131,5 +158,5 @@
         return errors;
     }
 
-    return { MAX_START_EDGE: MAX_START_EDGE, MIN_START_GAP: MIN_START_GAP, TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, validate: validate };
+    return { MAX_START_EDGE: MAX_START_EDGE, MIN_START_GAP: MIN_START_GAP, TYPES: TYPES, index: index, distances: distances, distance: distance, walk: walk, walkVia: walkVia, preview: preview, validate: validate };
 });

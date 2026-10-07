@@ -10,13 +10,7 @@
     var BOARD_H = 700;
     var STEP_ANIM_MS = 260;
     var NODE_R = 18;
-    var TYPE_STYLE = {
-        normal: { fill: null, icon: '' },
-        start: { fill: '#c9ced6', icon: '🏁' },
-        treasure: { fill: '#ffd24a', icon: '✨' },
-        weapon: { fill: '#ff7a6b', icon: '⚔️' },
-        event: { fill: '#b78cff', icon: '🎁' }
-    };
+    var TYPE_STYLE = C.NODE_TYPES;        // simge/renk tablosu config'te (lejant ile ortak)
     var DIR_ARROWS = ['➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️', '⬆️', '↗️'];
 
     var machine = null;
@@ -35,11 +29,12 @@
     var EMOTE_MS = 2200;
     var lastFq = -1;
     var sig = '';
-    var targeting = null;    // { item, kind, range }
+    var targeting = null;    // { w: silah kimliği, kind, range }
     var logOpen = false;
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
-    var tickTimer = null;
+    var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
+    var ticker = null;
     var TICK_MS = 250;
 
     function listen(target, type, handler, opts) {
@@ -102,10 +97,12 @@
         C.EMOTES.forEach(function (em) {
             emotes.appendChild(btn(em, 'pt-emote small', function () { if (machine) machine.emote(em); }));
         });
-        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes);
+        var legend = el('div', 'pt-legend');
+        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes); side.appendChild(legend);
         main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
-        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(logBtn);
+        var legendBtn = btn('ⓘ', 'pt-legendbtn small', function () { els.legend.classList.toggle('open'); });
+        bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(legendBtn); bar.appendChild(logBtn);
         var logPanel = el('div', 'pt-log hidden');
         var overlay = el('div', 'pt-overlay hidden');
         var toast = el('div', 'pt-toast hidden');
@@ -114,7 +111,7 @@
         root.appendChild(rootEl);
         return {
             root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
-            canvas: canvas, strip: strip, emotes: emotes, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
+            canvas: canvas, strip: strip, emotes: emotes, legend: legend, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
 
@@ -137,7 +134,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.item : -1, logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
         return parts.join(':');
     }
 
@@ -177,7 +174,6 @@
         if (v.afk && v.mode === 'play') cards.push(afkCard());
         if (v.game && v.game.stage === 'mini' && v.mini) cards.push(miniCard(v));
         if (v.mode === 'over' && v.game) cards.push(overCard(v));
-        if (v.mode !== 'lobby' && v.game && v.game.stage === 'swap' && v.cur === v.me.id) cards.push(swapCard(v));
         o.classList.toggle('hidden', !cards.length);
         cards.forEach(function (c) { o.appendChild(c); });
     }
@@ -277,16 +273,18 @@
         return c;
     }
 
-    function swapCard(v) {
-        var p = v.game.P[v.me.id];
-        var c = el('div', 'pt-card pt-swap');
-        c.appendChild(el('strong', 'pt-card-title', 'Envanter dolu'));
-        c.appendChild(el('span', 'pt-hint', 'Yeni: ' + weaponLabel(p.offers[0]) + ' — hangisini bırakmak istersin?'));
-        var row = el('div', 'pt-row');
-        p.w.forEach(function (w, i) { row.appendChild(btn(weaponLabel(w), '', function () { act({ type: 'swap', drop: i }); })); });
-        c.appendChild(row);
-        c.appendChild(btn('Vazgeç (yenisini alma)', 'primary', function () { act({ type: 'swap', drop: -1 }); }));
-        return c;
+    // Envanter sayaç nesnesi {silahId: adet}: sabit silah sırasıyla [[id, adet], ...]
+    function invList(p) {
+        return C.WEAPON_IDS.filter(function (w) { return p.w[w] > 0; }).map(function (w) { return [w, p.w[w]]; });
+    }
+
+    function shortName(n) { return n.length > 6 ? n.slice(0, 6) : n; }
+
+    // "N sıra sonra sen" metni (bekleyenler için; sıra sendeyse boş)
+    function untilText(v) {
+        var n = v.game && v.me ? R.turnsUntil(v.game, v.me.id) : null;
+        if (n === null || n === 0) return '';
+        return n === 1 ? '⏳ Sıradaki sensin' : '⏳ ' + n + ' sıra sonra sen';
     }
 
     function nameOf(v, id) {
@@ -385,7 +383,7 @@
         var mid = '';
         if (g.stage === 'mini') mid = '🎡 Minioyun';
         else if (g.stage === 'over') mid = '🏆 Oyun bitti';
-        else if (v.cur) mid = (v.cur === v.me.id ? 'Sıra sende!' : nameOf(v, v.cur) + ' oynuyor');
+        else if (v.cur) mid = (v.cur === v.me.id ? 'Sıra sende!' : nameOf(v, v.cur) + ' oynuyor' + (untilText(v) ? ' · ' + untilText(v) : ''));
         els.barMid.textContent = mid;
         els.barMid.classList.toggle('mine', v.cur === v.me.id);
         timerEls.push({ node: els.barTime, fn: function (vv) { return vv.game && vv.game.stage !== 'mini' && vv.game.stage !== 'over' ? (vv.paused ? '⏸ ' : '⏱ ') + fmtTime(vv.dlLeft) : ''; } });
@@ -417,39 +415,55 @@
             turnStrip.appendChild(chipT);
         });
         P.appendChild(turnStrip);
+        var detail = null;
         var grid = el('div', 'pt-pgrid');
         var seatOrder = v.seats.map(function (sx) { return sx.i; }).filter(function (id) { return g.P[id]; });
         g.order.forEach(function (id) { if (seatOrder.indexOf(id) < 0) seatOrder.push(id); });
         seatOrder.forEach(function (id) {
             var p = g.P[id];
             var seat = seatById(v, id);
-            var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : ''));
+            var open = openCard === id;
+            var cardEl = el('div', 'pt-pcard' + (id === v.cur ? ' current' : '') + (id === v.me.id ? ' me' : '') + (open ? ' open' : ''));
             cardEl.style.borderColor = g.mode === 'team' ? teamColor(p.t) : '';
+            cardEl.title = p.n;
+            // kompakt iki satır: [avatar ⭐N rozetler] / [ad (ilk 6 harf)] + ❤️ çubuğu; ayrıntı dokununca alttaki panelde açılır
             var top = el('div', 'pt-ptop');
             top.appendChild(el('span', 'pt-pav', p.av));
-            top.appendChild(el('span', 'pt-pname', p.n + (p.bot ? ' 🤖' : '') + (v.leader === id ? '👑' : '')));
+            top.appendChild(el('span', 'pt-pstar', '⭐' + p.s));
+            var status = '';
+            if (seat && !seat.b && !seat.c) status += '📵';
+            if (p.sk > 0) status += '💤';
+            if (p.afk) status += '😴';
+            if (p.shield) status += '🛡️';
+            var until = R.turnsUntil(g, id);
+            if (until > 0) status += '⏳' + until;
+            top.appendChild(el('span', 'pt-pstatus', status));
             cardEl.appendChild(top);
+            cardEl.appendChild(el('div', 'pt-pname', shortName(p.n) + (p.bot ? '🤖' : '') + (v.leader === id ? '👑' : '')));
             var hp = el('div', 'pt-hp');
             var fill = el('i');
             fill.style.width = Math.max(0, p.hp) + '%';
             fill.style.background = p.hp > 60 ? '#37c46b' : (p.hp > 30 ? '#f1b72d' : '#e5484d');
             hp.appendChild(fill);
             cardEl.appendChild(hp);
-            var stats = el('div', 'pt-pstats');
-            stats.appendChild(el('span', '', '❤️' + p.hp + ' ⭐' + p.s));
-            var items = '';
-            p.w.forEach(function (w) { items += C.WEAPONS[w].emoji; });
-            if (p.shield) items += '🛡️';
-            stats.appendChild(el('span', 'pt-items', items || '·'));
-            cardEl.appendChild(stats);
-            var status = '';
-            if (seat && !seat.b && !seat.c) status += '📵';
-            if (p.sk > 0) status += '💤';
-            if (p.afk) status += '😴';
-            if (status) cardEl.appendChild(el('span', 'pt-pstatus', status));
+            if (open) detail = { id: id, p: p, until: until };
+            cardEl.addEventListener('click', function () { openCard = openCard === id ? null : id; sig = ''; render(); });
             grid.appendChild(cardEl);
         });
         P.appendChild(grid);
+        if (detail) {
+            var dp = detail.p;
+            var det = el('div', 'pt-pdetail');
+            det.appendChild(el('div', '', dp.av + ' ' + dp.n + (dp.bot ? ' (bot)' : '') + (g.mode === 'team' ? ' · ' + C.TEAMS[dp.t].name : '')));
+            det.appendChild(el('div', '', '❤️ ' + dp.hp + '   ⭐ ' + dp.s));
+            var items = invList(dp).map(function (e) { return C.WEAPONS[e[0]].emoji + (e[1] > 1 ? '×' + e[1] : ''); }).join(' ');
+            det.appendChild(el('div', '', 'Envanter: ' + (items || 'boş')));
+            if (dp.shield) det.appendChild(el('div', '', '🛡️ kalkan kurulu (' + dp.shl + ' tur)'));
+            else if (dp.scd > 0) det.appendChild(el('div', '', '🛡️ kalkan bekleme: ' + Math.max(0, dp.scd - 1) + ' tur'));
+            if (detail.until === 0) det.appendChild(el('div', '', 'Şu an oynuyor'));
+            else if (detail.until > 0) det.appendChild(el('div', '', '⏳ ' + detail.until + ' sıra sonra oynar'));
+            P.appendChild(det);
+        }
     }
 
     function renderControls(v) {
@@ -461,33 +475,33 @@
         var mine = v.cur === v.me.id;
         if (!mine) {
             Ctl.appendChild(el('span', 'pt-hint pt-wait-text', v.cur ? nameOf(v, v.cur) + ' oynuyor…' : ''));
+            if (untilText(v)) Ctl.appendChild(el('span', 'pt-until', untilText(v)));
             appendWeaponPreview(Ctl, v);
             return;
         }
         var p = g.P[v.me.id];
         if (g.stage === 'roll') {
-            Ctl.appendChild(btn('🎲 Zar At', 'primary big', function () { act({ type: 'roll' }); }));
+            renderRollControls(Ctl, v, p);
         } else if (g.stage === 'choose') {
             Ctl.appendChild(el('span', 'pt-hint', 'Yön seç (' + g.steps + ' adım kaldı) — haritaya da dokunabilirsin:'));
             var row = el('div', 'pt-row');
             var from = graphFor(g.mapId).byId[p.pos];
+            var preview = G.preview(graphFor(g.mapId), p.pos, g.steps);
             g.choices.forEach(function (to) {
                 var n = graphFor(g.mapId).byId[to];
-                row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol'), 'primary', function () { act({ type: 'dir', to: to }); }));
+                var entry = preview.filter(function (pe) { return pe.choice === to; })[0];
+                var mark = entry && entry.path.some(function (id) { return g.chests[id]; }) ? ' 🧰' : '';
+                row.appendChild(btn(arrowFor(from, n) + ' ' + (TYPE_STYLE[n.type].icon || 'Yol') + mark, 'primary', function () { act({ type: 'dir', to: to }); }));
             });
             Ctl.appendChild(row);
-        } else if (g.stage === 'swap') {
-            Ctl.appendChild(el('span', 'pt-hint', 'Envanter dolu: bir seçim yap.'));
-        } else if (g.stage === 'act') {
-            renderActControls(Ctl, v, p);
         }
     }
 
     function appendWeaponPreview(Ctl, v) {
         var p = v.game.P[v.me.id];
-        if (!p || !p.w.length) return;
+        if (!p || !invList(p).length) return;
         var row = el('div', 'pt-row');
-        p.w.forEach(function (w) { row.appendChild(el('span', 'pt-chip', weaponLabel(w))); });
+        invList(p).forEach(function (e) { row.appendChild(el('span', 'pt-chip', weaponLabel(e[0]) + (e[1] > 1 ? ' ×' + e[1] : ''))); });
         Ctl.appendChild(row);
     }
 
@@ -497,46 +511,80 @@
         return DIR_ARROWS[((idx % 8) + 8) % 8];
     }
 
-    function renderActControls(Ctl, v, p) {
+    // Zar aşaması: önce (isteğe bağlı) silah, sonra zar. Menzilde hedef ya da kullanılabilir silah yoksa silah satırı hiç çıkmaz.
+    function renderRollControls(Ctl, v, p) {
         var g = v.game;
         var graph = graphFor(g.mapId);
         var rctx = { g: graph };
-        var opts = R.attackOptions(g, rctx);
-        Ctl.appendChild(el('span', 'pt-hint', targeting ? targetingHint(targeting) : 'İstersen bir silah kullan, sonra turu bitir.'));
-        var row = el('div', 'pt-row');
-        p.w.forEach(function (w, i) {
-            var def = C.WEAPONS[w];
-            var usable = def.kind === 'shield' ? !p.shield : (def.kind === 'area' ? true : opts.some(function (o) { return o.item === i; }));
-            var b = btn(def.emoji + ' ' + def.name, targeting && targeting.item === i ? 'primary' : '', function () {
-                if (def.kind === 'shield') { act({ type: 'use', item: i }); return; }
-                targeting = targeting && targeting.item === i ? null : { item: i, kind: def.kind, range: def.range, w: w };
-                sig = ''; render();
-            }, !usable);
-            row.appendChild(b);
+        var opts = g.atk ? [] : R.attackOptions(g, rctx);
+        var usable = g.atk ? [] : invList(p).filter(function (e) {
+            var def = C.WEAPONS[e[0]];
+            return def.kind === 'shield' ? !(p.shield || p.scd > 0) : opts.some(function (o) { return o.w === e[0]; });
         });
-        Ctl.appendChild(row);
-        if (targeting) {
-            var tray = el('div', 'pt-row');
-            var def2 = C.WEAPONS[targeting.w];
-            if (def2.kind === 'target') {
-                opts.filter(function (o) { return o.item === targeting.item; }).forEach(function (o) {
-                    var d = G.distance(graph, p.pos, g.P[o.target].pos);
-                    tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + ' (−' + def2.dmg[d] + ')', 'danger', function () { targeting = null; act({ type: 'use', item: o.item, target: o.target }); }));
-                });
-            } else {
-                opts.filter(function (o) { return o.item === targeting.item; }).forEach(function (o) {
-                    var names = g.order.filter(function (id) { return g.P[id].pos === o.node; }).map(function (id) { return g.P[id].av; }).join('');
-                    tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', item: o.item, node: o.node }); }));
-                });
+        if (!usable.length) targeting = null;
+        if (usable.length) {
+            Ctl.appendChild(el('span', 'pt-hint', targeting ? targetingHint(targeting) : 'İstersen önce bir silah kullan (turda bir kez), sonra zar at.'));
+            var row = el('div', 'pt-row');
+            usable.forEach(function (e) {
+                var w = e[0];
+                var def = C.WEAPONS[w];
+                row.appendChild(btn(def.emoji + ' ' + def.name + (e[1] > 1 ? ' ×' + e[1] : ''), targeting && targeting.w === w ? 'primary' : '', function () {
+                    if (def.kind === 'shield') { act({ type: 'use', w: w }); return; }
+                    targeting = targeting && targeting.w === w ? null : { kind: def.kind, range: def.range, w: w };
+                    sig = ''; render();
+                }));
+            });
+            Ctl.appendChild(row);
+            if (targeting) {
+                var tray = el('div', 'pt-row');
+                var def2 = C.WEAPONS[targeting.w];
+                if (def2.kind === 'target') {
+                    opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
+                        var d = G.distance(graph, p.pos, g.P[o.target].pos);
+                        var dmgLabel = Number.isFinite(def2.dmg[Math.max(1, d)]) ? ' (−' + def2.dmg[Math.max(1, d)] + ')' : '';
+                        tray.appendChild(btn(g.P[o.target].av + ' ' + g.P[o.target].n + dmgLabel, 'danger', function () { targeting = null; act({ type: 'use', w: o.w, target: o.target }); }));
+                    });
+                } else {
+                    opts.filter(function (o) { return o.w === targeting.w; }).forEach(function (o) {
+                        var names = g.order.filter(function (id) { return g.P[id].pos === o.node; }).map(function (id) { return g.P[id].av; }).join('');
+                        tray.appendChild(btn('📍 ' + names + ' (−' + def2.damage + ')', 'danger', function () { targeting = null; act({ type: 'use', w: o.w, node: o.node }); }));
+                    });
+                }
+                tray.appendChild(btn('İptal', 'small', function () { targeting = null; sig = ''; render(); }));
+                Ctl.appendChild(tray);
             }
-            tray.appendChild(btn('İptal', 'small', function () { targeting = null; sig = ''; render(); }));
-            Ctl.appendChild(tray);
         }
-        Ctl.appendChild(btn('Turu Bitir ➜', 'primary', function () { targeting = null; act({ type: 'end' }); }));
+        Ctl.appendChild(btn('🎲 Zar At', 'primary big', function () { targeting = null; act({ type: 'roll' }); }));
     }
 
     function targetingHint(t) {
         return t.kind === 'area' ? 'Bomba: listeden ya da haritada bir kutucuğa dokun (menzil ' + t.range + ').' : 'Hedef seç (menzil ' + t.range + ').';
+    }
+
+    // Yardım/lejant: içerik koddaki tablolardan (NODE_TYPES, chest simgeleri, EVENTS olasılıkları, WEAPONS) üretilir
+    function buildLegend(box) {
+        box.textContent = '';
+        var data = C.legend();
+        var head = el('div', 'pt-legend-head');
+        head.appendChild(el('strong', '', 'ⓘ Yardım'));
+        head.appendChild(btn('✕', 'small pt-legend-close', function () { box.classList.remove('open'); }));
+        box.appendChild(head);
+        function section(title, rows) {
+            box.appendChild(el('div', 'pt-legend-title', title));
+            rows.forEach(function (r) {
+                var row = el('div', 'pt-legend-row');
+                row.appendChild(el('span', 'pt-legend-icon', r.icon));
+                var txt = el('span', 'pt-legend-text');
+                txt.appendChild(el('b', '', r.name));
+                if (r.desc) txt.appendChild(el('span', '', ' ' + r.desc));
+                row.appendChild(txt);
+                box.appendChild(row);
+            });
+        }
+        section('Kutucuklar', data.nodes);
+        section('Sandıklar', data.chests);
+        section('❓ Olay kutucuğu: ne çıkar?', data.events.map(function (e) { return { icon: e.icon, name: '%' + e.pct, desc: e.label }; }));
+        section('Silahlar (turda bir kez, zardan önce)', data.weapons.map(function (w) { return { icon: w.icon, name: w.name, desc: w.desc }; }));
     }
 
     // Tahtanın altında son 2 olay
@@ -602,8 +650,8 @@
                 cursor[e.id] = e.path[e.path.length - 1];
             } else if (e.t === 'roll') {
                 banner = { text: '🎲 ' + e.v, sub: nameOf(v, e.id), t0: t };
-            } else if (e.t === 'dmg') pop(e.id, '−' + e.n, '#ff5d5d');
-            else if (e.t === 'star') pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a');
+            } else if (e.t === 'dmg') { if (Number.isFinite(e.n)) pop(e.id, '−' + e.n, '#ff5d5d');
+            } else if (e.t === 'star') { if (Number.isFinite(e.n)) pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a'); }
             else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', e.node);
             else if (e.t === 'death') {
                 pop(e.id, '💀', '#ffffff', e.at);
@@ -617,11 +665,12 @@
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
             else if (e.t === 'event') {
                 if (e.e === 'teleport' && e.at !== undefined) {
-                    pop(e.id, '🌀', '#d6c4ff', e.at);
+                    pop(e.id, eventIcon('teleport'), '#d6c4ff', e.at);
                     flyHome(e.id, e.at, e.to, t);
                     cursor[e.id] = e.to;
-                    announce(v, '🌀 ' + plainName(v, e.id) + ' başlangıca ışınlandı', t);
-                } else pop(e.id, '🎁', '#e3c9ff');
+                } else pop(e.id, eventIcon(e.e), '#e3c9ff');
+                var evText = C.eventAnnounce(e.e, plainName(v, e.id));
+                if (evText) announce(v, evText, t);
             } else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
         });
     }
@@ -630,6 +679,11 @@
     function flyHome(id, from, to, t) {
         if (from === undefined || to === undefined || from === to) return;
         anims[id] = { from: from, path: [to], t0: t + 900, dur: 700 };
+    }
+
+    function eventIcon(id) {
+        for (var i = 0; i < C.EVENTS.length; i++) if (C.EVENTS[i].id === id) return C.EVENTS[i].icon;
+        return '❓';
     }
 
     function announce(v, text, t, life) {
@@ -746,6 +800,15 @@
             c.lineWidth = 3;
             c.strokeStyle = map.palette.pathEdge;
             c.stroke();
+            if (n.type === 'start') {          // güvenli bölge halkası
+                c.beginPath();
+                c.arc(n.x, n.y, NODE_R + 9, 0, Math.PI * 2);
+                c.setLineDash([6, 5]);
+                c.strokeStyle = 'rgba(255,255,255,0.8)';
+                c.lineWidth = 3;
+                c.stroke();
+                c.setLineDash([]);
+            }
             if (st.icon) { c.textAlign = 'center'; c.textBaseline = 'middle'; font(c, 17); c.fillText(st.icon, n.x, n.y + 1); }
             if (rangeNodes[n.id]) {
                 c.beginPath(); c.arc(n.x, n.y, NODE_R + 6, 0, Math.PI * 2);
@@ -757,6 +820,8 @@
                 c.strokeStyle = '#ffffff'; c.lineWidth = 5; c.stroke();
             }
         });
+        // yön seçimi önizlemesi (kendi turumda 'choose'): bitiş kutucukları kırmızı, yoldaki sandıklar sarı/beyaz halka, yön okları
+        if (choices && me) drawPreview(c, g, graph, me, t);
         // sandıklar
         Object.keys(g.chests).forEach(function (id) {
             var n = graph.byId[id];
@@ -764,7 +829,7 @@
             c.textAlign = 'center';
             c.textBaseline = 'middle';
             font(c, 34);
-            c.fillText(ch.k === 'star' ? '🧰' : '🎁', n.x, n.y - 26 - Math.abs(Math.sin(t / 380 + n.id)) * 7);
+            c.fillText(C.CHEST_ICONS[ch.k], n.x, n.y - 26 - Math.abs(Math.sin(t / 380 + n.id)) * 7);
             if (ch.k === 'star') { font(c, 15); c.fillText(ch.n === 2 ? '⭐⭐' : '⭐', n.x, n.y - 5); }
             else { font(c, 15); c.fillText('🔫', n.x, n.y - 5); }
         });
@@ -777,8 +842,9 @@
         });
         Object.keys(byNode).forEach(function (key) {
             var list = byNode[key];
+            var atHome = key === 'n' + g.home;
             list.forEach(function (it, i) {
-                var off = list.length > 1 ? { x: (i - (list.length - 1) / 2) * 22, y: (i % 2) * 8 } : { x: 0, y: 0 };
+                var off = fanOffset(i, list.length, atHome);
                 drawToken(c, g, it.id, it.pos.x + off.x, it.pos.y + off.y - 4, v, t);
             });
         });
@@ -829,6 +895,66 @@
                 c.globalAlpha = 1;
             }
         }
+    }
+
+    var previewCache = { key: '', value: [] };
+
+    function previewFor(g, graph, p) {
+        var key = g.rev + ':' + p.pos + ':' + g.steps;
+        if (previewCache.key !== key) previewCache = { key: key, value: G.preview(graph, p.pos, g.steps) };
+        return previewCache.value;
+    }
+
+    function ring(c, n, r, color, width) {
+        c.beginPath();
+        c.arc(n.x, n.y, r, 0, Math.PI * 2);
+        c.strokeStyle = color;
+        c.lineWidth = width;
+        c.stroke();
+    }
+
+    function drawPreview(c, g, graph, me, t) {
+        var from = graph.byId[me.pos];
+        var pv = previewFor(g, graph, me);
+        var pulse = 0.65 + 0.35 * Math.sin(t / 220);
+        pv.forEach(function (entry) {
+            // yön oku: seçilen ilk kenarın ortasında
+            var first = graph.byId[entry.choice];
+            var mx = (from.x + first.x) / 2;
+            var my = (from.y + first.y) / 2;
+            var ang = Math.atan2(first.y - from.y, first.x - from.x);
+            c.save();
+            c.translate(mx, my);
+            c.rotate(ang);
+            c.fillStyle = 'rgba(255,255,255,' + pulse.toFixed(2) + ')';
+            c.strokeStyle = 'rgba(0,0,0,0.55)';
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(11, 0); c.lineTo(-7, -9); c.lineTo(-7, 9); c.closePath();
+            c.stroke();
+            c.fill();
+            c.restore();
+            // yoldaki sandıklar: yıldız sandığı sarı, silah sandığı beyaz halka
+            entry.path.forEach(function (id) {
+                var ch = g.chests[id];
+                if (!ch) return;
+                ring(c, graph.byId[id], NODE_R + 6, ch.k === 'star' ? '#ffd400' : '#ffffff', 4);
+            });
+            // olası bitiş kutucukları: kırmızı halka
+            entry.ends.forEach(function (id) { ring(c, graph.byId[id], NODE_R + 9, '#ff3b3b', 5); });
+        });
+    }
+
+    // Aynı kutucuktaki piyonların dizilişi: başlangıçta (8 kişiye kadar) çakışmayan daire/yelpaze,
+    // diğer kutucuklarda küçük yan yana. n = o kutucuktaki piyon sayısı, i = sıra.
+    function fanOffset(i, n, atHome) {
+        if (n <= 1) return { x: 0, y: 0 };
+        if (!atHome) return { x: (i - (n - 1) / 2) * 22, y: (i % 2) * 8 };
+        if (n <= 3) return { x: (i - (n - 1) / 2) * 38, y: 0 };
+        // elips: 8 piyon için komşu mesafesi ≥ 36 (piyon çapı 34), alt/üst taşma yok (rx 66, ry 44)
+        var scale = n >= 8 ? 1 : 0.85 + 0.15 * (n - 4) / 4;
+        var a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+        return { x: Math.cos(a) * 66 * scale, y: Math.sin(a) * 44 * scale };
     }
 
     function drawToken(c, g, id, x, y, v, t) {
@@ -905,11 +1031,11 @@
         if (view.cur === view.me.id && g.stage === 'choose') {
             var to = nearest(g.choices);
             if (to !== null) act({ type: 'dir', to: to });
-        } else if (view.cur === view.me.id && g.stage === 'act' && targeting && targeting.kind === 'area') {
+        } else if (view.cur === view.me.id && g.stage === 'roll' && !g.atk && targeting && targeting.kind === 'area') {
             var me = g.P[view.me.id];
             var inRange = graph.map.nodes.filter(function (n) { return G.distance(graph, me.pos, n.id) <= targeting.range; }).map(function (n) { return n.id; });
             var node = nearest(inRange);
-            if (node !== null) { var item = targeting.item; targeting = null; act({ type: 'use', item: item, node: node }); }
+            if (node !== null) { var wid = targeting.w; targeting = null; act({ type: 'use', w: wid, node: node }); }
         }
     }
 
@@ -933,7 +1059,7 @@
         els = buildDom();
         view = null;
         sig = '';
-        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; lastFq = -1; targeting = null; logOpen = false;
+        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; openCard = null; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
         var creator = ctx.isHost() && ctx.players.length <= 1;
@@ -942,6 +1068,7 @@
             onChange: onView, startMinigame: PartiMinigame.startMinigame,
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
+        buildLegend(els.legend);
         listen(els.canvas, 'click', onCanvasClick);
         listen(window, 'resize', resize);
         if (typeof ResizeObserver !== 'undefined') {
@@ -949,11 +1076,14 @@
             ro.observe(els.board);
             listeners.push(function () { ro.disconnect(); });
         }
+        // Yalnızca testler/elle deneme için: ?debug=1 ile makineye erişim (durumu elle kurup yayınlamak için)
+        if (/[?&]debug=1(&|$)/.test(location.search)) window.__partiDebug = { machine: machine, tickerMode: function () { return ticker ? ticker.mode() : null; } };
         view = machine.getView();
         raf = requestAnimationFrame(frame);
         // Oyun saati requestAnimationFrame'e bağlı OLMAMALI: arka plandaki sekmede rAF durur, lider botları/süreleri
-        // ilerletemez. Bağımsız bir aralık ve sekme görünür olunca anında tick atar.
-        tickTimer = setInterval(function () { if (machine) machine.tick(); }, TICK_MS);
+        // ilerletemez. Web Worker'dan gelen 250 ms'lik mesajla tick atılır (kurulamazsa setInterval'a düşer);
+        // sekme görünür olunca ve gelen her mesajda da ayrıca tick atılır.
+        ticker = PartiTicker.createTicker(function () { if (machine) machine.tick(); }, TICK_MS);
         listen(document, 'visibilitychange', function () { if (machine && !document.hidden) machine.tick(); });
         render();
     }
@@ -967,8 +1097,8 @@
     function destroy() {
         if (raf !== null) cancelAnimationFrame(raf);
         raf = null;
-        if (tickTimer !== null) clearInterval(tickTimer);
-        tickTimer = null;
+        if (ticker) ticker.stop();
+        ticker = null;
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');

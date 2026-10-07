@@ -257,7 +257,7 @@ test('pt_state boyutu: 8 oyuncu, dolu envanter, 30 günlük satırı ile 20 KB a
     r.m('P0').dispatch({ type: 'start' });
     r.flush();
     const M = r.state('P0');
-    M.g.order.forEach((id) => { M.g.P[id].w = ['bomb', 'shotgun', 'shield']; M.g.P[id].dmg = { P1: 20, P2: 40 }; M.g.P[id].offers = ['bow']; });
+    M.g.order.forEach((id) => { M.g.P[id].w = { bomb: 3, shotgun: 2, shield: 1 }; M.g.P[id].dmg = { P1: 20, P2: 40 }; });
     for (let i = 0; i < 40; i++) M.lg.push('Oyuncu numara 3 silah sandığı açtı: 🔫 Pompalı ' + i);
     M.fx = new Array(40).fill({ t: 'dmg', id: 'P1', by: 'P2', n: 45 });
     r.m('P0').dispatch({ type: 'skipturn' });
@@ -296,7 +296,7 @@ test('botlar sıra kendilerine gelince lider tarafından oynanır; takipçiler g
         const g = r.state('A').g;
         if (g.stage !== 'mini' && g.stage !== 'over' && !r.state('A').S.find((s) => s.i === R.current(g)).b) {
             const act = R.autoAction(g, { g: G.index(maps.pirate) });
-            if (act) r.m(R.current(g)).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+            if (act) r.m(R.current(g)).dispatch(act);
         }
         botMoved = r.state('A').fx.some((e) => e.t === 'roll' && e.id === bot);
     }
@@ -591,11 +591,11 @@ test('günlük: ölüm satırı yazılır', () => {
     const M = r.state('A');
     const ids = M.g.order;
     const g = G.index(maps.pirate);
-    M.g.P[ids[0]].w = ['fist']; M.g.stage = 'act'; M.g.turn = 0;
+    M.g.P[ids[0]].w = { fist: 1 }; M.g.stage = 'roll'; M.g.turn = 0;
     const start = g.starts[0];
     const other = g.byId[start].next[0];
     M.g.P[ids[0]].pos = start; M.g.P[ids[1]].pos = other; M.g.P[ids[1]].hp = 5; M.g.P[ids[1]].s = 4;
-    r.m(ids[0]).dispatch({ type: 'use', item: 0, target: ids[1] });
+    r.m(ids[0]).dispatch({ type: 'use', w: 'fist', target: ids[1] });
     r.flush();
     assert.ok(r.view('B').log.some((l) => /düştü/.test(l)));
 });
@@ -733,11 +733,11 @@ function nonLeaderTurn(r) {
     return curId(r);
 }
 
-test('aşama süreleri: zar 15 sn, yön 8 sn, eylem 15 sn', () => {
-    assert.deepEqual(C.STAGE_MS, { roll: 15000, choose: 8000, act: 15000, swap: 15000 });
+test('aşama süreleri: zar aşaması (silah+zar) 20 sn, yön 8 sn; act/swap yok', () => {
+    assert.deepEqual(C.STAGE_MS, { roll: 20000, choose: 8000 });
     const r = started(2);
     const dl = () => r.view('A').dlLeft;
-    assert.ok(dl() > 14000 && dl() <= 15000, 'zar ' + dl());
+    assert.ok(dl() > 19000 && dl() <= 20000, 'zar ' + dl());
     // yön aşaması: dallanmada
     const M = r.state('A');
     const cur = curId(r);
@@ -817,7 +817,7 @@ async function stepWorld(r, idle) {
     const cur = R.current(g);
     if (cur !== idle) {
         const act = R.autoAction(g, { g: PG });
-        if (act) r.m(cur).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+        if (act) r.m(cur).dispatch(act);
         r.flush();
     }
     r.advance(cur === idle ? 1000 : 200, 200);
@@ -870,13 +870,15 @@ test('AFK: bot devralmışken insanın herhangi geçerli eylemi bayrağı kaldı
     r.state('A').g.P[target].afkc = 2;
     guard = 0;
     while (R.current(r.state('A').g) !== target && guard++ < 500) await stepWorld(r, target);
-    r.advance(C.AFK_BOT_DELAY_MS + 300, 100);       // bot devraldı ve zarı attı
+    r.state('A').g.P[target].pos = PG.start;         // başlangıçtan zar: ilk hamle yön seçtirir (bot iki adımda oynar)
+    r.advance(C.AFK_BOT_DELAY_MS + 100, 50);        // bot devraldı ve zarı attı (yön seçimi 0,9 sn sonra)
     assert.equal(r.state('A').bt, target);
     assert.ok(r.state('A').fx.some((e) => e.t === 'roll' && e.id === target));
     const g = r.state('A').g;
-    // bot zar attıktan sonra kalan aşamayı insan oynar
+    // bot zar attıktan sonra kalan aşamayı (yön) insan oynar
+    assert.equal(R.current(g), target);
     const act = R.autoAction(g, { g: PG });
-    r.m(target).dispatch(act.type === 'swap' ? { type: 'swap', drop: -1 } : act);
+    r.m(target).dispatch(act);
     r.flush();
     assert.equal(r.state('A').g.P[target].afk, false, 'eylem AFK bayrağını kaldırdı');
     assert.equal(r.state('A').bt, null);
@@ -963,4 +965,198 @@ test('emote: kendine ait bot yok; lobi dahil (durum varsa) koltuklu herkes atabi
     assert.equal(r.m('C').emote('😱'), true);
     r.flush();
     assert.equal((r.emotes.A || []).length, 1);
+});
+
+test('pt_state: sonlu olmayan/geçersiz can, yıldız ya da konum içeren durum reddedilir (NaN/undefined arayüze girmez)', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const ids = snap.g.order;
+    const before = r.state('B').rv;
+    const mutate = (fn) => {
+        const m = JSON.parse(JSON.stringify(snap));
+        fn(m.g.P[ids[0]], m.g);
+        m.rv = before + 50;
+        r.m('B').onMessage(m);
+        return r.state('B').rv === before;      // true: reddedildi
+    };
+    assert.ok(mutate((p) => { p.hp = null; }), 'hp null (JSON NaN)');
+    assert.ok(mutate((p) => { p.hp = 'x'; }), 'hp metin');
+    assert.ok(mutate((p) => { p.hp = -5; }), 'hp negatif');
+    assert.ok(mutate((p) => { p.hp = 1e9; }), 'hp çok büyük');
+    assert.ok(mutate((p) => { delete p.hp; }), 'hp yok');
+    assert.ok(mutate((p) => { p.s = 1.5; }), 'yıldız kesirli');
+    assert.ok(mutate((p) => { p.s = -1; }), 'yıldız negatif');
+    assert.ok(mutate((p) => { p.pos = 'a'; }), 'konum metin');
+    assert.ok(mutate((p) => { p.home = null; }), 'home null');
+    assert.ok(mutate((p, g) => { g.rd = 0; }), 'tur 0');
+    assert.ok(mutate((p, g) => { g.order = ['__proto__']; }), 'order prototip anahtarı');
+    // geçerli durum kabul edilir
+    const ok = JSON.parse(JSON.stringify(snap));
+    ok.rv = before + 60;
+    r.m('B').onMessage(ok);
+    assert.equal(r.state('B').rv, before + 60);
+});
+
+test('eski anlık görüntü göçü: haritada olmayan konumlar (eski 8 başlangıç) ortak başlangıca taşınır, g.home eklenir', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const gr = G.index(maps.pirate);
+    delete snap.g.home;                                   // eski biçim: üst düzey home yok
+    snap.g.order.forEach((id, i) => { snap.g.P[id].pos = 39 + i; snap.g.P[id].home = 40 + i; });   // eski başlangıç kimlikleri
+    snap.rv += 40;
+    r.m('B').onMessage(snap);
+    const g = r.state('B').g;
+    assert.equal(g.home, gr.start);
+    g.order.forEach((id) => { assert.equal(g.P[id].pos, gr.start); assert.equal(g.P[id].home, gr.start); });
+    // geçerli konumlar olduğu gibi kalır
+    const snap2 = lastState(r, 'A');
+    delete snap2.g.home;
+    const first = snap2.g.order[0];
+    snap2.g.P[first].pos = 5;
+    snap2.rv += 80;
+    r.m('B').onMessage(snap2);
+    assert.equal(r.state('B').g.P[first].pos, 5);
+    assert.equal(r.state('B').g.P[first].home, gr.start);
+});
+
+
+// ---- sınırsız envanter, rv (çift dokunuş koruması), eski biçim göçü ----
+test('eski anlık görüntü göçü: silah dizisi sayaç nesnesine çevrilir, seçim bekleyen öğeler atılır', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const first = snap.g.order[0];
+    snap.g.P[first].w = ['fist', 'bow', 'bow'];
+    snap.g.P[first].offers = ['bomb'];
+    snap.rv += 90;
+    r.m('B').onMessage(snap);
+    const p = r.state('B').g.P[first];
+    assert.deepEqual(p.w, { fist: 1, bow: 2 });
+    assert.equal(p.offers, undefined);
+    // geçersiz sayaç (bilinmeyen silah / 0 / kesir) reddedilir
+    const bad = lastState(r, 'A');
+    bad.g.P[first].w = { laser: 1 };
+    bad.rv += 120;
+    const before = r.state('B').rv;
+    r.m('B').onMessage(bad);
+    assert.equal(r.state('B').rv, before, 'bilinmeyen silah reddedildi');
+    const bad2 = lastState(r, 'A');
+    bad2.g.P[first].w = { fist: 0.5 };
+    bad2.rv += 130;
+    r.m('B').onMessage(bad2);
+    assert.equal(r.state('B').rv, before);
+});
+
+test('rv: takipçi eylemi oyun revizyonunu taşır; eski revizyondaki (çift dokunuş) eylem reddedilir, rv yoksa eski davranış', () => {
+    const r = started(3);
+    const cur = curId(r);
+    const follower = cur === 'A' ? 'B' : cur;           // eylemi yapan takipçi olsun
+    // lider olmayan oyuncunun sırası gelene kadar ilerle
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    const who = curId(r);
+    assert.notEqual(who, 'A');
+    const g0 = r.state('A').g;
+    r.m(who).dispatch({ type: 'roll' });
+    const sent = r.sent.filter((x) => x.msg.type === 'pt_action' && x.from === who).pop().msg;
+    assert.equal(sent.a.rv, g0.rev, 'eylem rv taşır');
+    r.flush();
+    const g1 = r.state('A').g;
+    assert.ok(g1.rev > g0.rev, 'kabul edilen eylem rev artırdı');
+    // aynı (eski) rv ile ikinci eylem reddedilir
+    const rvBefore = r.state('A').rv;
+    r.m('A').onMessage({ type: 'pt_action', id: who, a: { type: 'roll', rv: g0.rev } });
+    assert.equal(r.state('A').rv, rvBefore, 'eski rv reddedildi');
+    // rv yok: eski davranış (kural geçerli mi diye bakar)
+    r.m('A').onMessage({ type: 'pt_action', id: who, a: { type: 'roll' } });
+    assert.ok(true);
+});
+
+test('rv: lobi/yayın artışları meşru eylemi engellemez (oyun revizyonu ayrı sayılır)', () => {
+    const r = started(3);
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    const who = curId(r);
+    r.m('A').emote && r.m('A').emote('😂');
+    // alakasız yayınlar (log/kopma/oyuncu katılımı) M.rv'yi artırır ama oyun revizyonunu değil
+    r.join('Z', 'Gelen'); r.flush();
+    r.advance(2000, 100);
+    const rvGame = r.state('A').g.rev;
+    r.m(who).dispatch({ type: 'roll' });
+    r.flush();
+    assert.ok(r.state('A').g.rev > rvGame, 'eylem rv eşleşmesine rağmen kabul edildi');
+});
+
+test('envanter sınırları: tür başına ≤3, toplam ≤6, kalkan ≤1; fazlası kaçtı olayı', () => {
+    const rr = room();
+    rr.join('A', 'A'); rr.join('B', 'B');
+    rr.m('A').dispatch({ type: 'start' }); rr.flush();
+    const M = rr.state('A');
+    const id = M.g.order[0];
+    const g = G.index(maps.pirate);
+    M.g.P[id].w = { fist: 3, bow: 3 };
+    const e1 = R.reduce(M.g, { type: 'forceskip' }, { g });
+    assert.ok(e1.ok);
+    // kurallar köprüsü: giveItem doğrudan değil, ödül yoluyla: minioyun 1. ödülü silah verir (toplam dolu -> kaçar)
+    const st = JSON.parse(JSON.stringify(M.g));
+    st.stage = 'mini'; st.turn = st.order.length;
+    st.P[id].w = { fist: 3, bow: 3 };
+    const res = R.applyMinigame(st, { ranking: [[id]] }, { g });
+    assert.ok(res.events.some((e) => e.t === 'lost' && e.id === id));
+    assert.equal(Object.values(res.state.P[id].w).reduce((a, b) => a + b, 0), 6);
+});
+
+test('eski anlık görüntü göçü: "act"/"swap" aşamaları "roll"a çevrilir, atk eklenir', () => {
+    for (const oldStage of ['act', 'swap']) {
+        const r = started(2);
+        const snap = lastState(r, 'A');
+        snap.g.stage = oldStage;
+        delete snap.g.atk;
+        snap.rv += 200 + (oldStage === 'act' ? 0 : 50);
+        r.m('B').onMessage(snap);
+        assert.equal(r.state('B').g.stage, 'roll', oldStage);
+        assert.equal(r.state('B').g.atk, 0);
+    }
+});
+
+test('silah kullanmak turu bitirmez: takipçi use gönderir, ardından zar atar (rv her adımda güncel)', () => {
+    const r = started(3);
+    let guard = 0;
+    while (curId(r) === 'A' && guard++ < 10) r.m('A').dispatch({ type: 'skipturn' });
+    const who = curId(r);
+    const g = G.index(maps.pirate);
+    const M = r.state('A');
+    const other = M.g.order.find((id) => id !== who);
+    // who ile other aynı kutucukta (başlangıç dışı), who'da yumruk
+    const node = maps.pirate.nodes.find((n) => n.type === 'normal').id;
+    M.g.P[who].pos = node; M.g.P[other].pos = node; M.g.P[who].w = { fist: 1 };
+    r.m(who).dispatch({ type: 'use', w: 'fist', target: other });
+    r.flush();
+    assert.equal(curId(r), who, 'tur bitmedi');
+    assert.equal(r.state('A').g.atk, 1);
+    r.m(who).dispatch({ type: 'roll' });
+    r.flush();
+    assert.notEqual(curId(r), who);
+});
+
+test('eski anlık görüntü göçü: kurulu kalkan 3 tur sayacı alır, bekleme 0; geçersiz sayaç reddedilir', () => {
+    const r = started(2);
+    const snap = lastState(r, 'A');
+    const id = snap.g.order[0];
+    snap.g.P[id].shield = true;
+    delete snap.g.P[id].shl; delete snap.g.P[id].scd;
+    snap.rv += 300;
+    r.m('B').onMessage(snap);
+    assert.equal(r.state('B').g.P[id].shl, C.SHIELD_TURNS);
+    assert.equal(r.state('B').g.P[id].scd, 0);
+    const bad = lastState(r, 'A');
+    bad.g.P[id].shl = -2;
+    bad.rv += 400;
+    const before = r.state('B').rv;
+    r.m('B').onMessage(bad);
+    assert.equal(r.state('B').rv, before);
+    const bad2 = lastState(r, 'A');
+    bad2.g.P[id].scd = 'x';
+    bad2.rv += 500;
+    r.m('B').onMessage(bad2);
+    assert.equal(r.state('B').rv, before);
 });

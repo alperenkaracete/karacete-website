@@ -106,6 +106,59 @@
         // ---- Doğrulama (gelen anlık görüntü) ----
         function isInt(x, lo, hi) { return typeof x === 'number' && isFinite(x) && Math.floor(x) === x && x >= lo && x <= hi; }
 
+        // Oyun durumu doğrulaması: sonlu can/yıldız/konum (NaN/undefined arayüze ve kurallara hiç girmesin).
+        function validGame(g) {
+            if (!g || typeof g !== 'object' || !g.P || typeof g.P !== 'object' || !Array.isArray(g.order)) return false;
+            if (g.order.length > C.MAX_PLAYERS) return false;
+            if (!isInt(g.rd, 1, 1e6) || !isInt(g.turn, -1, 64) || !isInt(g.goal, 1, 100)) return false;
+            for (var i = 0; i < g.order.length; i++) {
+                var id = g.order[i];
+                if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(g.P, id)) return false;
+                var p = g.P[id];
+                if (!p || typeof p !== 'object') return false;
+                if (typeof p.hp !== 'number' || !isFinite(p.hp) || p.hp < 0 || p.hp > C.MAX_HP) return false;
+                if (!isInt(p.s, 0, 999) || !isInt(p.pos, 0, 999) || !isInt(p.home, 0, 999)) return false;
+                if (p.shl !== undefined && !isInt(p.shl, 0, 9)) return false;
+                if (p.scd !== undefined && !isInt(p.scd, 0, 9)) return false;
+                if (!Array.isArray(p.w) && (!p.w || typeof p.w !== 'object')) return false;
+                if (!Array.isArray(p.w)) {
+                    var wk = Object.keys(p.w);
+                    for (var k = 0; k < wk.length; k++) if (!C.WEAPONS[wk[k]] || !isInt(p.w[wk[k]], 1, 9)) return false;
+                }
+            }
+            return true;
+        }
+
+        // Eski anlık görüntüler: haritada olmayan konumlar (eski 8 başlangıç düğümü) ortak başlangıca taşınır;
+        // üst düzey `home` (ortak başlangıç) yoksa eklenir ve oyuncuların `home` alanı buna eşitlenir.
+        function migrateGame(g, mapId) {
+            var gr = graphFor(mapId);
+            var start = gr.start;
+            if (g.home === undefined) {
+                g.home = start;
+                g.order.forEach(function (id) { g.P[id].home = start; });
+            }
+            // eski aşamalar: 'act' (yürüyüş sonrası) ve 'swap' (envanter seçimi) kalktı -> 'roll'
+            if (g.stage === 'act' || g.stage === 'swap') g.stage = 'roll';
+            if (g.atk === undefined) g.atk = 0;
+            g.order.forEach(function (id) {
+                var p = g.P[id];
+                // eski biçim: silah dizisi ['fist','bow'] -> sayaç nesnesi {fist:1, bow:1}; seçim bekleyen öğeler atılır
+                if (Array.isArray(p.w)) {
+                    var counts = {};
+                    p.w.forEach(function (w) { if (C.WEAPONS[w]) counts[w] = (counts[w] || 0) + 1; });
+                    p.w = counts;
+                }
+                delete p.offers;
+                // kalkan sayaçları: eski görüntülerde yok -> kurulu kalkan 3 tur, bekleme 0
+                if (p.shield && !Number.isFinite(p.shl)) p.shl = C.SHIELD_TURNS;
+                if (!Number.isFinite(p.shl)) p.shl = 0;
+                if (!Number.isFinite(p.scd)) p.scd = 0;
+                if (!Object.prototype.hasOwnProperty.call(gr.byId, p.pos)) p.pos = start;
+                if (!Object.prototype.hasOwnProperty.call(gr.byId, p.home)) p.home = start;
+            });
+        }
+
         function unpack(msg) {
             if (!msg || !isInt(msg.ep, 0, 1e6) || !isInt(msg.rv, 0, 1e9)) return null;
             if (typeof msg.ld !== 'string' || PHASES.indexOf(msg.ph) < 0) return null;
@@ -125,7 +178,8 @@
             // Lider, görüntüdeki koltuklarda oturan bir İNSAN olmalı. Bağlı olup olmadığına bakılmaz: alıcı
             // player_disconnect/player_joined'u henüz işlememiş olabilir ve yeni liderin ilk yayını reddedilirdi.
             if (!seats.some(function (x) { return x.i === msg.ld && !x.b; })) return null;
-            if (msg.g !== null && (typeof msg.g !== 'object' || !msg.g.P || !Array.isArray(msg.g.order))) return null;
+            if (msg.g !== null && !validGame(msg.g)) return null;
+            if (msg.g !== null) migrateGame(msg.g, msg.cf.mp);
             if (!isInt(msg.dl, 0, 3600000)) return null;
             var mn = null;
             if (msg.mn) {
@@ -154,21 +208,20 @@
                 case 'star': return e.why === 'chest' || e.why === 'mini' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
                 case 'item': return nm(e.id) + ' aldı: ' + wn(e.w);
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
-                case 'swap': return nm(e.id) + ' ' + wn(e.old) + ' yerine ' + wn(e.w) + ' aldı';
-                case 'decline': return nm(e.id) + ' ' + wn(e.w) + ' almadı';
                 case 'attack': return nm(e.id) + ' ' + wn(e.w) + ' kullandı' + (e.target ? ' → ' + nm(e.target) : '');
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
-                case 'block': return nm(e.id) + ' kalkanla korundu';
+                case 'block': return nm(e.id) + ' kalkanla korundu (kalkan kırıldı)';
+                case 'shieldend': return nm(e.id) + ' kalkanının süresi doldu';
                 case 'shield': return nm(e.id) + ' 🛡️ kalkanını kurdu';
                 case 'frenzy': return '🔥 SON ÇILGINLIK! Sandıklar ×2';
                 case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;
                 case 'death': return nm(e.id) + ' düştü' + (e.lost ? ' (' + e.lost + ' ⭐ kaybetti)' : '');
                 case 'skip': return nm(e.id) + ' turunu atladı';
-                case 'lost': return nm(e.id) + ' envanteri dolu: ' + wn(e.w) + ' kaçtı';
+                case 'lost': return nm(e.id) + ' envanteri doldu: ' + wn(e.w) + ' kaçtı';
                 case 'event': {
                     var found = null;
                     C.EVENTS.forEach(function (ev) { if (ev.id === e.e) found = ev; });
-                    return '🎁 ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
+                    return (found ? found.icon : '❓') + ' ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
                 }
                 case 'reward': return null;          // minioyun sonucu tek satırda yazılır (resultLine)
                 default: return null;
@@ -207,7 +260,7 @@
             if (M.bt !== cur) M.bt = null;
             if (seat && !seat.b && !seat.c) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.DISCONNECT_BOT_MS);
             else if (seat && !seat.b && P && P.afk) M.dlAt = t + (M.bt === cur ? C.BOT_DELAY_MS : C.AFK_BOT_DELAY_MS);
-            else { M.bt = null; M.dlAt = t + (C.STAGE_MS[g.stage] || C.STAGE_MS.act); }
+            else { M.bt = null; M.dlAt = t + (C.STAGE_MS[g.stage] || C.STAGE_MS.roll); }
         }
 
         function afterRules(r, quiet) {
@@ -447,12 +500,13 @@
                 if (M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === by) setDeadline();
                 return true;
             }
-            var allowed = { roll: 1, dir: 1, swap: 1, use: 1, end: 1 };
+            var allowed = { roll: 1, dir: 1, use: 1 };
             if (!allowed[a.type]) return false;
             var act = { type: a.type, by: by };
             if (a.type === 'dir') act.to = a.to;
-            if (a.type === 'swap') act.drop = a.drop;
-            if (a.type === 'use') { act.item = a.item; act.target = a.target; act.node = a.node; }
+            if (a.type === 'use') { act.w = a.w; act.target = a.target; act.node = a.node; }
+            // çift dokunuş koruması: eylem, istemcinin gördüğü oyun revizyonunu (rv) taşır; eşleşmezse reddedilir (rv yoksa eski davranış)
+            if (a.rv !== undefined && a.rv !== M.g.rev) return false;
             // duraklatılmış (kopan oyuncu bekleniyor) turda yalnızca o oyuncu dışındakiler işlem yapamaz zaten
             var r = R.reduce(M.g, act, rctx());
             if (!r.ok) return false;
@@ -494,6 +548,8 @@
         function dispatch(a) {
             if (!M) return false;
             if (isLeader()) return handle(a, me.id);
+            // oyun eylemleri istemcinin gördüğü oyun revizyonunu taşır (lider eski görünümden gelen çift dokunuşu reddeder)
+            if (M.g && M.ph === 'play' && (a.type === 'roll' || a.type === 'dir' || a.type === 'use')) a = Object.assign({}, a, { rv: M.g.rev });
             send({ type: 'pt_action', id: me.id, a: a });
             return true;
         }
@@ -771,7 +827,7 @@
 
         return {
             onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
-            _state: function () { return M; }, _gone: function () { return gone; }
+            _state: function () { return M; }, _gone: function () { return gone; }, _publish: function () { if (M && isLeader()) publish(); }
         };
     }
 
