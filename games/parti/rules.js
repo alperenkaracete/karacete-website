@@ -50,7 +50,7 @@
             goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
             rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
-            order: [], P: {}, chests: {}, mini: null, winner: null
+            order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
         };
         var rng = Rng(state, ctx);
         var seats = rng.shuffle(opts.seats);
@@ -150,13 +150,31 @@
         }
     }
 
+    // Biri (takımda takımın toplamı) hedefe FRENZY_STARS_LEFT yıldız ya da daha az kala 'Son Çılgınlık' başlar
+    // (bir kez tetiklenir, oyun boyunca sürer): sandık sayıları ×2.
+    function nearGoal(state) {
+        var left = C.FRENZY_STARS_LEFT;
+        if (state.mode === 'team') {
+            return state.order.some(function (id) {
+                var total = teamStars(state, state.P[id].t);
+                return total < state.goal && state.goal - total <= left;
+            });
+        }
+        return state.order.some(function (id) { var s = state.P[id].s; return s < state.goal && state.goal - s <= left; });
+    }
+
     function spawnChests(state, g, rng, evts) {
+        if (!state.fr && nearGoal(state)) {
+            state.fr = 1;
+            evts.push({ t: 'frenzy' });
+        }
+        var mult = state.fr ? 2 : 1;
         var free = g.map.nodes.filter(function (n) { return n.type === 'treasure' && !state.chests[n.id]; }).map(function (n) { return n.id; });
         free = rng.shuffle(free);
         var wanted = [];
         var i;
-        for (i = 0; i < C.starChests(state.order.length); i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
-        for (i = 0; i < C.CHESTS.weapon; i++) wanted.push({ k: 'weapon' });
+        for (i = 0; i < C.starChests(state.order.length) * mult; i++) wanted.push({ k: 'star', n: rng.f() < C.CHESTS.bigStarChance ? 2 : 1 });
+        for (i = 0; i < C.CHESTS.weapon * mult; i++) wanted.push({ k: 'weapon' });
         wanted.forEach(function (chest, k) {
             if (k >= free.length) return;
             state.chests[free[k]] = chest;

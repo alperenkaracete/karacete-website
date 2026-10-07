@@ -16,7 +16,7 @@ function room(options) {
     const queue = [];
     const roomPlayers = [];
     const api = {
-        nodes, get clock() { return clock; },
+        nodes, emotes: {}, get clock() { return clock; },
         sent: [],
         m(id) { return nodes[id].m; },
         state(id) { return nodes[id].m._state(); },
@@ -37,7 +37,7 @@ function room(options) {
                 }
             });
             node.m = Machine.create({
-                me: { id, name }, players: node.players, now: () => clock, rand, maps, creator: first && !options.noCreator,
+                me: { id, name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: first && !options.noCreator,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -71,7 +71,7 @@ function room(options) {
                 if (o.id !== id && o.online) queue.push({ to: o.id, msg: { type: 'player_joined', id, name: old.name } });
             });
             node.m = Machine.create({
-                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
+                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -912,4 +912,55 @@ test('otomatik hedef: başlarken oyuncu sayısına göre 15 / 10; elle seçilen 
     back.m('A').dispatch({ type: 'cfg', goal: 0 });
     back.flush();
     assert.equal(back.view('B').cfg.gl, 0);
+});
+
+
+// ---- madde 10a: emoji tepkileri ----
+test('emote: gönderilir, alıcıda görünür, oyun durumuna yazılmaz; saniyede en çok 1', () => {
+    const r = started(3);
+    const rv = r.state('A').rv;
+    const g0 = JSON.stringify(r.state('A').g);
+    assert.equal(r.m('B').emote('😂'), true);
+    r.flush();
+    assert.deepEqual(r.emotes.A, [{ id: 'B', e: '😂' }]);
+    assert.deepEqual(r.emotes.C, [{ id: 'B', e: '😂' }]);
+    assert.deepEqual(r.emotes.B, [{ id: 'B', e: '😂' }], 'gönderen kendi balonunu da görür');
+    assert.equal(r.state('A').rv, rv, 'durum yayını yok');
+    assert.equal(JSON.stringify(r.state('A').g), g0);
+    // hız sınırı (gönderende)
+    assert.equal(r.m('B').emote('👏'), false);
+    r.flush();
+    assert.equal(r.emotes.A.length, 1);
+    r.advance(C.EMOTE_GAP_MS + 50, 100);
+    assert.equal(r.m('B').emote('👏'), true);
+    r.flush();
+    assert.equal(r.emotes.A.length, 2);
+    assert.ok(!r.sent.some((x) => x.msg.type === 'pt_state' && x.msg.emote));
+});
+
+test('emote: alıcıda da hız sınırı; beyaz liste dışı emoji, koltuksuz/bot gönderen, sahte from yok sayılır', () => {
+    const r = started(3);
+    const n0 = (r.emotes.A || []).length;
+    r.m('A').onMessage({ type: 'pt_emote', id: 'B', e: '😂' });
+    r.m('A').onMessage({ type: 'pt_emote', id: 'B', e: '😂' });                 // hemen tekrar: reddedilir
+    assert.equal(r.emotes.A.length - n0, 1);
+    for (const bad of ['💩', '<img>', '', null, 5, '😂😂', { x: 1 }]) r.m('A').onMessage({ type: 'pt_emote', id: 'C', e: bad });
+    assert.equal(r.emotes.A.length - n0, 1, 'geçersiz emoji');
+    r.m('A').onMessage({ type: 'pt_emote', id: 'Z', e: '🤡' });                  // koltuksuz
+    r.m('A').onMessage({ type: 'pt_emote', id: 5, e: '🤡' });
+    r.m('A').onMessage({ type: 'pt_emote', id: 'C', from: 'B', e: '🤡' });       // from uyuşmuyor
+    assert.equal(r.emotes.A.length - n0, 1);
+    r.m('A').onMessage({ type: 'pt_emote', id: 'C', e: '🤡' });
+    assert.equal(r.emotes.A.length - n0, 2, 'geçerli emote: farklı gönderen, ayrı sayaç');
+    // izleyici emote atamaz
+    r.join('S', 'Izleyici'); r.flush();
+    assert.equal(r.m('S').emote('😱'), false);
+    assert.equal(r.m('B').emote('💩'), false);
+});
+
+test('emote: kendine ait bot yok; lobi dahil (durum varsa) koltuklu herkes atabilir', () => {
+    const r = lobby3();
+    assert.equal(r.m('C').emote('😱'), true);
+    r.flush();
+    assert.equal((r.emotes.A || []).length, 1);
 });

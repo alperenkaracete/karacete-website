@@ -27,6 +27,8 @@
         var rand = opts.rand || Math.random;
         var startMinigame = opts.startMinigame || Mini.startMinigame;
         var onChange = opts.onChange || function () {};
+        var onEmote = opts.onEmote || function () {};
+        var lastEmote = {};           // gönderen -> son emote zamanı (hız sınırı; durumda tutulmaz)
         var graphs = {};
 
         var M = null;                 // en son durum (lider: otoriter; diğerleri: son anlık görüntü)
@@ -158,6 +160,7 @@
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
                 case 'block': return nm(e.id) + ' kalkanla korundu';
                 case 'shield': return nm(e.id) + ' 🛡️ kalkanını kurdu';
+                case 'frenzy': return '🔥 SON ÇILGINLIK! Sandıklar ×2';
                 case 'heal': return e.n > 0 ? nm(e.id) + ' +' + e.n + ' ❤️ iyileşti' : null;
                 case 'death': return nm(e.id) + ' düştü' + (e.lost ? ' (' + e.lost + ' ⭐ kaybetti)' : '');
                 case 'skip': return nm(e.id) + ' turunu atladı';
@@ -474,6 +477,19 @@
             return changed;
         }
 
+        // Emoji tepkisi: oyun durumuna yazılmaz, yalnızca iletilir (saniyede en çok 1)
+        function emote(e) {
+            if (!M || C.EMOTES.indexOf(e) < 0) return false;
+            var s = seatOf(me.id);
+            if (!s || s.b) return false;
+            var tn = now();
+            if (lastEmote[me.id] !== undefined && tn - lastEmote[me.id] < C.EMOTE_GAP_MS) return false;
+            lastEmote[me.id] = tn;
+            send({ type: 'pt_emote', id: me.id, e: e });
+            onEmote({ id: me.id, e: e });
+            return true;
+        }
+
         // ---- Kullanıcı eylemi ----
         function dispatch(a) {
             if (!M) return false;
@@ -528,6 +544,18 @@
                     resyncOk = false;
                     Object.keys(gone).forEach(function (id) { if (M.S.some(function (s) { return s.i === id && s.c; })) delete gone[id]; });
                     emit();
+                    return;
+                }
+                case 'pt_emote': {
+                    // Yalnızca koltuktaki insanlardan, beyaz listedeki emojiler, gönderen başına en çok saniyede 1; durum değişmez.
+                    if (!M || typeof data.id !== 'string' || data.id === me.id) return;
+                    if (data.from !== undefined && data.from !== data.id) return;
+                    var es = seatOf(data.id);
+                    if (!es || es.b || C.EMOTES.indexOf(data.e) < 0) return;
+                    var tn = now();
+                    if (lastEmote[data.id] !== undefined && tn - lastEmote[data.id] < C.EMOTE_GAP_MS) return;
+                    lastEmote[data.id] = tn;
+                    onEmote({ id: data.id, e: data.e });
                     return;
                 }
                 case 'pt_sync': {
@@ -742,7 +770,7 @@
         else { send({ type: 'pt_sync', id: me.id }); lastSyncAt = now(); }
 
         return {
-            onMessage: onMessage, tick: tick, dispatch: dispatch, getView: getView,
+            onMessage: onMessage, tick: tick, dispatch: dispatch, emote: emote, getView: getView,
             _state: function () { return M; }, _gone: function () { return gone; }
         };
     }

@@ -31,6 +31,8 @@
     var particles = [];
     var banner = null;
     var announcer = null;
+    var bubbles = {};         // oyuncu -> { e, t0 } emoji tepkisi baloncuğu
+    var EMOTE_MS = 2200;
     var lastFq = -1;
     var sig = '';
     var targeting = null;    // { item, kind, range }
@@ -96,7 +98,11 @@
         var side = el('div', 'pt-side');
         var players = el('div', 'pt-players');
         var controls = el('div', 'pt-controls');
-        side.appendChild(players); side.appendChild(controls);
+        var emotes = el('div', 'pt-emotes');
+        C.EMOTES.forEach(function (em) {
+            emotes.appendChild(btn(em, 'pt-emote small', function () { if (machine) machine.emote(em); }));
+        });
+        side.appendChild(players); side.appendChild(controls); side.appendChild(emotes);
         main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
         bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(logBtn);
@@ -108,7 +114,7 @@
         root.appendChild(rootEl);
         return {
             root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
-            canvas: canvas, strip: strip, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
+            canvas: canvas, strip: strip, emotes: emotes, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
 
@@ -146,6 +152,7 @@
         var inGame = v.mode === 'play' || v.mode === 'over' || v.mode === 'spectator';
         els.lobby.classList.toggle('hidden', v.mode !== 'lobby');
         els.game.classList.toggle('hidden', !(inGame && v.game));
+        els.emotes.classList.toggle('hidden', !(v.mode === 'play' || v.mode === 'over'));
         if (v.mode === 'lobby') renderLobby(v);
         if (inGame && v.game) {
             renderBar(v);
@@ -603,6 +610,8 @@
                 flyHome(e.id, e.at, e.to, t);
                 cursor[e.id] = e.to;
                 announce(v, '💀 ' + (e.killer ? nameOf(v, e.killer) + ', ' + accusative(plainName(v, e.id)) + ' düşürdü' : plainName(v, e.id) + ' düştü') + (e.lost ? ' (−' + e.lost + '⭐)' : ''), t);
+            } else if (e.t === 'frenzy') {
+                announce(v, '🔥 SON ÇILGINLIK! Sandıklar ×2', t, 3000);
             } else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
             else if (e.t === 'heal' && e.n > 0) pop(e.id, '+' + e.n + '❤️', '#8dffb0');
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
@@ -623,8 +632,8 @@
         anims[id] = { from: from, path: [to], t0: t + 900, dur: 700 };
     }
 
-    function announce(v, text, t) {
-        announcer = { text: text, t0: t, life: 1500 };
+    function announce(v, text, t, life) {
+        announcer = { text: text, t0: t, life: life || 1500 };
     }
 
     function plainName(v, id) {
@@ -695,6 +704,14 @@
         var map = graph.map;
         drawBackground(c, map, t);
         drawDecor(c, map, t);
+        if (g.fr) {            // Son Çılgınlık: kızıl, nabız gibi atan bir ton
+            c.fillStyle = 'rgba(255, 50, 20,' + (0.12 + 0.07 * Math.sin(t / 380)).toFixed(3) + ')';
+            c.fillRect(0, 0, BOARD_W, BOARD_H);
+            c.textAlign = 'left';
+            c.textBaseline = 'top';
+            font(c, 26);
+            c.fillText('🔥 Son Çılgınlık', 14, 14);
+        }
         // yollar
         c.lineCap = 'round';
         map.nodes.forEach(function (n) {
@@ -836,6 +853,27 @@
         c.fillRect(x - 15, y + bob + 19, 30 * Math.max(0, p.hp) / 100, 5);
         if (p.shield) { font(c, 14); c.fillText('🛡️', x + 16, y + bob - 14); }
         if (p.sk > 0) { font(c, 14); c.fillText('💤', x - 16, y + bob - 14); }
+        var bub = bubbles[id];
+        if (bub) {
+            var bk = (t - bub.t0) / EMOTE_MS;
+            if (bk >= 1) delete bubbles[id];
+            else {
+                var rise = Math.min(1, bk * 6) * 10;
+                c.globalAlpha = bk < 0.8 ? 1 : 1 - (bk - 0.8) / 0.2;
+                c.fillStyle = '#ffffff';
+                c.beginPath();
+                c.arc(x, y + bob - 42 - rise, 19, 0, Math.PI * 2);
+                c.fill();
+                c.beginPath();
+                c.moveTo(x - 6, y + bob - 26 - rise); c.lineTo(x + 6, y + bob - 26 - rise); c.lineTo(x, y + bob - 18 - rise);
+                c.fill();
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                font(c, 26);
+                c.fillText(bub.e, x, y + bob - 41 - rise);
+                c.globalAlpha = 1;
+            }
+        }
     }
 
     function draw(t) {
@@ -895,13 +933,14 @@
         els = buildDom();
         view = null;
         sig = '';
-        shown = {}; anims = {}; particles = []; banner = null; announcer = null; lastFq = -1; targeting = null; logOpen = false;
+        shown = {}; anims = {}; particles = []; banner = null; announcer = null; bubbles = {}; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
         var creator = ctx.isHost() && ctx.players.length <= 1;
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
-            onChange: onView, startMinigame: PartiMinigame.startMinigame
+            onChange: onView, startMinigame: PartiMinigame.startMinigame,
+            onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         listen(els.canvas, 'click', onCanvasClick);
         listen(window, 'resize', resize);

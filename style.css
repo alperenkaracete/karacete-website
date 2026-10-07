@@ -1139,3 +1139,6 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 
 .pt-afk { border: 2px solid #ffb400; }
 .pt-afk .pt-btn { width: 100%; }
+
+.pt-emotes { display: flex; gap: 6px; justify-content: center; }
+.pt-emote { font-size: 20px; min-width: 44px; min-height: 40px; padding: 2px 8px; }

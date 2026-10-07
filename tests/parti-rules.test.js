@@ -689,3 +689,48 @@ test('minioyun 3.\'lük ödülü: kalkan değil +25 can (üst sınır 100), olay
     t.P.p2.hp = 50;
     assert.equal(R.applyMinigame(t, { ranking: [['p0', 'p1'], ['p2']] }, ctx()).state.P.p2.hp, 75);
 });
+
+// ---- madde 10b: Son Çılgınlık ----
+test('Son Çılgınlık: biri hedefe ≤3 ⭐ kalınca tur başında sandıklar ×2, olay yayımlanır; bir kez tetiklenir, sonra da ×2 sürer', () => {
+    const s = miniState(2, { goal: 10 });
+    s.P.p0.s = 7;                                    // 10 - 7 = 3 kala
+    let r = R.applyMinigame(s, { ranking: [['p1'], ['p0']] }, ctx());
+    assert.equal(r.state.fr, 1);
+    assert.equal(r.events.filter((e) => e.t === 'frenzy').length, 1);
+    let chests = Object.values(r.state.chests);
+    assert.equal(chests.filter((c) => c.k === 'star').length, 2 * (Math.ceil(2 / 2) + 1), 'yıldız sandığı ×2');
+    assert.equal(chests.filter((c) => c.k === 'weapon').length, 2, 'silah sandığı ×2');
+    // sonraki tur: tekrar olay yok ama ×2 sürer
+    const next = JSON.parse(JSON.stringify(r.state));
+    next.chests = {};
+    next.stage = 'mini'; next.turn = next.order.length;
+    r = R.applyMinigame(next, { ranking: [['p0'], ['p1']] }, ctx());
+    assert.equal(r.events.filter((e) => e.t === 'frenzy').length, 0, 'bir kez');
+    assert.equal(Object.values(r.state.chests).filter((c) => c.k === 'star').length, 4);
+});
+
+test('Son Çılgınlık: 4 kala tetiklenmez; hedefe ulaşmış/geçmiş oyuncu için değil; 6 oyuncuda sandıklar hazine noktalarına sığar', () => {
+    const far = miniState(2, { goal: 10 });
+    far.P.p0.s = 6;                                  // 4 kala
+    const r = R.applyMinigame(far, { ranking: [['p1'], ['p0']] }, ctx());
+    assert.equal(r.state.fr, 0);
+    assert.ok(!r.events.some((e) => e.t === 'frenzy'));
+    assert.equal(Object.values(r.state.chests).filter((c) => c.k === 'star').length, 2);
+    // yalnız ×2 hazine noktasını aşmaz
+    const big = miniState(8, { goal: 10 });
+    big.P.p3.s = 8;
+    const rb = R.applyMinigame(big, { ranking: [['p0'], ['p1']] }, ctx());
+    assert.equal(rb.state.fr, 1);
+    const treasure = pirate.nodes.filter((n) => n.type === 'treasure').length;
+    assert.ok(Object.keys(rb.state.chests).length <= treasure);
+});
+
+test('Son Çılgınlık: takım modunda takımın toplamı hedefe ≤3 kalınca tetiklenir', () => {
+    const s = miniState(4, { mode: 'team', goal: 10 });
+    s.P.p0.s = 4; s.P.p1.s = 3;                      // takım 0: 7 → 3 kala
+    const r = R.applyMinigame(s, { ranking: [['p2'], ['p3']] }, ctx());
+    assert.equal(r.state.fr, 1);
+    const t = miniState(4, { mode: 'team', goal: 10 });
+    t.P.p0.s = 6;                                    // tek oyuncu 6 ama takım 6 → 4 kala
+    assert.equal(R.applyMinigame(t, { ranking: [['p2'], ['p3']] }, ctx()).state.fr, 0);
+});

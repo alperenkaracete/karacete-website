@@ -51,6 +51,9 @@
         DEFAULT_GOAL: 0,
         // yıldız sandığı sayısı = ceil(oyuncu/2)+1; silah sandığı sabit 1
         starChests: function (players) { return Math.ceil(players / 2) + 1; },
+        FRENZY_STARS_LEFT: 3,        // biri hedefe bu kadar yıldız kala 'Son Çılgınlık': sandıklar ×2
+        EMOTES: ['😂', '😱', '👏', '🤡'],
+        EMOTE_GAP_MS: 1000,          // oyuncu başına en az bu kadar aralık
         DEATH_LOSS_MAX: 3,           // ölümde en çok bu kadar yıldız kaybedilir (min(3, floor(yıldız/2)))
         CHESTS: { weapon: 1, bigStarChance: 0.3 },
         DICE: 6,

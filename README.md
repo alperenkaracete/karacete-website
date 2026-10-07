@@ -159,6 +159,10 @@ yön rastgele, silah kullanılmaz). Süreler aşamaya göre: zar 15 sn, yön 8 s
 - **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
 - **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.).
   Envanter doluysa silah ödülü kaybolur.
+- **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
+  ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
+- **Emoji tepkileri:** 😂 😱 👏 🤡 (`pt_emote {id, e}`): oyun durumuna yazılmaz, yalnızca iletilir; oyuncu başına en çok saniyede 1;
+  tahtada oyuncunun jetonunun üstünde ~2 sn baloncuk olarak görünür. Yalnızca koltuktaki insanlar atabilir.
 - **Silah düşme ağırlıkları:** yumruk 1, pompalı 3, yay 3, bomba 2, kalkan 2.
 - **Lobi:** lider mod (Bireysel / 2'şerli Takım), harita (Korsan Adası / Uzay), hedef ⭐ (5-25), bot ekleme/çıkarma ve oyuncu
   atma işlemlerini yapar; herkes benzersiz bir emoji avatar seçer. Takım modunda sayı çift ve her takımda tam 2 kişi olmalıdır.
