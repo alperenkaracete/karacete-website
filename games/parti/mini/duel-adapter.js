@@ -125,7 +125,9 @@
             var def = null;
             var inst = 0;
             var resetNo = 0;                 // yapılan sıfırlama sayısı (bayat hello'ları ayıklamak için)
-            var oppSeen = 0;                 // rakipten alıp oyuna ilettiğim mesaj sayısı
+            var oppSeen = 0;                 // rakipten alıp oyuna ilettiğim (tekrarsız) mesaj sayısı
+            var sentSeq = 0;                 // gönderdiğim oyun mesajı sayacı (ps)
+            var oppKeys = {};                // iletilmiş rakip mesajları (aynı mesaj hem doğrudan hem catchup ile gelebilir)
             var seenInst = {};               // lider: oyuncu -> bu sıfırlamadaki örnek kimliği
 
             function finish(ranking, reason) {
@@ -197,6 +199,8 @@
             function startGame() {
                 inst = Math.floor(Math.random() * 1e9) + 1;
                 oppSeen = 0;
+                oppKeys = {};
+                sentSeq = 0;
                 var defs = spec.defs || (GLOBAL.Games && GLOBAL.Games.get(spec.game));
                 if (!defs) throw new Error('oyun tanımı yok: ' + spec.game);
                 var ctx = {
@@ -207,6 +211,7 @@
                     isHost: function () { return meId === players[0]; },
                     send: function (m) {
                         if (torn || !m || typeof m.type !== 'string' || /_rematch$/.test(m.type)) return;
+                        m = Object.assign({}, m, { ps: ++sentSeq });
                         if (referee) referee.feed(meId, m);
                         net.send(m);
                         check();
@@ -216,6 +221,16 @@
                 def = defs;
                 def.init(ctx);
                 hello();
+            }
+
+            // Rakip mesajı ilk kez mi geliyor? (yinelenenler oyuna iletilmez, sayılmaz)
+            function takeOpp(m) {
+                // gönderen her mesaja artan `ps` ekler (aynı hamle tekrarlanabilir: Dörtlü'de aynı sütun); yoksa içerik
+                var key = typeof m.ps === 'number' ? 'p' + m.ps : JSON.stringify(m);
+                if (oppKeys[key]) return false;
+                oppKeys[key] = true;
+                oppSeen++;
+                return true;
             }
 
             function hello() {
@@ -261,8 +276,8 @@
                     if (!isPlayer || from !== spec.leader || m.to !== meId || !Array.isArray(m.msgs) || !def) return;
                     m.msgs.forEach(function (e) {
                         if (e && e.f === oppId && e.m && typeof e.m.type === 'string' && !/_rematch$/.test(e.m.type)) {
+                            if (!takeOpp(e.m)) return;
                             if (referee) referee.feed(oppId, e.m);
-                            oppSeen++;
                             def.onMessage(e.m);
                         }
                     });
@@ -280,7 +295,7 @@
                 }
                 if (typeof m.type !== 'string' || /_rematch$/.test(m.type) || players.indexOf(from) < 0) return;
                 if (referee && from !== meId) { referee.feed(from, m); check(); }
-                if (isPlayer && from === oppId && def) { oppSeen++; def.onMessage(m); }
+                if (isPlayer && from === oppId && def && takeOpp(m)) def.onMessage(m);
             }
 
             function teardown() {
