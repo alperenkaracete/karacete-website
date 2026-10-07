@@ -67,7 +67,11 @@
     let rafId = null;
     let timers = new Set();
     let cleanups = [];
-    let joystickDir = null;
+    let joystick = null;           // games/bomberman-joystick.js denetleyicisi (yön + 150 ms adım sınırı + histerezis)
+    let touchActive = false;       // parmak joystick'te: sentetik mouse olayları yok sayılır
+    let lastTouchAt = 0;
+    const JOYSTICK_LOOP_MS = 50;   // tek hareket döngüsü; adım aralığını denetleyici (150 ms) belirler
+    const SYNTHETIC_MOUSE_MS = 700;
     let moveInterval = null;
 
     function later(fn, ms) {
@@ -608,22 +612,18 @@
         else if (direction === 'right') movePlayer(GRID_SIZE, 0);
     }
 
-    function startJoystickMovement(dir) {
-        if (joystickDir === dir) return;
-        joystickDir = dir;
-
-        if (moveInterval) clearInterval(moveInterval);
-
-        handleMobileInput(dir);
-
+    // Tek hareket döngüsü: yön değişince yeniden kurulmaz; adım kararı denetleyicide (en az 150 ms aralık).
+    function ensureJoystickLoop() {
+        if (moveInterval) return;
         moveInterval = setInterval(() => {
-            handleMobileInput(joystickDir);
-        }, 150);
+            const dir = joystick && joystick.tick(performance.now());
+            if (dir) handleMobileInput(dir);
+        }, JOYSTICK_LOOP_MS);
     }
 
     function stopJoystickMovement() {
         const joystickKnob = document.getElementById('joystick-knob');
-        joystickDir = null;
+        if (joystick) joystick.release();
         if (moveInterval) {
             clearInterval(moveInterval);
             moveInterval = null;
@@ -667,19 +667,21 @@
 
         if (joystickKnob) joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
 
-        if (distance < 15) {
+        // Ölü bölge (15 px), histerezis ve adım sınırı denetleyicide
+        const decision = joystick.update(dx, dy, performance.now());
+        if (decision.dir === null) {
             stopJoystickMovement();
             return;
         }
-
-        if (Math.abs(dx) > Math.abs(dy)) {
-            if (dx > 0) startJoystickMovement('right');
-            else startJoystickMovement('left');
-        } else {
-            if (dy > 0) startJoystickMovement('down');
-            else startJoystickMovement('up');
-        }
+        ensureJoystickLoop();
+        if (decision.step) handleMobileInput(decision.dir);
     }
+
+    function onJoystickTouchStart(e) { touchActive = true; lastTouchAt = Date.now(); handleJoystickDrag(e); }
+    function onJoystickTouchMove(e) { lastTouchAt = Date.now(); handleJoystickDrag(e); }
+    function onJoystickTouchEnd() { touchActive = false; lastTouchAt = Date.now(); stopJoystickMovement(); }
+    // Dokunma varken ve hemen sonrasında gelen sentetik mouse olayları ikinci bir akış başlatmasın
+    function mouseIgnored() { return touchActive || Date.now() - lastTouchAt < SYNTHETIC_MOUSE_MS; }
 
     function bindControls() {
         listen(document, 'keydown', onKeyDown);
@@ -692,15 +694,17 @@
             resetIfAllVoted();
         });
 
+        joystick = BombermanJoystick.create({ stepMs: 150, deadZone: 15, hysteresis: 1.3 });
+        touchActive = false;
         const joystickBase = document.getElementById('joystick-base');
-        listen(joystickBase, 'touchstart', handleJoystickDrag, { passive: false });
-        listen(joystickBase, 'touchmove', handleJoystickDrag, { passive: false });
-        listen(joystickBase, 'touchend', stopJoystickMovement);
-        listen(joystickBase, 'touchcancel', stopJoystickMovement);
+        listen(joystickBase, 'touchstart', onJoystickTouchStart, { passive: false });
+        listen(joystickBase, 'touchmove', onJoystickTouchMove, { passive: false });
+        listen(joystickBase, 'touchend', onJoystickTouchEnd);
+        listen(joystickBase, 'touchcancel', onJoystickTouchEnd);
 
         let isDragging = false;
-        listen(joystickBase, 'mousedown', (e) => { isDragging = true; handleJoystickDrag(e); });
-        listen(document, 'mousemove', (e) => { if (isDragging) handleJoystickDrag(e); });
+        listen(joystickBase, 'mousedown', (e) => { if (mouseIgnored()) return; isDragging = true; handleJoystickDrag(e); });
+        listen(document, 'mousemove', (e) => { if (isDragging && !mouseIgnored()) handleJoystickDrag(e); });
         listen(document, 'mouseup', () => { if (isDragging) { isDragging = false; stopJoystickMovement(); } });
 
         const btnBomb = document.getElementById('btn-bomb');
@@ -743,7 +747,7 @@
         restartVotes = new Set();
         scores = {};
         gameEnded = false;
-        joystickDir = null;
+        if (joystick) joystick.release();
 
         updateScoreboardUI();
         canvas.style.display = 'block';
