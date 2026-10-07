@@ -17,6 +17,8 @@ const RULES = {
     catdog: { prefix: 'cd', rules: CDR }
 };
 const gp = G.index(maps.pirate);
+const N = C.DUEL_CATDOG_SHOTS;
+const MAXHOLD = C.duelHold('catdog', 'limit');   // en uzun sonuç tutma
 
 function room(seed, extra) {
     let clock = 1000;
@@ -198,10 +200,12 @@ for (const game of ['xox', 'connect4']) {
             assert.deepEqual(mn.rk, [[first], [second]]);
             assert.ok(r.state('A').rv > rvBefore);
             ['A', 'B', 'C'].forEach((id) => assert.deepEqual(r.view(id).mini.ranking, [[first], [second]], id + ' sonucu gördü'));
-            assert.equal(r.nodes[spectator].root.textContent, '', 'oturum kapandı, kök temiz');
+            assert.ok(r.nodes[spectator].root.textContent.includes('oynuyor'), 'sonuç tutma süresince oturum açık');
+            r.advance(C.duelHold(game, 'win') + 300, 50);
+            assert.equal(r.nodes[spectator].root.textContent, '', 'hold bitince oturum kapandı, kök temiz');
 
             const rd = r.state('A').g.rd;
-            r.advance(C.MINI_HOLD_MS + 500);
+            r.advance(MAXHOLD + C.MINI_HOLD_MS + 500);
             assert.equal(r.state('A').g.rd, rd + 1, 'yeni tur başladı');
             assert.deepEqual(ranksFromFx(r).constructor, Object);
             assert.equal(r.view('C').mini, null);
@@ -217,7 +221,7 @@ test('düello: ödül dağılımı kazanan 1., kaybeden 2.; düello dışındaki
     await r.settle();
     const before = JSON.parse(JSON.stringify(r.state('A').g.P));
     const hpBefore = { [spectator]: before[spectator].hp };
-    r.advance(C.MINI_HOLD_MS + 200, 50);
+    r.advance(MAXHOLD + C.MINI_HOLD_MS + 200, 50);
     const fx = r.state('A').fx.filter((e) => e.t === 'reward');
     const rank = {};
     fx.forEach((e) => { rank[e.id] = e.rank; });
@@ -234,7 +238,7 @@ test('düello: beraberlikte [[a,b]] ikisi de 1.', async () => {
     await r.settle();
     const spectator = ['A', 'B', 'C'].find((id) => !r.state('A').mn.pl.includes(id));
     assert.deepEqual(r.state('A').mn.rk, [r.state('A').mn.pl.slice()]);
-    r.advance(C.MINI_HOLD_MS + 200, 50);
+    r.advance(MAXHOLD + C.MINI_HOLD_MS + 200, 50);
     const rank = {};
     r.state('A').fx.filter((e) => e.t === 'reward').forEach((e) => { rank[e.id] = e.rank; });
     assert.deepEqual(rank, { [first]: 1, [second]: 1 });
@@ -249,7 +253,7 @@ test('düello: zaman aşımı (90 sn) — bitmemiş oyun beraberlik, oyun takıl
     await r.settle();
     assert.ok(r.state('A').mn.applyAt, 'süre dolunca lider sonucu uyguladı');
     assert.deepEqual(r.state('A').mn.rk, [pl.slice()]);
-    r.advance(C.MINI_HOLD_MS + 200);
+    r.advance(MAXHOLD + C.MINI_HOLD_MS + 200);
     assert.equal(r.view('A').mini, null);
 });
 
@@ -400,7 +404,7 @@ test('?mini bayrağı: lider makinede her tur belirtilen düello oyunu seçilir 
     }
 });
 
-// ---- Kedi - Köpek: 3 atış sınırı ----
+// ---- Kedi - Köpek: 5 atış sınırı ----
 // Sıradaki oyuncu için (isabet / iki taraf da hasarsız) bir atış bulup oynatır.
 function cdShoot(r, wantHit) {
     const [p1, p2] = r.state('A').mn.pl;
@@ -422,50 +426,107 @@ function cdShoot(r, wantHit) {
 }
 
 for (const leaderPlays of [true, false]) {
-    test(`düello akışı (catdog, lider ${leaderPlays ? 'oynuyor' : 'izliyor'}): 3 atış sonunda kalan cana göre sonuç, "Atışlar bitti" katmanı`, async () => {
+    test(`düello akışı (catdog, lider ${leaderPlays ? 'oynuyor' : 'izliyor'}): 5 atış sonunda kalan cana göre sonuç, "Atışlar bitti" katmanı`, async () => {
         const r = await reachDuel('catdog', leaderPlays);
         const pl = r.state('A').mn.pl;
         const spectator = ['A', 'B', 'C'].find((id) => !pl.includes(id));
         pl.forEach((id) => assert.equal(r.lastDefs(id).view.phase, 'playing'));
         const { first, second } = mover(r);
         cdShoot(r, true);                                  // ilk başlayan isabet ettirir
-        for (let i = 0; i < 4; i++) cdShoot(r, false);
+        for (let i = 0; i < 2 * N - 2; i++) cdShoot(r, false);
         await r.settle();
         assert.ok(!r.state('A').mn.applyAt, '5 atıştan sonra sonuç yok');
         pl.forEach((id) => assert.ok(!r.nodes[id].root.textContent.includes('Atışlar bitti')));
-        cdShoot(r, false);                                 // 6. atış
+        cdShoot(r, false);                                 // son atış
         await r.settle();
         const mn = r.state('A').mn;
         assert.deepEqual(mn.rk, [[first], [second]]);
         assert.ok(mn.applyAt);
-        assert.equal(r.nodes[spectator].root.textContent, '', 'oturum kapandı');
-        r.advance(C.MINI_HOLD_MS + 200, 50);
+        assert.ok(r.nodes[spectator].root.textContent.includes('oynuyor'), 'hold süresince açık');
+        r.advance(C.duelHold('catdog', 'limit') + 300, 50);
+        assert.equal(r.nodes[spectator].root.textContent, '', 'hold bitince kapandı');
+        r.advance(MAXHOLD + C.MINI_HOLD_MS + 200, 50);
         const rank = {};
         r.state('A').fx.filter((e) => e.t === 'reward').forEach((e) => { rank[e.id] = e.rank; });
         assert.deepEqual(rank, { [first]: 1, [second]: 2 });
     });
 }
 
-test('düello (catdog): atış sınırı dolunca oyuncular katmanı görür, izleyici görmez', async () => {
+const strip = (r, id) => r.nodes[id].root.children.find((c) => c.className === 'pt-duel-strip');
+const locked = (r, id) => r.nodes[id].root.classList.set.has('pt-duel-locked');
+
+test('düello (catdog): atış sınırı dolunca tahta kilitlenir, şerit 2,5 sn sonra belirir (oyun alanı kapanmaz); izleyici şerit görmez', async () => {
     const r = await reachDuel('catdog', true);
     const pl = r.state('A').mn.pl;
     const spectator = ['A', 'B', 'C'].find((id) => !pl.includes(id));
-    // sınır dolar dolmaz sonuç uygulanır ve oturum kapanır: katmanı sınırın dolduğu atıştan hemen sonra yakala
-    const seen = {};
-    pl.forEach((id) => {
-        const root = r.nodes[id].root;
-        const orig = root.appendChild.bind(root);
-        root.appendChild = (c) => { if (c.className === 'pt-duel-limit') seen[id] = c.textContent; return orig(c); };
-    });
-    for (let i = 0; i < 6; i++) cdShoot(r, false);
+    for (let i = 0; i < 2 * N; i++) cdShoot(r, false);
     await r.settle();
-    assert.deepEqual(Object.keys(seen).sort(), pl.slice().sort());
-    pl.forEach((id) => assert.ok(seen[id].includes('Atışlar bitti')));
-    assert.ok(!r.nodes[spectator].root.textContent.includes('Atışlar bitti'));
+    pl.forEach((id) => { assert.ok(locked(r, id), id + ' tahtası kilitli'); assert.equal(strip(r, id), undefined, 'şerit henüz yok'); });
+    assert.ok(r.state('A').mn.applyAt, 'sonuç hakemden hemen kaydedildi');
+    r.advance(C.DUEL_LIMIT_STRIP_MS - 200, 50);
+    pl.forEach((id) => assert.equal(strip(r, id), undefined));
+    r.advance(400, 50);
+    pl.forEach((id) => {
+        assert.ok(strip(r, id), id + ' şeridi belirdi');
+        assert.ok(strip(r, id).textContent.includes('Atışlar bitti'));
+        assert.ok(strip(r, id).textContent.includes('Beraberlik'), 'iki taraf da ıskaladı');
+        assert.ok(r.lastDefs(id).view, 'oyun alanı hâlâ duruyor');
+    });
+    assert.equal(strip(r, spectator), undefined);
     assert.deepEqual(r.state('A').mn.rk, [pl.slice()], 'iki taraf da ıskaladı: beraberlik');
 });
 
-test('düello (catdog): heal atış sayılmaz; 90 sn dolunca kalan cana göre sonuç', async () => {
+test('düello: sonuç belli olunca şerit "🏆 X kazandı" gösterir, oyun hold süresince açık kalır, sonra kapanır', async () => {
+    const r = await reachDuel('xox', false);
+    const pl = r.state('A').mn.pl;
+    const { first } = mover(r);
+    playToWin(r, 'xox');
+    await r.settle();
+    const hold = C.duelHold('xox', 'win');
+    pl.forEach((id) => {
+        assert.ok(locked(r, id));
+        assert.ok(strip(r, id).textContent.includes('🏆'), 'kazanan şeridi');
+        assert.ok(strip(r, id).textContent.includes(r.nodes[first].name));
+    });
+    assert.equal(r.state('A').mn.applyAt - r.clock, hold + C.MINI_HOLD_MS, 'sıralama kartı hold sonrası MINI_HOLD_MS kalır');
+    r.advance(hold - 200, 50);
+    pl.forEach((id) => assert.ok(r.lastDefs(id).view && r.nodes[id].root.textContent !== ''));
+    r.advance(400, 50);
+    pl.forEach((id) => assert.equal(r.nodes[id].root.textContent, '', 'hold bitti, oyun kapandı'));
+    assert.equal(r.view('A').mini.live, false);
+    assert.ok(r.state('A').mn.applyAt, 'sonuç yerinde');
+});
+
+test('düello: hold sırasında lider devri sonucu kaybettirmez ve oyunu yeniden başlatmaz', async () => {
+    const r = await reachDuel('connect4', false);
+    const [p1, p2] = r.state('A').mn.pl;
+    playToWin(r, 'connect4');
+    await r.settle();
+    const rk = JSON.parse(JSON.stringify(r.state('A').mn.rk));
+    const defsBefore = r.nodes[p1].defs.length;
+    r.leave('A');                                    // lider (izleyici) hold sırasında düştü
+    await r.settle();
+    assert.equal(r.state('B').ld, 'B');
+    assert.deepEqual(r.state('B').mn.rk, rk, 'sonuç korundu');
+    assert.ok(r.state('B').mn.applyAt);
+    assert.equal(r.nodes[p1].defs.length, defsBefore, 'oturum yeniden başlamadı');
+    r.advance(MAXHOLD + C.MINI_HOLD_MS + 500);
+    assert.equal(r.state('B').mn, null, 'yeni lider sonucu uyguladı');
+    void p2;
+});
+
+test('düello (catdog): süre 120 sn (xox/connect4 90 sn)', async () => {
+    assert.equal(C.duelMs('catdog'), 120000);
+    assert.equal(C.duelMs('xox'), 90000);
+    const r = await reachDuel('catdog', false);
+    r.advance(C.duelMs('catdog') - 1000);
+    assert.ok(!r.state('A').mn.applyAt, '119 sn: sonuç yok');
+    r.advance(1500);
+    await r.settle();
+    assert.ok(r.state('A').mn.applyAt, '120 sn: kısmi/beraberlik sonucu');
+});
+
+test('düello (catdog): heal atış sayılmaz; süre (120 sn) dolunca kalan cana göre sonuç', async () => {
     const r = await reachDuel('catdog', false);
     const [p1, p2] = r.state('A').mn.pl;
     const { first, second } = mover(r);
@@ -475,9 +536,9 @@ test('düello (catdog): heal atış sayılmaz; 90 sn dolunca kalan cana göre so
     cdShoot(r, false);                                     // ikinci başlayan
     cdShoot(r, true);                                      // ilk başlayan isabet (1. atış)
     cdShoot(r, false);
-    r.advance(C.DUEL_MS + 500);
+    r.advance(C.duelMs("catdog") + 500);
     await r.settle();
-    assert.ok(r.state('A').mn.applyAt, 'süre dolunca uygulandı (3 atış bitmedi)');
+    assert.ok(r.state('A').mn.applyAt, 'süre dolunca uygulandı (5 atış bitmedi)');
     assert.deepEqual(r.state('A').mn.rk, [[first], [second]], 'kalan can fazla olan önde');
     assert.ok([p1, p2].includes(first));
 });

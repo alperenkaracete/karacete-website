@@ -213,7 +213,7 @@ startMinigame({
   type: 'ffa' | 'duel', players: [id, ...], seed,          // zorunlu (eski çağrı biçimi aynen çalışır)
   game, me: {id, name}, isLeader, leader, root,            // düello: oyun, bu istemci, lider mi / kimliği, çizim düğümü
   net: { send(m), on(fn(from, m)) -> off }, names,         // ağ: makine pt_mg zarfına sarar, gönderen kimliğini ekler
-  deadlineMs, signal                                        // toplam süre (düello 90 sn); AbortSignal
+  deadlineMs, signal                                        // toplam süre (düello 90 sn, Kedi-Köpek 120 sn); AbortSignal
 }) -> Promise<{ ranking: [[id, ...], [id, ...], ...] }>
 ```
 
@@ -229,14 +229,21 @@ startMinigame({
   (`players` = ikili, `isHost()` = ilk oyuncu, `send` = pt_mg, `leave` boş); `core/duel*.js` ve `*-rules.js` değişmez. Rövanş kapalıdır
   (düğmeler gizli, `*_rematch` mesajları gitmez/iletilmez). Gelen oyun mesajı yalnız düellodaki rakipten iletilir. Düelloda olmayanlar
   "A ve B XOX oynuyor" + kalan süre kartını görür. Sonucu **lider** `mini/duel-referee.js` ile hesaplar (oyuncular da olsa izleyici de olsa).
-- **Kedi - Köpek atış kuralı:** oyuncu başına en çok **3 atış**. Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
+- **Kedi - Köpek atış kuralı:** oyuncu başına en çok **5 atış** (`DUEL_CATDOG_SHOTS`). Sayılan eylem `cd_shot` (`kind: 'shot'`, rüzgârsız/çift atış/büyük patlama
   gibi güçlendirmeli atışlar dahil — hasar verirler); `cd_heal` (can iksiri) atış **sayılmaz** (kural modülünde başka eylem türü yoktur).
-  Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 3 atışı bitince ya da 90 sn dolunca **kalan cana**
+  Biri canı 0'a düşürürse oyun normal biter (kazanan 1., kaybeden 2.). İki oyuncunun da 5 atışı bitince ya da 120 sn dolunca **kalan cana**
   göre sıralanır; can eşitse beraberlik `[[a, b]]`. Sınır hakemdedir (`catdog-rules.js` değişmez; `duel-adapter.js` `GAMES.catdog` +
-  `partial`): kural modülü sınırı bilmediği için oyunun kendi arayüzü bitmez; dolunca oyuncuların ekranına "Atışlar bitti" katmanı biner
-  (rövanş/lobiye dön zaten gizli), sonucu hakem belirler — animasyon (rAF) arka plan sekmesinde dursa da sonuç etkilenmez. Kenar durum:
-  heal sırayı tüketir; 3 atışını bitiren oyuncunun sırası rakip bitirmeden gelebilir, bu fazladan atışlar uygulanır ama sayılmaz.
-- **Süre/takılma:** 90 sn dolunca bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
+  `partial`): kural modülü sınırı bilmediği için oyunun kendi arayüzü bitmez. Sınır dolunca tahta **kilitlenir** (görünür kalır, fazladan atış
+  girmez) ve oyunu kapatmayan **ince üst şerit** "Atışlar bitti, sonuç hesaplanıyor…" en az 2,5 sn sonra belirir (son atış animasyonu bitsin;
+  oyun dosyası gözlenemediği için sabit gecikme) — sonuç hakemden anında kaydedilir, yalnız gösterim gecikmelidir. Animasyon (rAF) arka plan
+  sekmesinde dursa da sonuç etkilenmez. Kenar durum: heal sırayı tüketir; 5 atışını bitiren oyuncunun sırası rakip bitirmeden gelebilir, bu
+  fazladan atışlar uygulanır ama sayılmaz.
+- **Sonuç tutma (hold):** sonuç belli olunca (kazanma/beraberlik/süre/atış sınırı) lider sonucu **hemen** kaydeder (lider devri/zaman aşımı
+  sonucu kaybettirmez) ve oyuncular şeritte "🏆 A kazandı" / "🤝 Beraberlik"i, oyunun kendi kazanan çizgisini ve son hamleyi görür. Oyun ekranı
+  `DUEL_RESULT_HOLD_MS` kadar açık kalır (XOX 2,5 sn, Dörtlü 3 sn, Kedi-Köpek 4 sn; atış sınırında +2,5 sn şerit gecikmesi), ardından
+  sıralama kartı `MINI_HOLD_MS` (5 sn) görünür. Kopma (forfeit) ve sigorta sonuçlarında hold yoktur. Hold sırasında lider devri oturumu yeniden
+  başlatmaz. Lider sonucu `{k:'result'}` yüküyle oyunculara bildirir (yalnız lider kabul edilir).
+- **Süre/takılma:** süre dolunca (XOX/Dörtlü 90 sn, Kedi-Köpek 120 sn: `DUEL_MS_BY_GAME`) bitmemiş oyun beraberlik sayılır. Lider ayrıca `süre + 5 sn` içinde sonuç gelmezse çark sonucunu uygular.
   Düello oyuncusu koparsa lider **25 sn** bekler; dönmezse kopan kaybeder (`[[kalan], [kopan]]`), dönerse aynı sayfa kaldığı yerden sürer
   (lider kaçan rakip hamlelerini `catchup` ile yeniden gönderir). Sayfası yenilenen oyuncu için durum kurtarılamaz: düello iki tarafta
   `reset` ile baştan başlar (süre dolmadan).

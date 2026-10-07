@@ -7,6 +7,7 @@ const Adapter = require('../games/parti/mini/duel-adapter.js');
 
 const CD = Adapter.GAMES.catdog;
 const CDR = CD.rules();
+const N = CD.limit.shots;
 
 function cdMatch(options) {
     options = options || {};
@@ -50,14 +51,14 @@ function cdMatch(options) {
     return api;
 }
 
-test('Kedi-Köpek hakemi: her oyuncunun 3 atışı bitince oyun biter; kalan cana göre sıralanır', () => {
+test('Kedi-Köpek hakemi: her oyuncunun N atışı bitince oyun biter; kalan cana göre sıralanır', () => {
     let limitRanking = null;
     const t = cdMatch({ onLimit: (r) => { limitRanking = r; } });
     t.start();
     assert.equal(t.referee.phase(), 'playing');
     t.shoot(true);                                   // A (ilk başlayan) isabet ettirir, kalanı ıskalar
-    for (let i = 0; i < 4; i++) { t.shoot(false); assert.equal(t.referee.outcome(), null, 'henüz bitmedi'); }
-    assert.deepEqual(t.referee.shots(), [3, 2]);
+    for (let i = 0; i < 2 * N - 2; i++) { t.shoot(false); assert.equal(t.referee.outcome(), null, 'henüz bitmedi'); }
+    assert.deepEqual(t.referee.shots(), [N, N - 1]);
     t.shoot(false);
     assert.deepEqual(t.referee.outcome(), { ranking: [['A'], ['B']], reason: 'limit' });
     assert.deepEqual(limitRanking, [['A'], ['B']]);
@@ -66,7 +67,7 @@ test('Kedi-Köpek hakemi: her oyuncunun 3 atışı bitince oyun biter; kalan can
 test('Kedi-Köpek hakemi: iki taraf da ıskalarsa eşit can -> beraberlik [[a,b]]', () => {
     const t = cdMatch();
     t.start();
-    for (let i = 0; i < 6; i++) t.shoot(false);
+    for (let i = 0; i < 2 * N; i++) t.shoot(false);
     assert.deepEqual(t.referee.outcome(), { ranking: [['A', 'B']], reason: 'limit' });
 });
 
@@ -78,12 +79,12 @@ test('Kedi-Köpek hakemi: heal atış sayılmaz (sınırı ilerletmez)', () => {
     t.shoot(false);                                               // B
     t.shoot(false);                                               // A (1)
     assert.deepEqual(t.referee.shots(), [1, 1]);
-    for (let i = 0; i < 3; i++) t.shoot(false);
-    assert.deepEqual(t.referee.shots(), [2, 3]);
+    for (let i = 0; i < 2 * N - 3; i++) t.shoot(false);
+    assert.deepEqual(t.referee.shots(), [N - 1, N]);
     assert.equal(t.referee.outcome(), null);
     t.shoot(false);
     assert.equal(t.referee.outcome().reason, 'limit');
-    assert.deepEqual(t.referee.shots(), [3, 3]);
+    assert.deepEqual(t.referee.shots(), [N, N]);
 });
 
 test('Kedi-Köpek hakemi: canı biten kaybeder (normal bitiş), sınır beklenmez', () => {

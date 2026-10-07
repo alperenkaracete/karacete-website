@@ -93,7 +93,7 @@
                 S: M.S.map(function (s) { return { i: s.i, n: s.n, a: s.a, t: s.t, b: s.b, c: s.c, d: s.c ? 0 : Math.max(0, Math.round(s.dAt - t)) }; }),
                 g: M.g,
                 dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0, bt: M.bt,
-                mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1, gm: M.mn.gm || null, dl: M.mn.dlAt ? Math.max(0, Math.round(M.mn.dlAt - t)) : -1 } : null,
+                mn: M.mn ? { ty: M.mn.ty, pl: M.mn.pl, sd: M.mn.sd, rk: M.mn.rk, ms: M.mn.applyAt ? Math.max(0, Math.round(M.mn.applyAt - t)) : -1, gm: M.mn.gm || null, dl: M.mn.dlAt ? Math.max(0, Math.round(M.mn.dlAt - t)) : -1, hd: M.mn.holdAt ? Math.max(0, Math.round(M.mn.holdAt - t)) : -1 } : null,
                 lg: M.lg, fx: M.fx, fq: M.fq, kk: M.kk
             };
         }
@@ -188,7 +188,8 @@
                 if (!Array.isArray(msg.mn.pl) || !Array.isArray(msg.mn.rk) || !isInt(msg.mn.ms, -1, 600000)) return null;
                 var gm = typeof msg.mn.gm === 'string' && msg.mn.gm.length <= 20 ? msg.mn.gm : null;
                 var mdl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
-                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm, dlAt: mdl >= 0 ? t + mdl : 0 };
+                var mhd = isInt(msg.mn.hd, -1, 600000) ? msg.mn.hd : -1;
+                mn = { ty: msg.mn.ty === 'duel' ? 'duel' : 'ffa', pl: msg.mn.pl, sd: msg.mn.sd >>> 0, rk: msg.mn.rk, applyAt: msg.mn.ms >= 0 ? t + msg.mn.ms : 0, got: t, gm: gm, dlAt: mdl >= 0 ? t + mdl : 0, holdAt: mhd >= 0 ? t + mhd : 0 };
             }
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
@@ -299,7 +300,7 @@
             M.dlLeft = 0;
             if (token.gm) {
                 // Düello: tüm istemcilerde oturum açılır (syncMini); lider sonucu o oturumdan alır.
-                token.dlAt = now() + C.DUEL_MS;
+                token.dlAt = now() + C.duelMs(token.gm);
                 return;
             }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
@@ -313,10 +314,14 @@
         }
 
         // Lider: minioyun sonucunu kaydeder; MINI_HOLD_MS sonra finishMini ödülleri uygular.
-        function applyMiniResult(token, ranking, players) {
+        // Düello: sonuç hemen kaydedilir (devir/zaman aşımı kaybettirmez); oyun ekranı sonuç tutma süresi (hold) kadar
+        // açık kalır, sıralama kartı onun ardından MINI_HOLD_MS gösterilir.
+        function applyMiniResult(token, ranking, players, reason) {
             if (M.mn !== token || token.applyAt) return;
             token.rk = normalizeRanking(ranking, players || token.pl);
-            token.applyAt = now() + C.MINI_HOLD_MS;
+            var hold = token.gm ? C.duelHold(token.gm, reason) : 0;
+            token.holdAt = hold ? now() + hold : 0;
+            token.applyAt = now() + hold + C.MINI_HOLD_MS;
             publish();
         }
 
@@ -584,7 +589,7 @@
                 // düello: ep değişti -> herkes oturumu AYNI tohumla yeniden başlatır (yeni lider sonucu o oturumdan alır)
                 M.mn.rk = [];
                 M.mn.offAt = {};
-                M.mn.dlAt = now() + C.DUEL_MS;
+                M.mn.dlAt = now() + C.duelMs(M.mn.gm);
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -812,7 +817,9 @@
         // ---- Minioyun oturumu (düello: her istemcide; yalnızca lider sonucu uygular) ----
         function miniKey() {
             var mn = M && M.ph === 'play' && M.mn;
-            if (!mn || mn.ty !== 'duel' || !mn.gm || mn.applyAt || mn.pl.length !== 2) return null;
+            if (!mn || mn.ty !== 'duel' || !mn.gm || mn.pl.length !== 2) return null;
+            // Karar verildiyse mevcut oturum sonuç tutma süresince yaşar (yeni oturum açılmaz)
+            if (mn.applyAt) return sess && mn.holdAt && now() < mn.holdAt ? sess.key : null;
             return M.ep + ':' + mn.sd + ':' + mn.gm;
         }
 
@@ -846,13 +853,13 @@
             var p = startMinigame({
                 type: 'duel', game: token.gm, players: token.pl.slice(), seed: token.sd, me: { id: me.id, name: me.name },
                 isLeader: leader, leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, net: net, names: names,
-                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.DUEL_MS, signal: s.ac.signal,
+                deadlineMs: token.dlAt ? Math.max(0, token.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
                 timers: opts.timers, now: now
             });
             if (!leader) return;
             Promise.resolve(p).then(function (res) {
                 if (sess !== s || M.mn !== token || (res && res.aborted)) return;
-                applyMiniResult(token, res && res.ranking);
+                applyMiniResult(token, res && res.ranking, null, res && res.reason);
             }, function () {
                 if (sess !== s || M.mn !== token) return;
                 applyMiniResult(token, [token.pl.slice()]);
@@ -871,11 +878,11 @@
                 if (!seat || t - mn.offAt[id] >= C.DUEL_RECONNECT_MS) out.push(id);
             });
             if (out.length === 1) {
-                applyMiniResult(mn, [[mn.pl[0] === out[0] ? mn.pl[1] : mn.pl[0]], [out[0]]]);
+                applyMiniResult(mn, [[mn.pl[0] === out[0] ? mn.pl[1] : mn.pl[0]], [out[0]]], null, 'forfeit');
             } else if (out.length === 2) {
-                applyMiniResult(mn, [mn.pl.slice()]);
+                applyMiniResult(mn, [mn.pl.slice()], null, 'forfeit');
             } else if (mn.dlAt && t >= mn.dlAt + C.DUEL_GRACE_MS) {
-                applyMiniResult(mn, Mini.wheelRanking({ players: mn.pl, seed: mn.sd }));
+                applyMiniResult(mn, Mini.wheelRanking({ players: mn.pl, seed: mn.sd }), null, 'fuse');
             }
         }
 
@@ -909,7 +916,7 @@
                 afk: !!(M.g && M.g.P[me.id] && M.g.P[me.id].afk),
                 wait: wait,
                 disconnected: dcs,
-                mini: M.mn ? { type: M.mn.ty, game: M.mn.gm || null, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1, duelLeft: M.mn.dlAt ? Math.max(0, M.mn.dlAt - t) : -1 } : null,
+                mini: M.mn ? { type: M.mn.ty, game: M.mn.gm || null, players: M.mn.pl, seed: M.mn.sd, ranking: M.mn.rk, live: !!sess, left: M.mn.applyAt ? Math.max(0, M.mn.applyAt - t) : -1, duelLeft: M.mn.dlAt ? Math.max(0, M.mn.dlAt - t) : -1 } : null,
                 log: M.lg,
                 fx: M.fx,
                 fq: M.fq,

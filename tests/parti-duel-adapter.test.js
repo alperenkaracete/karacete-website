@@ -219,3 +219,27 @@ test('adaptör: izleyici kartı verisi (saf)', () => {
     assert.equal(Adapter.supports('catdog'), true);
     assert.equal(Adapter.supports('yok'), false);
 });
+
+test('adaptör: şerit metinleri (saf)', () => {
+    const names = { A: 'Ayşe', B: 'Bora' };
+    const nameOf = (id) => names[id];
+    assert.equal(Adapter.resultText([['A'], ['B']], nameOf), '🏆 Ayşe kazandı');
+    assert.equal(Adapter.resultText([['B'], ['A']], nameOf), '🏆 Bora kazandı');
+    assert.equal(Adapter.resultText([['A', 'B']], nameOf), '🤝 Beraberlik');
+    assert.equal(Adapter.limitInfo().text, 'Atışlar bitti, sonuç hesaplanıyor…');
+});
+
+test('adaptör: lider sonucu oyunculara bildirir; yalnız liderden gelen sonuç şeridi gösterilir', async () => {
+    const r = room('xox');
+    r.join('A'); r.join('B'); r.join('C');
+    const strips = () => ['A', 'B', 'C'].map((id) => r.members[id].root.children.filter((c) => c.className === 'pt-duel-strip').map((c) => c.textContent));
+    // lider olmayan C'den sahte sonuç: yok sayılır
+    r.members.B.handler.fn('C', { k: 'result', r: [['A'], ['B']], why: 'win' });
+    assert.deepEqual(strips()[1], []);
+    r.move('A', { cell: 0 }); r.move('B', { cell: 3 }); r.move('A', { cell: 1 }); r.move('B', { cell: 4 }); r.move('A', { cell: 2 });
+    await r.tick();
+    assert.deepEqual(strips()[0], ['🏆 Ayşe kazandı']);
+    assert.deepEqual(strips()[1], ['🏆 Ayşe kazandı']);
+    assert.deepEqual(strips()[2], [], 'izleyici şerit görmez');
+    assert.ok(r.members.A.root.classList.set.has('pt-duel-locked'));
+});

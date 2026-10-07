@@ -136,7 +136,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.left > 1500 ? 1 : 2) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.live ? 3 : (v.mini.left > 1500 ? 1 : 2)) : 0];
         return parts.join(':');
     }
 
@@ -228,7 +228,7 @@
 
     // Gerçek düello (hazır oyun): sonuç gelene kadar oyun (oyuncuya) ya da izleyici kartı (diğerlerine) kalıcı köke çizilir.
     function duelPlaying(mn) {
-        return mn.type === 'duel' && !!mn.game && mn.left < 0 && !!DUEL_TITLES[mn.game];
+        return mn.type === 'duel' && !!mn.game && !!mn.live && !!DUEL_TITLES[mn.game];
     }
 
     function miniCard(v) {

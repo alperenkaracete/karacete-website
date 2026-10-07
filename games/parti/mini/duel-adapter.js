@@ -14,9 +14,9 @@
 // Hakem (duel-referee.js) yalnızca lider oturumunda çalışır; sonucu lider belirler.
 // Sonuç: kazanan [[k],[k]], beraberlik [[a,b]]; süre dolunca bitmemiş oyun beraberlik sayılır.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true);
-    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false);
-})(typeof self !== 'undefined' ? self : this, function (Referee, isNode) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./duel-referee.js'), true, require('../config.js'));
+    else root.PartiDuelAdapter = factory(root.PartiDuelReferee, false, root.PartiConfig);
+})(typeof self !== 'undefined' ? self : this, function (Referee, isNode, Config) {
     'use strict';
 
     var GLOBAL = typeof self !== 'undefined' ? self : this;
@@ -45,7 +45,7 @@
 
     GAMES.catdog = {
         prefix: 'cd', title: 'Kedi - Köpek',
-        limit: { shots: 3, counts: function (move) { return move.kind === 'shot'; } },
+        limit: { shots: Config.DUEL_CATDOG_SHOTS, counts: function (move) { return move.kind === 'shot'; } },
         rules: function () {
             var r = isNode ? require('../../catdog-rules.js') : GLOBAL.CatDogRules;
             return Object.assign({}, r, { partial: catdogPartial });
@@ -73,9 +73,15 @@
         };
     }
 
-    // "Atışlar bitti" katmanı metni (saf)
+    // Şerit metinleri (saf)
     function limitInfo() {
-        return { title: 'Atışlar bitti', hint: 'Sonuç hesaplanıyor…' };
+        return { title: 'Atışlar bitti', hint: 'Sonuç hesaplanıyor…', text: 'Atışlar bitti, sonuç hesaplanıyor…' };
+    }
+
+    // [[kazanan],[kaybeden]] -> "🏆 A kazandı"; [[a,b]] -> "🤝 Beraberlik"
+    function resultText(ranking, nameOf) {
+        if (ranking.length === 1 && ranking[0].length > 1) return '🤝 Beraberlik';
+        return '🏆 ' + nameOf(ranking[0][0]) + ' kazandı';
     }
 
     function defaultTimers() {
@@ -104,11 +110,15 @@
         return new Promise(function (resolve, reject) {
             var resolved = false;
             var torn = false;
-            // Hakem: lider her zaman (sonucu o belirler); atış sınırı olan oyunlarda oyuncular da (yalnız "Atışlar bitti"
-            // katmanı için; sonucu çözmez, zamanlayıcı kurmaz).
+            // Hakem: lider her zaman (sonucu o belirler); atış sınırı olan oyunlarda oyuncular da (yalnız şerit/kilit
+            // için; sonucu çözmez, zamanlayıcı kurmaz).
             var referee = (spec.isLeader || (info.limit && isPlayer))
-                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: showLimit })
+                ? Referee.create({ prefix: info.prefix, rules: rules, players: players, limit: info.limit || null, onLimit: onLimit })
                 : null;
+            var stripEl = null;
+            var stripTimer = null;
+            var limitAt = null;
+            var presented = false;
             var offNet = null;
             var deadlineTimer = null;
             var tickTimer = null;
@@ -123,22 +133,52 @@
                 resolved = true;
                 if (deadlineTimer !== null) { timers.clear(deadlineTimer); deadlineTimer = null; }
                 resolve({ ranking: ranking, reason: reason });
+                // Sonucu oyunculara bildir (şerit); lider oyuncuysa kendisi de gösterir
+                net.send({ k: 'result', r: ranking, why: reason });
+                presentResult(ranking, reason);
             }
 
-            // Atış sınırı doldu: oyunun kendi arayüzü bitmez; üstüne katman biner, sonucu hakem (lider) belirler.
-            function showLimit() {
+            // Üst şerit: oyun alanını kapatmaz (üstte ince bir bant); oyun alanı kilitlenir (pointer-events) ki sınırdan sonra
+            // fazladan hamle girmesin. Sonuç hakemden (lider) gelir; yalnız gösterim gecikmeli olabilir.
+            function lockBoard() {
+                if (spec.root && spec.root.classList) spec.root.classList.add('pt-duel-locked');
+            }
+
+            function setStrip(text) {
                 if (!isPlayer || !spec.root || torn) return;
-                var doc = spec.root.ownerDocument;
-                var info2 = limitInfo();
-                var layer = doc.createElement('div');
-                layer.className = 'pt-duel-limit';
-                var t1 = doc.createElement('strong');
-                var t2 = doc.createElement('span');
-                t1.textContent = info2.title;
-                t2.textContent = info2.hint;
-                layer.appendChild(t1);
-                layer.appendChild(t2);
-                spec.root.appendChild(layer);
+                if (!stripEl) {
+                    stripEl = spec.root.ownerDocument.createElement('div');
+                    stripEl.className = 'pt-duel-strip';
+                    spec.root.appendChild(stripEl);
+                }
+                stripEl.textContent = text;
+            }
+
+            function scheduleStrip(text, ms) {
+                if (stripTimer !== null) { timers.clear(stripTimer); stripTimer = null; }
+                if (ms <= 0) { setStrip(text); return; }
+                stripTimer = timers.set(function () { stripTimer = null; setStrip(text); }, ms);
+            }
+
+            // Atış sınırı doldu (oyuncunun kendi hakemi): tahta kilitlenir, şerit en az LIMIT_STRIP_MS sonra belirir.
+            function onLimit() {
+                if (!isPlayer || torn) return;
+                limitAt = now();
+                lockBoard();
+                if (!presented) scheduleStrip(limitInfo().text, Config.DUEL_LIMIT_STRIP_MS);
+            }
+
+            function presentResult(ranking, why) {
+                if (presented || !isPlayer || !spec.root || torn) return;
+                presented = true;
+                lockBoard();
+                var text = resultText(ranking, nameOf);
+                if (why === 'limit') {
+                    var since = limitAt === null ? 0 : now() - limitAt;
+                    scheduleStrip(limitInfo().title + ' · ' + text, Math.max(0, Config.DUEL_LIMIT_STRIP_MS - since));
+                } else {
+                    scheduleStrip(text, 0);
+                }
             }
 
             function check() {
@@ -189,6 +229,9 @@
                 if (!isPlayer) return;
                 if (def) { try { def.destroy(); } catch (e) { /* yoksay */ } def = null; }
                 if (spec.root) spec.root.textContent = '';
+                stripEl = null; limitAt = null; presented = false;
+                if (stripTimer !== null) { timers.clear(stripTimer); stripTimer = null; }
+                if (spec.root && spec.root.classList && spec.root.classList.remove) spec.root.classList.remove('pt-duel-locked');
                 try { startGame(); } catch (e) { /* oyun kurulamadı: lider süre sonunda sonucu verir */ }
             }
 
@@ -225,6 +268,11 @@
                     });
                     return;
                 }
+                if (m.k === 'result') {
+                    if (from !== spec.leader || !Array.isArray(m.r) || !isPlayer) return;
+                    presentResult(m.r, typeof m.why === 'string' ? m.why : '');
+                    return;
+                }
                 if (m.k === 'reset') {
                     if (from !== spec.leader || !Number.isInteger(m.r) || m.r <= resetNo) return;
                     rebuild(m.r);
@@ -240,6 +288,7 @@
                 torn = true;
                 if (deadlineTimer !== null) { timers.clear(deadlineTimer); deadlineTimer = null; }
                 if (tickTimer !== null) { timers.stop(tickTimer); tickTimer = null; }
+                if (stripTimer !== null) { timers.clear(stripTimer); stripTimer = null; }
                 if (offNet) offNet();
                 destroyGame();
                 if (!resolved) { resolved = true; resolve({ ranking: null, aborted: true }); }
@@ -286,5 +335,5 @@
         });
     }
 
-    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, GAMES: GAMES, fmtTime: fmtTime };
+    return { run: run, supports: supports, spectatorInfo: spectatorInfo, limitInfo: limitInfo, resultText: resultText, GAMES: GAMES, fmtTime: fmtTime };
 });
