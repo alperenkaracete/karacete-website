@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Karacete Oyunlar</title>
+    <!-- Ana ekrana ekle / tam ekran: servis çalışanı YOK (yalnız manifest + meta) -->
+    <meta name="theme-color" content="#764ba2">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Karacete">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -36,6 +45,7 @@
 
     <script src="config.js"></script>
     <script src="core/games.js"></script>
+    <script src="core/fullscreen.js"></script>
     <script src="core/connection.js"></script>
     <script src="core/lobby.js"></script>
     <script src="core/duel.js"></script>
