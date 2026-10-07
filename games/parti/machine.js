@@ -9,11 +9,11 @@
 //           pt_mg {mg, from, m} (minioyun yükü; durum DEĞİL: yalnızca eşleşen oturuma, düellodaki ikiliden ya da liderden kabul edilir)
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'));
+        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'));
     } else {
-        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame);
+        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch);
     }
-})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini) {
+})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch) {
     'use strict';
 
     var PHASES = ['lobby', 'play', 'over'];
@@ -105,7 +105,7 @@
             return {
                 ty: m.ty, pl: m.pl, sd: m.sd, rk: m.rk, ms: m.applyAt ? Math.max(0, Math.round(m.applyAt - t)) : -1, gm: m.gm || null,
                 pm: (m.pm || []).map(function (x) {
-                    return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt), bd: ms(x.bAt),
+                    return { p: x.p, st: x.stAt ? Math.max(0, Math.round(x.stAt - t)) : 0, dl: ms(x.dlAt), hd: ms(x.hAt), bd: ms(x.bAt), wb: x.wb || null,
                         o: x.out ? { w: x.out.w || '', l: x.out.l || '', d: x.out.d ? 1 : 0, r: x.out.r || '' } : null };
                 }),
                 ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null
@@ -215,7 +215,7 @@
                             if (typeof xm.o !== 'object') return null;
                             om = { w: typeof xm.o.w === 'string' ? xm.o.w : '', l: typeof xm.o.l === 'string' ? xm.o.l : '', d: xm.o.d ? 1 : 0, r: typeof xm.o.r === 'string' ? xm.o.r.slice(0, 12) : '' };
                         }
-                        mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, bAt: xbd >= 0 ? t + xbd : 0, out: om, off: {} });
+                        mpm.push({ p: xm.p.slice(), stAt: xm.st ? t + xm.st : 0, dlAt: xm.dl >= 0 ? t + xm.dl : 0, hAt: xm.hd >= 0 ? t + xm.hd : 0, bAt: xbd >= 0 ? t + xbd : 0, wb: Watch.sanitize(xm.wb), out: om, off: {} });
                     }
                 } else if (gm && msg.mn.pl.length === 2) {
                     // Eski tek çiftli görüntü (pm yok): tek maç olarak oku
@@ -224,7 +224,7 @@
                     else if (msg.mn.ms >= 0 && msg.mn.rk.length >= 2 && msg.mn.rk[0] && msg.mn.rk[1]) lo = { w: String(msg.mn.rk[0][0]), l: String(msg.mn.rk[1][0]), d: 0, r: '' };
                     var ldl = isInt(msg.mn.dl, -1, 600000) ? msg.mn.dl : -1;
                     var lhd = isInt(msg.mn.hd, -1, 600000) ? msg.mn.hd : -1;
-                    mpm.push({ p: msg.mn.pl.slice(), stAt: 0, dlAt: ldl >= 0 ? t + ldl : 0, hAt: lhd >= 0 ? t + lhd : 0, bAt: 0, out: lo, off: {} });
+                    mpm.push({ p: msg.mn.pl.slice(), stAt: 0, dlAt: ldl >= 0 ? t + ldl : 0, hAt: lhd >= 0 ? t + lhd : 0, bAt: 0, wb: null, out: lo, off: {} });
                 }
                 var moc = null;
                 if (msg.mn.oc && typeof msg.mn.oc === 'object' && Array.isArray(msg.mn.oc.win) && Array.isArray(msg.mn.oc.lose) && Array.isArray(msg.mn.oc.draw)) {
@@ -335,7 +335,7 @@
         }
 
         function newPair(gm, p, stAt) {
-            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, bAt: 0, out: null, off: {} };
+            return { p: p.slice(), stAt: stAt || 0, dlAt: Math.max(now(), stAt || 0) + C.duelMs(gm), hAt: 0, bAt: 0, wb: null, out: null, off: {} };
         }
 
         function beginMini() {
@@ -1011,7 +1011,15 @@
                 type: 'duel', game: token.gm, players: x.p.slice(), seed: (token.sd + w.pair) >>> 0, me: { id: me.id, name: me.name },
                 isLeader: leader, leader: M.ld, root: w.observer ? null : (opts.miniRoot ? opts.miniRoot() : null), observer: w.observer, net: net, names: names,
                 deadlineMs: x.dlAt ? Math.max(0, x.dlAt - now()) : C.duelMs(token.gm), signal: s.ac.signal,
-                timers: opts.timers, now: now
+                timers: opts.timers, now: now,
+                // Lider hakem durumundan izleme anlık görüntüsü yayınlar (oynamayanlar salt-okunur izler); değişmediyse yayınlamaz
+                onWatch: leader ? function (snap) {
+                    if (M.mn !== token || token.pm[w.pair] !== x) return;
+                    var next = snap || null;
+                    if (JSON.stringify(next) === JSON.stringify(x.wb || null)) return;
+                    x.wb = next;
+                    publish();
+                } : undefined
             });
             if (!leader) return;
             Promise.resolve(p).then(function (res) {
@@ -1055,7 +1063,7 @@
                 var shown = !!x.out && !(x.bAt && t < x.bAt);
                 if (x.out && x.bAt > shownAt) shownAt = x.bAt;
                 return { players: x.p, done: shown, winner: shown && !x.out.d ? x.out.w : null, draw: !!(shown && x.out.d), reason: shown ? x.out.r : '',
-                    start: Math.max(0, x.stAt - t), left: x.dlAt ? Math.max(0, x.dlAt - t) : -1 };
+                    start: Math.max(0, x.stAt - t), left: x.dlAt ? Math.max(0, x.dlAt - t) : -1, watch: x.wb || null };
             });
             var hidden = t < shownAt;
             var mine = -1;

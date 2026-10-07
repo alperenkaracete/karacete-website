@@ -1131,6 +1131,27 @@ body.parti-active #game-root { flex: 1 1 auto; min-height: 0; display: flex; }
 .pt-duel-pairs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; }
 .pt-duel-pair { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.08); }
 .pt-duel-pair.done { background: rgba(76, 175, 80, 0.22); }
+.pt-watch { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.pt-watch-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; }
+.pt-watch-who { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+.pt-watch-who.turn { background: rgba(255, 212, 0, 0.28); }
+.pt-watch-who.win { background: rgba(76, 175, 80, 0.45); }
+.pt-watch-grid { display: grid; gap: 3px; align-self: center; width: 100%; }
+.pt-watch-grid.cols3 { grid-template-columns: repeat(3, 1fr); max-width: 150px; }
+.pt-watch-grid.cols7 { grid-template-columns: repeat(7, 1fr); max-width: 210px; }
+.pt-watch-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: rgba(255, 255, 255, 0.1); font-size: 18px; font-weight: 800; line-height: 1; }
+.pt-watch-connect4 .pt-watch-cell { font-size: 30px; }
+.pt-watch-cell.p0 { color: #ff6b6b; }
+.pt-watch-cell.p1 { color: #ffd24a; }
+.pt-watch-bars { display: flex; flex-direction: column; gap: 4px; }
+.pt-watch-bar { position: relative; height: 14px; border-radius: 7px; background: rgba(0, 0, 0, 0.45); overflow: hidden; }
+.pt-watch-fill { display: block; height: 100%; background: #4caf50; }
+.pt-watch-fill.mid { background: #f0ad4e; }
+.pt-watch-fill.low { background: #e74c3c; }
+.pt-watch-bar small { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; }
+.pt-watch-info { font-size: 13px; }
+.pt-watch-info.dim { color: rgba(255, 255, 255, 0.7); font-size: 12px; }
+.pt-watch-result { font-weight: 800; font-size: 14px; }
 .pt-duel-names { font-weight: 800; font-size: 16px; overflow-wrap: anywhere; }
 .pt-duel-spectator { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 14px 18px; }
 .pt-duel-spectator strong { font-size: 20px; }

@@ -2,7 +2,8 @@
 // kurallarıyla yeniden oynatıp sonucu bulur. Böylece Duel/oyun dosyalarına dokunulmadan, düelloda olmayan lider de
 // sonucu hesaplayabilir.
 //
-//   create({ prefix, rules, players:[ev sahibi, konuk], limit?, onLimit? })
+//   create({ prefix, rules, players:[ev sahibi, konuk], limit?, onLimit?, onUpdate? })
+//     onUpdate(): kabul edilen her mesajdan ve sıfırlamadan sonra bir kez (Parti izleme anlık görüntüsü için)
 //     limit = { shots: n, counts(move) -> bool }: SAYILAN hamlelerden her oyuncu n tane yapınca (ve oyun kendi kendine bitmediyse)
 //     oyun biter; sıralamayı rules.partial verir (yoksa beraberlik). onLimit(ranking) bir kez çağrılır.
 //   feed(from, msg)  -> true: mesaj kabul edildi (günlüğe yazıldı)
@@ -10,6 +11,7 @@
 //   timeout()        -> ranking (bitmemiş oyun: rules.partial(board, order) varsa o, null/yoksa beraberlik)
 //   forfeit(id)      -> ranking ([[kalan],[id]])
 //   log() / reset() / board() (son tahta; Parti son hamlenin animasyon süresini buradan okur)
+//   state()          -> { phase, order, turn, board, result, shots } (salt okunur kopya alanları; izleme anlık görüntüsü)
 //
 // ranking: [[kazanan],[kaybeden]] ya da beraberlikte [[a,b]]. Oyuncu 0 = `players[0]` = oyunun isHost() tarafı.
 (function (root, factory) {
@@ -26,11 +28,16 @@
         var MOVE_TYPES = rules.messageTypes || [prefix + '_move'];
         var limit = options.limit || null;
         var st;
+        var ready = false;
+
+        function updated() { if (ready && options.onUpdate) options.onUpdate(); }
 
         function reset() {
             st = { phase: 'waiting', round: 0, order: [null, null], turn: 0, board: null, result: null, log: [], shots: [0, 0] };
+            updated();
         }
         reset();
+        ready = true;
 
         function other(id) { return players[0] === id ? players[1] : players[0]; }
         function draw() { return [players.slice()]; }
@@ -53,6 +60,7 @@
                 st.board = rules.initial(Object.assign({}, extras, { order: order.slice(), round: 1 }));
                 st.phase = 'playing';
                 st.log.push({ f: from, m: m });
+                updated();
                 return true;
             }
             if (MOVE_TYPES.indexOf(m.type) < 0) return false;
@@ -80,6 +88,7 @@
                     }
                 }
             }
+            updated();
             return true;
         }
 
@@ -105,6 +114,7 @@
             log: function () { return st.log.slice(); },
             shots: function () { return st.shots.slice(); },
             board: function () { return st.board; },
+            state: function () { return { phase: st.phase, order: st.order.slice(), turn: st.turn, board: st.board, result: st.result, shots: st.shots.slice() }; },
             phase: function () { return st.phase; }
         };
     }
