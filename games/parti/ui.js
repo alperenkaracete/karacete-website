@@ -136,7 +136,7 @@
 
     // ---------------- Render (DOM) ----------------
     function signature(v) {
-        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.live ? 3 : (v.mini.left > 1500 ? 1 : 2)) : 0];
+        var parts = [v.mode, v.ep, v.rv, v.offline ? 1 : 0, targeting ? targeting.w : '', openCard || '', logOpen ? 1 : 0, v.wait ? (v.wait.bot ? 2 : 1) : 0, v.afk ? 1 : 0, v.mini ? (v.mini.live ? 3 : (v.mini.left > 1500 ? 1 : 2)) + '.' + (v.mini.pairs || []).filter(function (p) { return p.start > 0; }).length : 0];
         return parts.join(':');
     }
 
@@ -231,6 +231,36 @@
         return mn.type === 'duel' && !!mn.game && !!mn.live && !!DUEL_TITLES[mn.game];
     }
 
+    // Düello sürerken oynamayanlara (ya da maçı bitenlere) tüm maçların durumu: "A ⚔️ B · kalan 1:12" / "🏆 A kazandı"
+    function duelPairsCard(v, c) {
+        var mn = v.mini;
+        c.appendChild(el('strong', 'pt-card-title', '⚔️ Düello — ' + DUEL_TITLES[mn.game]));
+        var list = el('ul', 'pt-duel-pairs');
+        mn.pairs.forEach(function (p, i) {
+            var li = el('li', 'pt-duel-pair' + (p.done ? ' done' : ''));
+            li.appendChild(el('span', 'pt-duel-names', p.players.map(function (id) { return nameOf(v, id) + (id === v.me.id ? ' (sen)' : ''); }).join(' ⚔️ ')));
+            var st = el('span', 'pt-hint');
+            function stText(vv) {
+                var q = vv.mini && vv.mini.pairs && vv.mini.pairs[i];
+                if (!q) return '';
+                if (q.done) return q.draw ? '🤝 Beraberlik' : '🏆 ' + nameOf(vv, q.winner) + ' kazandı';
+                if (q.start > 0) return 'birazdan başlıyor';
+                return 'oynuyor' + (q.left >= 0 ? ' · kalan ' + fmtTime(q.left) : '');
+            }
+            st.textContent = stText(v);
+            timerEls.push({ node: st, fn: stText });
+            li.appendChild(st);
+            list.appendChild(li);
+        });
+        c.appendChild(list);
+        if (mn.extra) {
+            c.appendChild(el('span', 'pt-hint', mn.extra === v.me.id
+                ? 'Sen tek kaldın: ilk biten maçın kaybedeniyle oynayacaksın'
+                : '🕒 ' + nameOf(v, mn.extra) + ': ilk biten maçın kaybedeniyle oynayacak'));
+        }
+        return c;
+    }
+
     function miniCard(v) {
         var mn = v.mini;
         var c = el('div', 'pt-card pt-mini');
@@ -241,6 +271,7 @@
         }
         var spinning = mn.left < 0 || mn.left > 1500;
         var isDuel = mn.type === 'duel' && !!mn.game && !!DUEL_TITLES[mn.game];
+        if (isDuel && mn.left < 0 && mn.pairs && mn.pairs.length) return duelPairsCard(v, c);
         c.appendChild(el('strong', 'pt-card-title', isDuel ? '⚔️ Düello — ' + DUEL_TITLES[mn.game] : (mn.type === 'duel' ? '🎡 Şans Çarkı — Düello' : '🎡 Şans Çarkı')));
         if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Yer tutucu minioyun: sıralama rastgele belirlenir.'));
         var wheel = el('div', 'pt-wheel' + (spinning ? ' spinning' : ''), isDuel ? '⚔️' : '🎡');
@@ -256,7 +287,7 @@
                 pos += group.length;
             });
             c.appendChild(list);
-            c.appendChild(el('span', 'pt-hint', '1.: ⭐+silah · 2.: silah · 3.: 🛡️'));
+            c.appendChild(el('span', 'pt-hint', '1.: ⭐+silah · 2.: silah · 3. ve düello dışı: +25 ❤️'));
         }
         return c;
     }
