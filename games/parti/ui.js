@@ -34,7 +34,7 @@
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
     var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
-    var tickTimer = null;
+    var ticker = null;
     var TICK_MS = 250;
 
     function listen(target, type, handler, opts) {
@@ -1077,12 +1077,13 @@
             listeners.push(function () { ro.disconnect(); });
         }
         // Yalnızca testler/elle deneme için: ?debug=1 ile makineye erişim (durumu elle kurup yayınlamak için)
-        if (/[?&]debug=1(&|$)/.test(location.search)) window.__partiDebug = { machine: machine };
+        if (/[?&]debug=1(&|$)/.test(location.search)) window.__partiDebug = { machine: machine, tickerMode: function () { return ticker ? ticker.mode() : null; } };
         view = machine.getView();
         raf = requestAnimationFrame(frame);
         // Oyun saati requestAnimationFrame'e bağlı OLMAMALI: arka plandaki sekmede rAF durur, lider botları/süreleri
-        // ilerletemez. Bağımsız bir aralık ve sekme görünür olunca anında tick atar.
-        tickTimer = setInterval(function () { if (machine) machine.tick(); }, TICK_MS);
+        // ilerletemez. Web Worker'dan gelen 250 ms'lik mesajla tick atılır (kurulamazsa setInterval'a düşer);
+        // sekme görünür olunca ve gelen her mesajda da ayrıca tick atılır.
+        ticker = PartiTicker.createTicker(function () { if (machine) machine.tick(); }, TICK_MS);
         listen(document, 'visibilitychange', function () { if (machine && !document.hidden) machine.tick(); });
         render();
     }
@@ -1096,8 +1097,8 @@
     function destroy() {
         if (raf !== null) cancelAnimationFrame(raf);
         raf = null;
-        if (tickTimer !== null) clearInterval(tickTimer);
-        tickTimer = null;
+        if (ticker) ticker.stop();
+        ticker = null;
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');
