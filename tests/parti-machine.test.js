@@ -598,3 +598,17 @@ test('günlük: ölüm satırı yazılır', () => {
     r.flush();
     assert.ok(r.view('B').log.some((l) => /düştü/.test(l)));
 });
+
+test('zaman: tick seyrek (250 ms ya da 1 sn) çağrılsa da süre dolunca lider otomatik ilerler, botlar oynar', () => {
+    for (const step of [250, 1000]) {
+        const r = room();
+        r.join('A', 'Ayse'); r.join('B', 'Bora');
+        r.m('A').dispatch({ type: 'bot_add' });
+        r.m('A').dispatch({ type: 'start' });
+        r.flush();
+        const rv0 = r.state('A').rv;
+        r.advance(C.STEP_MS * 3, step);
+        assert.ok(r.state('A').rv > rv0 + 2, 'adım ' + step + ': oyun ilerledi');
+        assert.ok(r.state('A').fx.length > 0 || r.state('A').lg.length > 1);
+    }
+});

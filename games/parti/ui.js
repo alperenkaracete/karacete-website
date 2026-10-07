@@ -37,6 +37,8 @@
     var logOpen = false;
     var scale = { css: 1, dpr: 1 };
     var timerEls = [];
+    var tickTimer = null;
+    var TICK_MS = 250;
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -894,14 +896,24 @@
         }
         view = machine.getView();
         raf = requestAnimationFrame(frame);
+        // Oyun saati requestAnimationFrame'e bağlı OLMAMALI: arka plandaki sekmede rAF durur, lider botları/süreleri
+        // ilerletemez. Bağımsız bir aralık ve sekme görünür olunca anında tick atar.
+        tickTimer = setInterval(function () { if (machine) machine.tick(); }, TICK_MS);
+        listen(document, 'visibilitychange', function () { if (machine && !document.hidden) machine.tick(); });
         render();
     }
 
-    function onMessage(data) { if (machine) machine.onMessage(data); }
+    function onMessage(data) {
+        if (!machine) return;
+        machine.onMessage(data);
+        machine.tick();       // arka planda aralıklar kısılsa da gelen her mesaj lideri bir adım ilerletir
+    }
 
     function destroy() {
         if (raf !== null) cancelAnimationFrame(raf);
         raf = null;
+        if (tickTimer !== null) clearInterval(tickTimer);
+        tickTimer = null;
         listeners.forEach(function (off) { off(); });
         listeners = [];
         document.body.classList.remove('parti-active');
