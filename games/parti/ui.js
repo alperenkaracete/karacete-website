@@ -30,6 +30,7 @@
     var anims = {};          // oyuncu -> { from, path, t0 }
     var particles = [];
     var banner = null;
+    var announcer = null;
     var lastFq = -1;
     var sig = '';
     var targeting = null;    // { item, kind, range }
@@ -83,14 +84,18 @@
         var barMid = el('span', 'pt-bar-mid');
         var barTime = el('span', 'pt-bar-time');
         var main = el('div', 'pt-main');
+        var boardCol = el('div', 'pt-boardcol');
         var boardWrap = el('div', 'pt-board');
         var canvas = el('canvas', 'pt-canvas');
         boardWrap.appendChild(canvas);
+        var strip = el('div', 'pt-strip');
+        boardCol.appendChild(boardWrap);
+        boardCol.appendChild(strip);
         var side = el('div', 'pt-side');
         var players = el('div', 'pt-players');
         var controls = el('div', 'pt-controls');
         side.appendChild(players); side.appendChild(controls);
-        main.appendChild(boardWrap); main.appendChild(side);
+        main.appendChild(boardCol); main.appendChild(side);
         var logBtn = btn('📜', 'pt-logbtn small', function () { logOpen = !logOpen; sig = ''; render(); });
         bar.appendChild(barLeft); bar.appendChild(barMid); bar.appendChild(barTime); bar.appendChild(logBtn);
         var logPanel = el('div', 'pt-log hidden');
@@ -101,7 +106,7 @@
         root.appendChild(rootEl);
         return {
             root: rootEl, lobby: lobby, game: game, bar: bar, barLeft: barLeft, barMid: barMid, barTime: barTime, board: boardWrap,
-            canvas: canvas, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
+            canvas: canvas, strip: strip, players: players, controls: controls, logPanel: logPanel, overlay: overlay, toast: toast
         };
     }
 
@@ -145,6 +150,7 @@
             renderPlayers(v);
             renderControls(v);
             renderLog(v);
+            renderStrip(v);
             window.requestAnimationFrame(resize);
         }
         renderOverlay(v);
@@ -509,6 +515,12 @@
         return t.kind === 'area' ? 'Bomba: listeden ya da haritada bir kutucuğa dokun (menzil ' + t.range + ').' : 'Hedef seç (menzil ' + t.range + ').';
     }
 
+    // Tahtanın altında son 2 olay
+    function renderStrip(v) {
+        els.strip.textContent = '';
+        v.log.slice(-2).forEach(function (l) { els.strip.appendChild(el('div', 'pt-strip-line', l)); });
+    }
+
     function renderLog(v) {
         els.logPanel.classList.toggle('hidden', !logOpen);
         els.logPanel.textContent = '';
@@ -527,7 +539,7 @@
         var p = v.game.P[id];
         var a = anims[id];
         if (a) {
-            var e = Math.max(0, (t - a.t0) / STEP_ANIM_MS);
+            var e = Math.max(0, (t - a.t0) / (a.dur || STEP_ANIM_MS));
             var seq = [a.from].concat(a.path);
             if (e >= seq.length - 1) { delete anims[id]; shown[id] = p.pos; }
             else {
@@ -549,26 +561,69 @@
         lastFq = v.fq;
         if (first) return;
         var g = graphFor(v.game.mapId);
+        // Her oyuncunun olay anındaki konumu: şu an gösterilen kutucuktan başlayıp olaylarla ilerler
+        // (anlık görüntüdeki P.pos olayların SONUNDAKİ konumdur; ölüm/ışınlanma baloncuğu eski kutucukta çıkmalı).
+        var cursor = {};
+        v.game.order.forEach(function (id) { cursor[id] = shown[id] !== undefined ? shown[id] : v.game.P[id].pos; });
+        function where(id) { return cursor[id] !== undefined ? cursor[id] : (v.game.P[id] ? v.game.P[id].pos : null); }
         v.fx.forEach(function (e) {
-            function at(id) { var s = shown[id] !== undefined && v.game.P[id] ? shown[id] : (v.game.P[id] ? v.game.P[id].pos : null); return s === null ? null : nodePos(g, s); }
-            function pop(id, text, color, dx) {
-                var pos = e.node !== undefined && !id ? nodePos(g, e.node) : (v.game.P[id] ? nodePos(g, v.game.P[id].pos) : at(id));
-                if (!pos) return;
-                particles.push({ x: pos.x + (dx || 0), y: pos.y - 26, text: text, color: color, t0: t, life: 1400 });
+            function pop(id, text, color, nodeId) {
+                var n = nodeId !== undefined && nodeId !== null ? nodeId : (id ? where(id) : e.node);
+                if (n === null || n === undefined || !g.byId[n]) return;
+                var pos = nodePos(g, n);
+                particles.push({ x: pos.x, y: pos.y - 26, text: text, color: color, t0: t, life: 1400 });
             }
             if (e.t === 'move' && v.game.P[e.id]) {
-                anims[e.id] = { from: shown[e.id] !== undefined ? shown[e.id] : e.path[0], path: e.path, t0: t };
+                anims[e.id] = { from: cursor[e.id], path: e.path, t0: t };
+                cursor[e.id] = e.path[e.path.length - 1];
             } else if (e.t === 'roll') {
                 banner = { text: '🎲 ' + e.v, sub: nameOf(v, e.id), t0: t };
             } else if (e.t === 'dmg') pop(e.id, '−' + e.n, '#ff5d5d');
             else if (e.t === 'star') pop(e.id, (e.n >= 0 ? '+' : '') + e.n + '⭐', '#ffd24a');
-            else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', 0);
-            else if (e.t === 'death') pop(e.id, '💀', '#ffffff');
-            else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
+            else if (e.t === 'chest') pop(null, e.k === 'star' ? '🧰 +' + e.n + '⭐' : '🧰 ' + C.WEAPONS[e.w].emoji, '#fff3b0', e.node);
+            else if (e.t === 'death') {
+                pop(e.id, '💀', '#ffffff', e.at);
+                flyHome(e.id, e.at, e.to, t);
+                cursor[e.id] = e.to;
+                announce(v, '💀 ' + (e.killer ? nameOf(v, e.killer) + ', ' + accusative(plainName(v, e.id)) + ' düşürdü' : plainName(v, e.id) + ' düştü') + (e.lost ? ' (−' + e.lost + '⭐)' : ''), t);
+            } else if (e.t === 'block') pop(e.id, '🛡️', '#9fe8ff');
             else if (e.t === 'item' || e.t === 'zone') pop(e.id, '+' + C.WEAPONS[e.w].emoji, '#ffffff');
-            else if (e.t === 'event') pop(e.id, '🎁', '#e3c9ff');
-            else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
+            else if (e.t === 'event') {
+                if (e.e === 'teleport' && e.at !== undefined) {
+                    pop(e.id, '🌀', '#d6c4ff', e.at);
+                    flyHome(e.id, e.at, e.to, t);
+                    cursor[e.id] = e.to;
+                    announce(v, '🌀 ' + plainName(v, e.id) + ' başlangıca ışınlandı', t);
+                } else pop(e.id, '🎁', '#e3c9ff');
+            } else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
         });
+    }
+
+    // Ölüm/ışınlanma: jeton önce eski kutucukta kalır (baloncuk orada), kısa süre sonra başlangıca uçar.
+    function flyHome(id, from, to, t) {
+        if (from === undefined || to === undefined || from === to) return;
+        anims[id] = { from: from, path: [to], t0: t + 900, dur: 700 };
+    }
+
+    function announce(v, text, t) {
+        announcer = { text: text, t0: t, life: 1500 };
+    }
+
+    function plainName(v, id) {
+        var s = seatById(v, id);
+        if (s) return s.n;
+        return v.game && v.game.P[id] ? v.game.P[id].n : '?';
+    }
+
+    // Türkçe belirtme hâli (ünlü uyumu): Ayşe → Ayşe'yi, Ali → Ali'yi, Can → Can'ı, Ömer → Ömer'i
+    function accusative(name) {
+        var vowels = 'aeıioöuü';
+        var lower = name.toLocaleLowerCase('tr');
+        var last = '';
+        for (var i = lower.length - 1; i >= 0; i--) { if (vowels.indexOf(lower[i]) >= 0) { last = lower[i]; break; } }
+        var suffix = { a: 'ı', 'ı': 'ı', o: 'u', u: 'u', e: 'i', i: 'i', 'ö': 'ü', 'ü': 'ü' }[last] || 'i';
+        var endsVowel = vowels.indexOf(lower[lower.length - 1]) >= 0;
+        return name + "'" + (endsVowel ? 'y' : '') + suffix;
     }
 
     function drawBackground(c, map, t) {
@@ -706,6 +761,22 @@
             c.fillText(p.text, p.x, p.y - k * 40);
         });
         c.globalAlpha = 1;
+        if (announcer) {
+            var ak = (t - announcer.t0) / announcer.life;
+            if (ak >= 1) announcer = null;
+            else {
+                c.globalAlpha = ak < 0.75 ? 1 : 1 - (ak - 0.75) / 0.25;
+                c.font = 'bold 30px ' + EMOJI_FONT;
+                var aw = Math.min(BOARD_W - 20, c.measureText(announcer.text).width + 40);
+                c.fillStyle = 'rgba(0,0,0,0.7)';
+                c.fillRect(BOARD_W / 2 - aw / 2, 14, aw, 50);
+                c.fillStyle = '#fff';
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                c.fillText(announcer.text, BOARD_W / 2, 40, aw - 20);
+                c.globalAlpha = 1;
+            }
+        }
         if (banner) {
             var bk = (t - banner.t0) / 1500;
             if (bk >= 1) banner = null;
@@ -806,7 +877,7 @@
         els = buildDom();
         view = null;
         sig = '';
-        shown = {}; anims = {}; particles = []; banner = null; lastFq = -1; targeting = null; logOpen = false;
+        shown = {}; anims = {}; particles = []; banner = null; announcer = null; lastFq = -1; targeting = null; logOpen = false;
         // Oda kurucusu = odada yalnız bu oyuncu varken ilk girenler. Yeniden katılan ilk oyuncu (backend sırayı korur)
         // `isHost()` olabilir ama odada başkaları varsa kurucu değildir: durumu liderden ister.
         var creator = ctx.isHost() && ctx.players.length <= 1;

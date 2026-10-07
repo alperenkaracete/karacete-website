@@ -568,3 +568,33 @@ test('backend devralma: tek başına yenilenen kurucu yeni lobi kurar (kaybedece
     assert.equal(r.view('A').isLeader, true);
     assert.equal(r.view('A').phase, 'lobby');
 });
+
+test('günlük: minioyun sonucu tek satır (🥇A 🥈B 🥉C), tek tek ödül satırı yok', async () => {
+    const r = started(3);
+    let guard = 0;
+    while (r.state('A').g.stage !== 'mini' && guard++ < 200) {
+        r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: G.index(maps.pirate) }));
+        r.flush();
+    }
+    await r.settle();
+    r.advance(C.MINI_HOLD_MS + 500);
+    const log = r.view('A').log;
+    const lines = log.filter((l) => l.startsWith('🎡'));
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+ 🥉\S+$/);
+    assert.ok(!log.some((l) => /minioyunda \d\. oldu/.test(l) || /\(minioyun\)/.test(l)));
+});
+
+test('günlük: ölüm satırı yazılır', () => {
+    const r = started(2);
+    const M = r.state('A');
+    const ids = M.g.order;
+    const g = G.index(maps.pirate);
+    M.g.P[ids[0]].w = ['fist']; M.g.stage = 'act'; M.g.turn = 0;
+    const start = g.starts[0];
+    const other = g.byId[start].next[0];
+    M.g.P[ids[0]].pos = start; M.g.P[ids[1]].pos = other; M.g.P[ids[1]].hp = 5; M.g.P[ids[1]].s = 4;
+    r.m(ids[0]).dispatch({ type: 'use', item: 0, target: ids[1] });
+    r.flush();
+    assert.ok(r.view('B').log.some((l) => /düştü/.test(l)));
+});

@@ -167,12 +167,13 @@
         });
         var lost = Math.floor(p.s / 2);
         p.s -= lost;
+        var at = p.pos;
         p.hp = C.MAX_HP;
         p.pos = p.home;
         p.sk = 1;
         p.dmg = {};
         p.offers = [];
-        evts.push({ t: 'death', id: id, killer: killer, lost: lost });
+        evts.push({ t: 'death', id: id, killer: killer, lost: lost, at: at, to: p.home });
         if (killer && lost > 0) addStars(state, killer, lost, evts, 'kill');
         else checkWin(state);
     }
@@ -252,7 +253,11 @@
         var p = state.P[id];
         if (ev.id === 'star') addStars(state, id, 1, evts, 'event');
         else if (ev.id === 'damage') hit(state, id, ev.damage, null, evts);
-        else if (ev.id === 'teleport') p.pos = p.home;
+        else if (ev.id === 'teleport') {
+            evts[evts.length - 1].at = p.pos;       // eski kutucuk (arayüz balonu orada gösterir)
+            evts[evts.length - 1].to = p.home;
+            p.pos = p.home;
+        }
         else if (ev.id === 'weapon') giveItem(state, id, randomWeapon(rng), evts, true);
         else if (ev.id === 'rest') p.sk = 1;
     }

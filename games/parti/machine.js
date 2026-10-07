@@ -141,7 +141,7 @@
             switch (e.t) {
                 case 'roll': return nm(e.id) + ' zar attı: ' + e.v;
                 case 'chest': return nm(e.id) + (e.k === 'star' ? ' sandıktan ' + e.n + ' yıldız buldu' : ' silah sandığı açtı: ' + wn(e.w));
-                case 'star': return e.why === 'chest' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
+                case 'star': return e.why === 'chest' || e.why === 'mini' ? null : nm(e.id) + (e.n >= 0 ? ' +' : ' ') + e.n + ' ⭐' + (e.why === 'kill' ? ' (düşürdü)' : e.why === 'mini' ? ' (minioyun)' : '');
                 case 'item': return nm(e.id) + ' aldı: ' + wn(e.w);
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
                 case 'swap': return nm(e.id) + ' ' + wn(e.old) + ' yerine ' + wn(e.w) + ' aldı';
@@ -158,7 +158,7 @@
                     C.EVENTS.forEach(function (ev) { if (ev.id === e.e) found = ev; });
                     return '🎁 ' + nm(e.id) + ' ' + (found ? found.text : 'olay');
                 }
-                case 'reward': return nm(e.id) + ' minioyunda ' + e.rank + '. oldu';
+                case 'reward': return null;          // minioyun sonucu tek satırda yazılır (resultLine)
                 default: return null;
             }
         }
@@ -167,6 +167,18 @@
             if (!text) return;
             M.lg.push(text);
             while (M.lg.length > C.LOG_MAX) M.lg.shift();
+        }
+
+        // Minioyun sonucu günlükte tek satır: "🥇Ali 🥈Ayşe 🥉Cem"
+        function resultLine(ranking) {
+            var rank = 1;
+            var parts = [];
+            ranking.forEach(function (group) {
+                var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '▫️';
+                group.forEach(function (id) { parts.push(medal + nm(id)); });
+                rank += group.length;
+            });
+            return '🎡 ' + parts.join(' ');
         }
 
         // ---- Kurallar köprüsü (lider) ----
@@ -248,7 +260,10 @@
             if (last.length) ranking.push(last);
             M.mn = null;
             var r = R.applyMinigame(M.g, { ranking: ranking }, rctx());
-            if (r.ok) afterRules(r);
+            if (r.ok) {
+                addLog(resultLine(ranking));
+                afterRules(r);
+            }
         }
 
         // ---- Lobi işlemleri (lider) ----

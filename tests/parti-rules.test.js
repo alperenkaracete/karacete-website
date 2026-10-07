@@ -536,3 +536,24 @@ test('tur başı sırası her turda bir kayar: 3 oyuncuda abc / bca / cab / abc;
     const r = R.removePlayer(t, 'p2', ctx());
     assert.deepEqual(r.state.order, ['p1', 'p0']);
 });
+
+test('olay konumları: ölüm ve ışınlanma olayları eski kutucuğu (at) ve başlangıcı (to) taşır', () => {
+    const s = duelSetup('fist', 1);
+    s.P.p1.hp = 10; s.P.p1.s = 4;
+    const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+    const death = r.events.find((e) => e.t === 'death');
+    assert.equal(death.at, s.P.p1.pos, 'ölüm eski kutucukta');
+    assert.equal(death.to, s.P.p1.home);
+    assert.equal(r.state.P.p1.pos, s.P.p1.home);
+    // ışınlanma olayı (olay kutucuğu, weights: star3 damage3 teleport2 -> f=0.5)
+    const t = game(2);
+    const ev = pirate.nodes.find((n) => n.type === 'event');
+    const pre = pirate.nodes.find((n) => n.next.length === 1 && n.next[0] === ev.id);
+    t.P.p0.pos = pre.id;
+    const r2 = apply(t, { type: 'roll', by: 'p0' }, { dice: () => 1, rand: () => 0.5 });
+    const tp = r2.events.find((e) => e.t === 'event' && e.e === 'teleport');
+    assert.ok(tp, 'ışınlanma çıktı');
+    assert.equal(tp.at, ev.id);
+    assert.equal(tp.to, t.P.p0.home);
+    assert.equal(r2.state.P.p0.pos, t.P.p0.home);
+});
