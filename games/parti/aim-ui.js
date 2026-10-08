@@ -98,6 +98,7 @@
                 att.textContent = deps.avatarOf(a.by) || '🏹';
                 var pos = tapped !== null ? tapped : Aim.indicatorAt(spec, Math.min(elapsed, a.maxMs));
                 setInd(pos);
+                track.className = 'pt-aim-track' + (elapsed < C.AIM_MIN_MS ? ' pt-aim-wait' : '');         // ilk AIM_MIN_MS: çubuk soluk ("hazırlanıyor")
                 title.textContent = isMine ? '🏹 ' + deps.nameOf(a.target) + ' — hedefte BIRAK!' : '🏹 ' + deps.nameOf(a.by) + ' → ' + deps.nameOf(a.target) + ' nişan alıyor';
                 drop.textContent = !isMine ? '' : (tapped !== null ? 'Bıraktın…' : (elapsed >= a.maxMs ? 'Süre doldu' : 'BIRAK'));
                 label.textContent = '';
@@ -142,7 +143,7 @@
         function tap(now) {
             if (done || !mineLive || !cur || !lastView || !lastView.aim) return false;
             var elapsed = now - lastView.aim.startAt;
-            if (elapsed < 0 || elapsed >= lastView.aim.maxMs) return false;
+            if (elapsed < C.AIM_MIN_MS || elapsed >= lastView.aim.maxMs) return false;       // çubuk görünür olduktan ilk AIM_MIN_MS'te dokunuş/Boşluk YOK SAYILIR (gösterge donmaz, mesaj gitmez)
             var p = Aim.indicatorAt(cur.spec, elapsed);
             var q = Math.max(0, Math.min(1000, Math.round(p * 1000)));
             tapped = q / 1000;                    // gösterge hemen donar

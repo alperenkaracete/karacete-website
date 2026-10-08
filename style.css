@@ -1158,6 +1158,7 @@ html.fs-active body.parti-active #game-container {
 .pt-aim-row { display: flex; align-items: center; gap: 8px; }
 .pt-aim-att { font-size: 26px; flex: none; }
 .pt-aim-track { position: relative; flex: 1; height: 54px; border-radius: 10px; background: rgba(255, 255, 255, 0.14); overflow: hidden; touch-action: none; }
+.pt-aim-track.pt-aim-wait { opacity: 0.55; }
 .pt-aim-zone { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
 .pt-aim-b3 { position: absolute; inset: 0; background: rgba(255, 210, 74, 0.35); display: flex; align-items: center; justify-content: center; }
 .pt-aim-b2 { height: 100%; background: rgba(255, 150, 40, 0.5); display: flex; align-items: center; justify-content: center; }

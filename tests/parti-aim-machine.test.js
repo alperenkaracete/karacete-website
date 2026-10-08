@@ -89,7 +89,7 @@ test('use yay -> aim aşaması: aimAt lider saatinde, as göreli ms ile yayılı
     assert.equal(R.current(gs(r).g), cur);
 });
 
-test('aim eylemi: MIN_AIM_MS\'ten erken reddedilir; göstergeye yakın q aynen, uzak q kenetlenir (SLACK)', () => {
+test('aim eylemi: göstergeye yakın q aynen, uzak q kenetlenir (SLACK)', () => {
     // ±450 ms pencere periyodun (1.2-1.6 sn) büyük kısmını kapsar: kenetlemenin etkili olduğu (merkez göstergeden uzak) bir tohum/an bul
     let r; let cur; let tgt; let spec; let el = null;
     for (let seed = 11; seed < 120 && el === null; seed++) {
@@ -100,11 +100,6 @@ test('aim eylemi: MIN_AIM_MS\'ten erken reddedilir; göstergeye yakın q aynen, 
         for (let e = 300; e < 2800; e += 25) if (Math.abs(Aim.clampQ(spec, spec.c, e, C.AIM_SLACK_MS) - spec.c) > 0.3 * spec.half) { el = e; break; }
     }
     assert.notEqual(el, null, 'kenetlemenin etkili olduğu durum bulundu');
-    // çok erken
-    r.advance(C.AIM_MIN_MS - 100, 50);
-    r.m(cur).dispatch({ type: 'aim', q: Math.round(spec.c * 1000) });
-    r.flush();
-    assert.equal(gs(r).g.stage, 'aim', 'erken dokunuş yok sayıldı');
     // bölge merkezinin göstergeden uzak olduğu bir an: kenetlenir (merkez isabeti olamaz)
     toElapsed(r, el, 25);
     const sentQ = Math.round(spec.c * 1000);
@@ -131,6 +126,40 @@ test('aim eylemi: MIN_AIM_MS\'ten erken reddedilir; göstergeye yakın q aynen, 
     const ev2 = gs(r2).fx.find((e) => e.t === 'aimres');
     assert.equal(ev2.tier, 'merkez');
     assert.equal(gs(r2).g.P[s2.tgt].hp, 50, 'tam isabet 50');
+});
+
+test('erken gelen aim (AIM_MIN_MS altı) DÜŞÜRÜLMEZ: kenetlenip kabul edilir, aşama roll a döner, atıcı kilitlenmez', () => {
+    for (const early of [0, 60, C.AIM_MIN_MS - 10]) {
+        const r = startGame(3);
+        const { cur, tgt } = setup(r);
+        useBow(r, cur, tgt);
+        const spec = specOf(r);
+        r.advance(early, 10);
+        const sentQ = Math.round(spec.c * 1000);
+        r.m(cur).dispatch({ type: 'aim', q: sentQ });
+        r.flush();
+        const st = gs(r);
+        assert.equal(st.g.stage, 'roll', 'erken dokunuş kabul edildi (early=' + early + ')');
+        assert.equal(st.g.aim, null);
+        assert.equal(st.g.atk, 1);
+        const ev = st.fx.find((e) => e.t === 'aimres');
+        assert.ok(ev && ev.q >= 0, 'q geçerli');
+        const cl = Math.round(Aim.clampQ(spec, sentQ / 1000, early, C.AIM_SLACK_MS) * 1000);
+        assert.equal(ev.q, cl, 'q geçerli pencereye kenetlendi');
+        assert.equal(r.m(cur).dispatch({ type: 'roll' }), true);
+    }
+    // aşama dışı / yanlış atıcı hâlâ reddedilir
+    const r2 = startGame(3);
+    const s2 = setup(r2);
+    const rv0 = gs(r2).rv;
+    r2.m(s2.cur).dispatch({ type: 'aim', q: 500 });
+    r2.flush();
+    assert.equal(gs(r2).rv, rv0, 'aim aşaması yokken eylem reddedildi (durum değişmedi)');
+    useBow(r2, s2.cur, s2.tgt);
+    r2.advance(300, 50);
+    r2.m(s2.tgt).dispatch({ type: 'aim', q: 500 });
+    r2.flush();
+    assert.equal(gs(r2).g.stage, 'aim', 'yanlış atıcı reddedildi');
 });
 
 test('süre dolunca (maxMs + 600 ms) lider q=-1 ile çözer: ıska, saldırı hakkı harcandı; bölge içi geç dokunuş (maxMs..+600) hâlâ kenetlenerek işlenir, sonrası ıska', () => {

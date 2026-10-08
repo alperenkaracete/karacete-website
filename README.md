@@ -212,7 +212,7 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
     (hedef 20 ± %10; eski düz yay 20). Yakın isabet uzaktan ≈ 2,8 kat kolay. Test: analitik formül + tohum süpürmesiyle Monte-Carlo (`tests/parti-aim.test.js`).
     Botlar bu modelle nişan alır (`botQ`: bölge merkezi + Normal(0, 0,15)); AFK/kopuk/süresi dolan atacı **ıska** (bot yerine geçmez).
   - **Ağ/saat:** gösterge ağda akmaz; herkes `indicatorAt(spec, şimdi − aimAt)` ile çizer. `aimAt` liderin yerel saatidir, `pt_state`'e göreli ms (`as`) olarak girer.
-    Lider insan q'sunu liderin ölçtüğü geçen süredeki göstergeye göre **±`AIM_SLACK_MS` (450 ms) penceresine kenetler**; en erken `AIM_MIN_MS` (250 ms) kabul;
+    Lider insan q'sunu liderin ölçtüğü geçen süredeki göstergeye göre **±`AIM_SLACK_MS` (450 ms) penceresine kenetler**; `AIM_MIN_MS` (250 ms): arayüz çubuk göründükten sonraki ilk 250 ms'de dokunuşu/Boşluk'u yok sayar (yanlışlıkla/çift dokunuş göstergeyi dondurmasın); lider erken gelen (saat/gecikme farkı) insan aim'ini DÜŞÜRMEZ, pencereye kenetleyip kabul eder;
     süre dolunca (`maxMs + AIM_GRACE_MS` 600 ms) lider q = −1 ile çözer. Bu **bozuk istemci/gecikme koruması, kesin hile savunması DEĞİLDİR** (periyot 1,2–1,6 sn iken
     ±450 ms penceresi periyodun büyük kısmını kapsar: gevşek; sıkılaştırmak için `AIM_SLACK_MS` azaltılır). Bot/otomatik nişan lider içidir (kenetleme yok).
     Lider devrinde nişan aşaması yeni liderde yeniden başlar (`aimAt` = şimdi). Aşama süresi `STAGE_MS.aim` = `maxMs` + 1500 (yedek). `unpack`: geçersiz `aim` ya da `as` → yayın reddi.
