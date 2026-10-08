@@ -182,3 +182,19 @@ test('ui: takım sayısı satırı (eşit bölünmeyenler pasif), takım hedefi 
     assert.ok(/'Takım hedefi: ' \+ per \* tsz/.test(ui));
     assert.ok(/C\.TEAMS\.slice\(0, /.test(ui));
 });
+
+// ---- Denge: büyük takımlarda tur uzunluğu (bot simülasyonu, kişi başı hedef 10) ----
+const { simulate } = require('./parti-sim.js');
+test('tur uzunluğu: 8 kişi 4+4 / 2+2+2+2 ve 6 kişi 3+3 / 2+2+2 ortalama turu solo\'nun 0,9-1,7 katı, oyunlar biter', () => {
+    const cases = [[8, 'space', [4, 2]], [6, 'pirate', [3, 2]]];
+    cases.forEach(([n, map, teamCounts]) => {
+        const solo = simulate({ players: n, games: 40, seed: 900, mode: 'solo', goal: 10, map });
+        assert.equal(solo.unfinished, 0);
+        teamCounts.forEach((teams) => {
+            const team = simulate({ players: n, games: 40, seed: 900, mode: 'team', teams, goal: 10, map });
+            assert.equal(team.unfinished, 0, n + ' kişi ' + teams + ' takım biter');
+            const ratio = team.avgRounds / solo.avgRounds;
+            assert.ok(ratio > 0.9 && ratio < 1.7, n + ' kişi ' + teams + ' takım: takım/solo tur oranı ' + ratio.toFixed(2) + ' (solo ' + solo.avgRounds.toFixed(1) + ', takım ' + team.avgRounds.toFixed(1) + ')');
+        });
+    });
+});

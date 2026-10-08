@@ -18,7 +18,7 @@ function simulate(opts) {
     let selfBombs = 0;
     for (let k = 0; k < games; k++) {
         const seats = [];
-        for (let i = 0; i < n; i++) seats.push({ id: 'p' + i, name: 'P' + i, av: 'x', t: Math.floor(i / 2), bot: true });
+        for (let i = 0; i < n; i++) seats.push({ id: 'p' + i, name: 'P' + i, av: 'x', t: opts.teams ? i % opts.teams : Math.floor(i / 2), bot: true });
         const cfg = { mode: opts.mode || 'solo', goal: opts.goal || 0, map: mapId };      // goal 0 = otomatik (2-3 kişi 15, 4-8 kişi 10)
         let st = R.createGame({ seed: (opts.seed || 1000) + k * 7919, cfg: cfg, seats: seats }, { g: g });
         const firstOrder = st.order.slice();
