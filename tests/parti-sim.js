@@ -19,7 +19,7 @@ function simulate(opts) {
     for (let k = 0; k < games; k++) {
         const seats = [];
         for (let i = 0; i < n; i++) seats.push({ id: 'p' + i, name: 'P' + i, av: 'x', t: Math.floor(i / 2), bot: true });
-        const cfg = { mode: 'solo', goal: opts.goal || 0, map: mapId };      // goal 0 = otomatik (2-3 kişi 15, 4-8 kişi 10)
+        const cfg = { mode: opts.mode || 'solo', goal: opts.goal || 0, map: mapId };      // goal 0 = otomatik (2-3 kişi 15, 4-8 kişi 10)
         let st = R.createGame({ seed: (opts.seed || 1000) + k * 7919, cfg: cfg, seats: seats }, { g: g });
         const firstOrder = st.order.slice();
         let steps = 0;
@@ -39,7 +39,8 @@ function simulate(opts) {
             st = r.state;
         }
         if (st.stage !== 'over' || !st.winner) { unfinished++; continue; }
-        wins[firstOrder.indexOf(st.winner.id)]++;
+        // takımda kazanan takımın ilk koltuktaki oyuncusuna yazılır
+        wins[st.winner.kind === 'team' ? firstOrder.findIndex(function (id) { return st.P[id].t === st.winner.id; }) : firstOrder.indexOf(st.winner.id)]++;
         rounds.push(st.rd);
     }
     const done = rounds.length || 1;

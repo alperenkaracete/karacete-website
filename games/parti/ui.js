@@ -463,12 +463,17 @@
         });
         settings.appendChild(mapRow);
         var goalRow = el('div', 'pt-row');
-        goalRow.appendChild(el('span', 'pt-label', 'Hedef ⭐'));
+        goalRow.appendChild(el('span', 'pt-label', 'Hedef ⭐ (kişi başı)'));
         goalRow.appendChild(btn('Otomatik (' + C.autoGoal(v.seats.length) + ')', v.cfg.gl === C.GOAL_AUTO ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: C.GOAL_AUTO }); }, !v.isLeader));
         C.GOALS.forEach(function (n) {
             goalRow.appendChild(btn(String(n), v.cfg.gl === n ? 'primary small' : 'small', function () { act({ type: 'cfg', goal: n }); }, !v.isLeader));
         });
         settings.appendChild(goalRow);
+        if (v.cfg.m === 'team') {
+            // takımda etkin hedef = kişi başı × TEAM_SIZE (Otomatik: oyuncu sayısına göre)
+            var per = v.cfg.gl === C.GOAL_AUTO ? C.autoGoal(v.seats.length) : v.cfg.gl;
+            settings.appendChild(el('span', 'pt-hint', 'Takım hedefi: ' + per * C.TEAM_SIZE + ' ⭐'));
+        }
         panel.appendChild(settings);
 
         if (v.isLeader) {
@@ -487,7 +492,7 @@
     // ---- Oyun: üst çubuk, oyuncular, kontroller, günlük ----
     function renderBar(v) {
         var g = v.game;
-        els.barLeft.textContent = 'Tur ' + g.rd + ' · Hedef ' + g.goal + ' ⭐';
+        els.barLeft.textContent = 'Tur ' + g.rd + ' · Hedef ' + R.effectiveGoal(g) + ' ⭐';
         var mid = '';
         if (g.stage === 'mini') mid = '🎡 Minioyun';
         else if (g.stage === 'over') mid = '🏆 Oyun bitti';
@@ -507,7 +512,7 @@
             g.order.forEach(function (id) { teams[g.P[id].t] = true; });
             var strip = el('div', 'pt-teams');
             Object.keys(teams).forEach(function (t) {
-                var chip = el('span', 'pt-chip', C.TEAMS[t].name + ' ' + R.teamStars(g, Number(t)) + '/' + g.goal + ' ⭐');
+                var chip = el('span', 'pt-chip', C.TEAMS[t].name + ' ' + R.teamStars(g, Number(t)) + '/' + R.effectiveGoal(g) + ' ⭐');
                 chip.style.background = teamColor(Number(t));
                 strip.appendChild(chip);
             });

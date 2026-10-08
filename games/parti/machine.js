@@ -572,7 +572,7 @@
             M.lg = [];
             M.kk = [];
             M.fx = [];
-            addLog('Oyun başladı! Hedef: ' + M.g.goal + ' ⭐');
+            addLog('Oyun başladı! Hedef: ' + R.effectiveGoal(M.g) + ' ⭐' + (M.g.mode === 'team' ? ' (takım)' : ''));
             M.fq++;
             setDeadline();
             botAt = now() + C.BOT_DELAY_MS;

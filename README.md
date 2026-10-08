@@ -184,12 +184,12 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
   kırılırsa **2 kendi tur** yeniden kurulamaz. Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
 - **Ölüm:** can 0 olunca `min(3, yıldız/2 aşağı)` yıldız saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
   can dolar, envanter korunur; tur atlatılmaz.
-- **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda (2'şerli) takımın toplam ⭐'ı hedefe ulaşınca takım anında kazanır.
+- **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda hedef **kişi başıdır**: etkin hedef = hedef × takım büyüklüğü (`TEAM_SIZE` = 2; `rules.effectiveGoal`, örn. 10 → 20) ve takımın toplam ⭐'ı buna ulaşınca takım anında kazanır. Tur çubuğu ve takım çipleri etkin hedefi gösterir.
 - **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.;
   beraberlikte ikisi de 2.). **Düelloda olmayanlar** (sıralamada yer almayanlar) ödül değil **teselli** alır: +25 ❤️ (üst sınır 100,
   `MINI_CONSOLATION`); sıralamadakiler teselli almaz, 3. derece ödülüyle çakışmaz (düello sıralamasında 3. derece yoktur).
   Envanter doluysa silah ödülü kaybolur.
-- **Son Çılgınlık:** biri (takımda takımın toplamı) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
+- **Son Çılgınlık:** biri (takımda takımın toplamı, etkin hedefe göre) hedefe 3 ⭐ ya da daha az kalınca (tur başında) tahta kızıla döner, ekranda uyarı çıkar
   ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
 - **Emoji tepkileri:** 😂 😱 👏 🤡 (`pt_emote {id, e}`): oyun durumuna yazılmaz, yalnızca iletilir; oyuncu başına en çok saniyede 1;
   tahtada oyuncunun jetonunun üstünde ~2 sn baloncuk olarak görünür. Yalnızca koltuktaki insanlar atabilir.

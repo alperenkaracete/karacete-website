@@ -108,6 +108,7 @@
         SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
         SHIELD_TURNS: SHIELD_TURNS_VALUE,             // kurulu kalkan 3 kendi tur sonra düşer
         SHIELD_COOLDOWN_TURNS: SHIELD_CD_VALUE,       // kalkan kırılınca 2 kendi tur yeniden kurulamaz
+        TEAM_SIZE: 2,                // takım büyüklüğü: takım modunda etkin hedef = kişi başı hedef × TEAM_SIZE (rules.effectiveGoal)
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
         STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)

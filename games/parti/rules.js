@@ -76,6 +76,12 @@
         return state.mode === 'team' && a !== b && state.P[a].t === state.P[b].t;
     }
 
+    // Etkin hedef (tek tanım): state.goal KİŞİ BAŞI hedeftir; takım modunda takımın toplamı bu değerle karşılaştırılır
+    // (kişi başı hedef × takım büyüklüğü). Solo modda state.goal aynen.
+    function effectiveGoal(state) {
+        return state.mode === 'team' ? state.goal * C.TEAM_SIZE : state.goal;
+    }
+
     function teamStars(state, t) {
         var sum = 0;
         state.order.forEach(function (id) { if (state.P[id].t === t) sum += state.P[id].s; });
@@ -91,7 +97,7 @@
                 var t = state.P[id].t;
                 if (seen[t]) return;
                 seen[t] = true;
-                if (teamStars(state, t) >= state.goal && (best === null || teamStars(state, t) > teamStars(state, best))) best = t;
+                if (teamStars(state, t) >= effectiveGoal(state) && (best === null || teamStars(state, t) > teamStars(state, best))) best = t;
             });
             if (best !== null) state.winner = { kind: 'team', id: best };
         } else {
@@ -173,7 +179,7 @@
         if (state.mode === 'team') {
             return state.order.some(function (id) {
                 var total = teamStars(state, state.P[id].t);
-                return total < state.goal && state.goal - total <= left;
+                return total < effectiveGoal(state) && effectiveGoal(state) - total <= left;
             });
         }
         return state.order.some(function (id) { var s = state.P[id].s; return s < state.goal && state.goal - s <= left; });
@@ -694,7 +700,7 @@
     return {
         createGame: createGame, reduce: reduce, autoAction: autoAction, botAction: botAction, attackOptions: attackOptions,
         minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
-        standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
+        effectiveGoal: effectiveGoal, standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
         checkWin: checkWin, clone: clone, nextRand: nextRand
     };
 });
