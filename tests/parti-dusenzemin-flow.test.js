@@ -271,6 +271,32 @@ function walk(r, ids, target, maxMs) {
     ids.forEach((id) => r.m(id)._session().setInput(0, 0));
 }
 
+test('out kaybolursa: ilk out ağda düşer, tekrarı kenar düşmesini yakalar -> hayatta ≤ 1 erken bitişi, yanlış eşit 1. yok', async () => {
+    const r = await reachFfa({ humans: 2, game: GAME, extra: { dropOuts: 1 } });
+    const sc = sched(r);
+    const fin = D.tileCenter(sc.finalTile);
+    r.advance(Math.max(0, mn(r).ff.stAt + 300 - r.now()), 100);
+    // A (lider) finale yürür; B doğuya yürüyüp arenadan düşer (kenar düşmesi: stale ile yakalanamaz, yalnız out bildirir)
+    r.m('B')._session().setInput(1, 0);
+    walk(r, ['A'], fin, 1500);
+    let g = 0;
+    while (g++ < 60 && r.m('B')._session().state().alive) r.advance(100, 100);
+    const stB = r.m('B')._session().state();
+    assert.equal(stB.alive, false, 'B kenardan düştü');
+    r.advance(300, 100);
+    assert.equal(mn(r).ff.rep.B.out, -1, 'ilk out ağda kayboldu: lider henüz bilmiyor');
+    assert.equal(mn(r).applyAt, 0);
+    r.advance(C.DUSENZEMIN_HEARTBEAT_MS + 400, 100);
+    const outKey = mn(r).ff.rep.B.out;
+    assert.ok(outKey >= 0, 'tekrarlanan out kabul edildi');
+    assert.equal(outKey, stB.outAt, 'kenar düşmesi: anahtar oyuncunun kendi ms\'si');
+    assert.ok(!sc.rounds.some((x) => x.collapseMs === outKey), 'kare yıkımı (staleOut) değil, gerçek out');
+    assert.ok(outKey < sc.rounds[0].collapseMs, 'ilk yıkılıştan önce düştü');
+    assert.ok(mn(r).applyAt > 0, 'A tek hayatta: erken bitti (süre dolmadan)');
+    assert.ok(mn(r).ff.endAt - r.now() > 60000);
+    assert.deepEqual(ranking(r), [['A'], ['B']], 'yanlış eşit 1. oluşmadı');
+});
+
 test('yenileme: elenmiş oyuncu hayalet kalır (hareket/out yok); hayattaki oyuncu raporlanan konumdan devam eder', async () => {
     const r = await reachFfa({ humans: 3, game: GAME });
     const sc = sched(r);

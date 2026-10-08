@@ -17,14 +17,15 @@ function setup(extra) {
     const reports = [];
     const ac = new AbortController();
     let api = null;
-    const net = { send: (m) => sent.push(JSON.parse(JSON.stringify(m))), on: (fn) => { handlers.push(fn); return () => { handlers.splice(handlers.indexOf(fn), 1); }; } };
+    const sentAt = [];
+    const net = { send: (m) => { sentAt.push(t); sent.push(JSON.parse(JSON.stringify(m))); }, on: (fn) => { handlers.push(fn); return () => { handlers.splice(handlers.indexOf(fn), 1); }; } };
     const spec = Object.assign({
         type: 'ffa', game: 'dusenzemin', players: PLAYERS, bots: ['bot1'], seed: SEED, me: { id: 'me', name: 'Ben' }, net, signal: ac.signal,
         now: () => t, startAt: t + 4000, onReport: (m) => reports.push(m), register: (a) => { api = a; }
     }, extra || {});
     const promise = Session.run(spec);
     const feed = (from, m) => handlers.slice().forEach((fn) => fn(from, m));
-    return { api, sent, reports, handlers, ac, promise, feed, set: (v) => { t = v; }, get t() { return t; }, startAt: spec.startAt };
+    return { api, sent, sentAt, reports, handlers, ac, promise, feed, set: (v) => { t = v; }, get t() { return t; }, startAt: spec.startAt };
 }
 const at = (s, e) => s.set(s.startAt + e);
 // belirli aralıkta 16 ms'lik kareler: tick sürer
@@ -191,9 +192,16 @@ test('elenme: yerdeyken zemin yıkılınca ≈ yıkılış + 120 ms sonra TEK ou
     assert.equal(outs.length, 1);
     assert.equal(outs[0].t, st.outAt);
     const posAfter = posMsgs(s).length;
-    advance(s, 6000);
-    assert.equal(s.sent.filter((m) => m.k === 'out').length, 1, 'tek sefer');
+    advance(s, 6500);
     assert.equal(posMsgs(s).length, posAfter, 'elenince pos yok');
+    // out kaybolabilir: aynı rapor kalp atışı aralığında tekrarlanır (n artar), aralığa en çok 1 mesaj
+    const all = s.sent.map((m, i) => ({ m, at: s.sentAt[i] })).filter((x) => x.m.k === 'out');
+    assert.ok(all.length >= 3 && all.length <= 4, 'tekrar sayısı ' + all.length);
+    all.forEach((x) => assert.equal(x.m.t, st.outAt, 'aynı elenme anı'));
+    for (let i = 1; i < all.length; i++) {
+        assert.ok(all[i].at - all[i - 1].at >= C.DUSENZEMIN_HEARTBEAT_MS - 1, 'en çok 1 mesaj/HEARTBEAT');
+        assert.ok(all[i].m.n > all[i - 1].m.n, 'n artar');
+    }
     assert.equal(s.api.press('jump', s.t), false);
     s.api.setInput(1, 0);
     advance(s, 500);

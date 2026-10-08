@@ -380,7 +380,7 @@ düğmesi; klavye: oklar / WASD. Çarpınca başlangıç satırına dönülür (
   `touch-action: none`. Masaüstü — WASD/oklar + Boşluk (zıpla) + E/Shift (it); zıpla/it kenar tetiklidir (basılı tutma gerekmez, `event.repeat` yok sayılır).
 - **Ağ (`pt_mg`, mg `f:<tohum>:dusenzemin`):** her istemci KENDİ oyuncusunun fiziğini koşturur. `{k:'pos', n, x, y, z, vx, vy, a}` ≤ ~8 Hz birleştirilmiş (zıplama/it anında hemen,
   2 sn kalp atışı); `{k:'push', to, dx, dy, n}` yalnız `to` (kurban) kendi üzerine uygular (menzil/bekleme kurbanın yerelinde denetlenir); `{k:'out', t, n}` elenme, kurban
-  kendi bildirir, **tek sefer**. Herkes pos/out'u GÖRÜNTÜ için dinler (≈ 120 ms yumuşatma); güven ve sonuç yalnız liderde. `n` oyun saatinden başlar (yenileme çözümü, Kurbağa gibi).
+  kendi bildirir; kaybolursa diye `DUSENZEMIN_HEARTBEAT_MS` aralığında **tekrarlanır** (lider ilkini kabul eder, tekrarları yok sayar; yenilemeden gelen hayalet hiç göndermez). Herkes pos/out'u GÖRÜNTÜ için dinler (≈ 120 ms yumuşatma); güven ve sonuç yalnız liderde. `n` oyun saatinden başlar (yenileme çözümü, Kurbağa gibi).
 - **Lider denetimi:** konum arena sınırı içinde, hız üst sınırı, zaman bütçeli adım (⌊dt/150⌋+1); `out.t` ancak son bilinen karenin yıkılışından sonra (pencere: yıkılış … + 120 ms düşme + 550 ms havada kalma + saat payı)
   ya da **kenar düşmesi** için son konum kenara (hız payı kadar) yakınsa kabul edilir; saçma olan yok sayılır. **Sıralama:** geç elenen iyi; aynı yıkılış turunda düşenler **eşit derece**
   (anahtar yıkılış anı); kenardan itilerek düşenler kendi ms'siyle sıralanır; süre sonunda hayatta olanlar eşit 1.
@@ -541,8 +541,7 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   o sekme takılı görünür. Kurbağa ağ yükü (8 oyuncu ≈ 4 mesaj/sn/oyuncu, herkese yayın) gerçek odada ölçülmedi.
   **Düşen Zemin:** ağ yükü (8 oyuncu × ~8 mesaj/sn, tüm istemcilere; üst sınır ≤ 10 Hz, `DUSENZEMIN_SEND_MS`) ve backend sınırı ölçülmedi; **itme gecikmesi ≈ ağ gecikmesi**
   (kurban kendi üzerine uyguladığı için itici darbeyi hemen görmez); itme kurban yetkili olduğundan hile için açık bir kapıdır (menzil/bekleme kurbanın bildiği akran konumuyla denetlenir ama
-  kesin değildir); yıkılış anları istemciler arası birkaç yüz ms kayabilir (out denetiminde pay var); elenme raporu (`out`) kaybolursa kare düşmesi `staleOut` ile, kenar düşmesi ise
-  yakalanamaz (oyuncu süre sonuna dek hayatta sayılır); fizik hissi ve joystick gerçek telefonda doğrulanmadı. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
+  kesin değildir); yıkılış anları istemciler arası birkaç yüz ms kayabilir (out denetiminde pay var); fizik hissi ve joystick gerçek telefonda doğrulanmadı. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
   (oyun dosyaları modül düzeyinde tek örnek tutar): iki oyuncu için iki ayrı sekme gerekir. Sürerken gelen yeni oyuncu yalnızca izleyici
   olur; kopmuş oyuncunun koltuğu 3 dk sonra düşer.
 - Bomberman mobil joystick: tek hareket döngüsü (50 ms) ve `bomberman-joystick.js` denetleyicisi: adımlar arası **en az 150 ms** (yön değişimi, ölü bölgeye

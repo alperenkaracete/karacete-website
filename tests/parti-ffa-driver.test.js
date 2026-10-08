@@ -179,6 +179,36 @@ test('dusenzemin accept(out): kare yıkımı -> anahtar yıkılış anı (aynı 
     assert.equal(ff2.rep.a.out, 50300, 'kenar düşmesi: kendi ms');
 });
 
+test('dusenzemin out kaybolursa: ilk out düşer, tekrarlanan ikincisi kabul edilir -> doğru derece; sonraki tekrarlar sonucu/eşitliği DEĞİŞTİRMEZ', () => {
+    const sc = DZ.schedule(5, 3);
+    const c = sc.rounds[1].collapseMs;
+    const A = DZ.tileCenter(sc.rounds[1].doomed[0]);
+    const B = DZ.tileCenter(sc.rounds[1].doomed[1]);
+    const ff = mkDz(0);
+    ff.rep.a.x = A.x; ff.rep.a.y = A.y; ff.rep.a.atMs = c - 100; ff.rep.a.seen = 1;
+    ff.rep.b.x = B.x; ff.rep.b.y = B.y; ff.rep.b.atMs = c - 100; ff.rep.b.seen = 1;
+    ff.sn = 2;
+    // a'nın ilk out'u ağda kayboldu (liderde hiç yok): henüz elenmedi
+    assert.equal(ff.rep.a.out, -1);
+    // b aynı turda düştü, raporu geldi
+    assert.equal(dz.accept(ff, 'b', { k: 'out', t: c + 130, n: 5 }, c + 200, CTX).ok, true);
+    // 2 sn sonra a'nın TEKRAR out'u (n arttı) gelir: kabul edilir, aynı yıkılış turu -> eşit derece
+    const r = dz.accept(ff, 'a', { k: 'out', t: c + 130, n: 6 }, c + 2200, CTX);
+    assert.deepEqual(r, { ok: true, changed: true, final: true });
+    assert.equal(ff.rep.a.out, c);
+    const before = JSON.stringify(ff.rep);
+    // sonraki tekrarlar (b ve a) hiçbir şeyi değiştirmez
+    [['a', 7, c + 4300], ['b', 6, c + 4300], ['a', 8, c + 6400], ['b', 7, c + 6400]].forEach(([id, n, t]) => {
+        const rr = dz.accept(ff, id, { k: 'out', t: c + 130, n }, t, CTX);
+        assert.deepEqual(rr, { ok: true, changed: false, final: false }, id + ' tekrarı');
+    });
+    const after = JSON.parse(JSON.stringify(ff.rep));
+    ['a', 'b'].forEach((id) => { assert.equal(after[id].out, c); assert.equal(after[id].x, JSON.parse(before)[id].x); });
+    ff.sn = 2;
+    const rk = (extra) => dz.rank(Object.assign({ players: PLY, bots: [], seed: 5, ff, endMs: 120000 }, extra));
+    assert.deepEqual(rk().map((g) => g.slice().sort()), [['c'], ['a', 'b']], 'c hayatta 1.; a ve b aynı turda eşit');
+});
+
 test('dusenzemin watch (donan telefon): 5 sn sessizlik + yıkılmış kare -> elenir; güvenli kare / <5 sn -> elenmez', () => {
     const sc = DZ.schedule(5, 3);
     const gone = sc.rounds[1].doomed[0];

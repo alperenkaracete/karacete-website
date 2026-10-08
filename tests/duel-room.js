@@ -54,6 +54,11 @@ function room(seed, extra) {
             },
             send: (msg) => {
                 if (!node.online) return;
+                // test: ilk extra.dropOuts adet out raporu (pt_mg k:'out') ağda kaybolur (oyuncu başına)
+                if (extra && extra.dropOuts && msg.type === 'pt_mg' && msg.m && msg.m.k === 'out') {
+                    node.dropped = (node.dropped || 0) + 1;
+                    if (node.dropped <= extra.dropOuts) return;
+                }
                 const copy = JSON.parse(JSON.stringify(msg));
                 api.sent.push({ from: node.id, msg: copy });
                 Object.values(nodes).forEach((o) => { if (o.id !== node.id && o.online) queue.push({ to: o.id, msg: copy }); });

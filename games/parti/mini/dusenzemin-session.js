@@ -7,7 +7,8 @@
 // Ağ (pt_mg, makine zarfında gönderen kimliği eklenir):
 //   { k:'pos',  n, x, y, z, vx, vy, a }   ≤ ~8 Hz birleştirilmiş (DUSENZEMIN_SEND_MS); zıplama/it anında hemen; DUSENZEMIN_HEARTBEAT_MS kalp atışı
 //   { k:'push', to, dx, dy, n }            itici yollar; YALNIZ 'to' (kurban) kendi üzerine uygular; menzil/bekleme kurbanın yerelinde denetlenir
-//   { k:'out',  t, n }                     elenme: kurban kendi bildirir (t = oyun saatinden ms), TEK sefer
+//   { k:'out',  t, n }                     elenme: kurban kendi bildirir (t = oyun saatinden ms); kaybolursa diye HEARTBEAT aralığında TEKRARLANIR
+//                                          (n artar; lider ilkini kabul eder, tekrarları yok sayar). Yenilemeden gelen hayalet (resume.out) HİÇ göndermez.
 // Sıra no n oyun saatinden (ms) başlar: yenilenen sayfanın yeni oturumu liderin önceki n'sinin altında kalmaz (Kurbağa'daki çözüm).
 // Zamanlayıcı yok: makine her tick'te api.tick(now) çağırır, arayüz ayrıca kare başına; tick sabit adımla YAKALAR (arka plandaki telefon/sekme
 // dönünce en çok CATCHUP_MAX_MS ileri sarar; girişler o sürede sabit varsayılır).
@@ -59,7 +60,7 @@
         var lastSend = -1e9;
         var lastSent = null;
         var immediate = !ghost;                // ilk tick'te ilk rapor hemen gider (hayalet hiç göndermez)
-        var outSent = ghost;                   // elenme raporu tek sefer; hayalet (yenileme) ikinci kez göndermez
+        var lastOutSend = -1e9;                // elenme raporu: ilk gönderim hemen, sonra HEARTBEAT aralığında tekrar; hayalet (yenileme) hiç göndermez
         var peers = {};
         var lastPushFrom = {};
         var pushedAt = -1e9;
@@ -81,8 +82,8 @@
         }
 
         function sendOut(t) {
-            if (outSent) return;
-            outSent = true;
+            if (ghost || t - lastOutSend < Config.DUSENZEMIN_HEARTBEAT_MS) return;
+            lastOutSend = t;
             emit({ k: 'out', t: state.outAt, n: ++n }, t);
         }
 
