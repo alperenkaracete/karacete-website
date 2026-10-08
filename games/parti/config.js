@@ -5,10 +5,19 @@
 })(typeof self !== 'undefined' ? self : this, function (Registry) {
     'use strict';
 
+    // Beceri (skill): hasar anlık çözülmez, 'aim' aşamasında oyuncunun becerisine göre belirlenir (games/parti/aim.js).
+    //   kind 'bar'  : çubukta hareket eden gösterge; tek dokunuş. Bölge hedefin emojisiyle gösterilir; merkezi tohumdan, genişliği uzaklığa göre
+    //                 widthNear (d ≤ 1) -> widthFar (d = menzil) doğrusal. Kademeler yarı genişliğin oranına göre (r): merkez / bölge içi / kenar; dışı ıska.
+    //                 KALİBRASYON: referans oyuncu (dokunma hatası ~ Normal(0, AIM_REF_SIGMA)) ile d=1..5 ortalama beklenen hasar ≈ refAvg (20; test ±%10).
+    //   kind 'show' : hasar anlık (aşama yok), yalnız kısa şov (ms).
+    var BOW_SKILL = {
+        kind: 'bar', maxMs: 3000, periodMs: [1200, 1600], widthNear: 0.44, widthFar: 0.13, refAvg: 20,
+        tiers: [{ r: 0.25, tier: 'merkez', dmg: 50 }, { r: 0.65, tier: 'bolge', dmg: 30 }, { r: 1, tier: 'kenar', dmg: 15 }]
+    };
     var WEAPONS = {
-        fist:    { id: 'fist',    name: 'Yumruk',  emoji: '👊', kind: 'target', range: 1, dmg: { 0: 100, 1: 100 } },      // menzil 0-1 (aynı ya da komşu kutucuk), tek vuruş
+        fist:    { id: 'fist',    name: 'Yumruk',  emoji: '👊', kind: 'target', range: 1, dmg: { 0: 100, 1: 100 }, skill: { kind: 'show', ms: 900 } },      // menzil 0-1 (aynı ya da komşu kutucuk), tek vuruş (şov: 0,9 sn, UI'ı engellemez)
         shotgun: { id: 'shotgun', name: 'Pompalı', emoji: '🔫', kind: 'target', range: 3, dmg: { 0: 45, 1: 45, 2: 30, 3: 15 } },
-        bow:     { id: 'bow',     name: 'Yay',     emoji: '🏹', kind: 'target', range: 5, dmg: { 0: 20, 1: 20, 2: 20, 3: 20, 4: 20, 5: 20 } },
+        bow:     { id: 'bow',     name: 'Yay',     emoji: '🏹', kind: 'target', range: 5, dmg: { 0: 20, 1: 20, 2: 20, 3: 20, 4: 20, 5: 20 }, skill: BOW_SKILL },   // dmg tablosu yedek/ortalama (skill varken kademe tablosu geçerli)
         bomb:    { id: 'bomb',    name: 'Bomba',   emoji: '💣', kind: 'area',   range: 4, damage: 30 },
         shield:  { id: 'shield',  name: 'Kalkan',  emoji: '🛡️', kind: 'shield' }
     };
@@ -77,6 +86,12 @@
         if (def.kind === 'area') {
             return 'Menzil ' + def.range + ': seçilen kutucuktaki herkese (kendine de) ' + def.damage + ' hasar. Başlangıçtakilere işlemez.';
         }
+        if (def.skill && def.skill.kind === 'bar') {
+            var sk = def.skill;
+            return 'Menzil 0–' + def.range + ' adım. Nişan çubuğu: hedefin emojisinin bölgesinde BIRAK (tek dokunuş, en çok ' + (sk.maxMs / 1000) + ' sn): ' +
+                sk.tiers.map(function (t) { return t.dmg; }).join(' / ') + ' hasar (merkez / bölge / kenar), kaçırırsan 0. Bölge uzaklıkla daralır (%' +
+                Math.round(sk.widthNear * 100) + ' → %' + Math.round(sk.widthFar * 100) + '); orta ustalıkta ortalama ≈ ' + sk.refAvg + '. Başlangıçtakilere işlemez.';
+        }
         var dists = Object.keys(def.dmg).map(Number).filter(function (d) { return d >= 1; }).sort(function (a, b) { return a - b; });
         var vals = dists.map(function (d) { return def.dmg[d]; });
         var same = vals.every(function (v) { return v === vals[0]; });
@@ -133,12 +148,19 @@
         teamSize: teamSize,
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
-        STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)
+        STAGE_MS: { roll: 20000, choose: 8000, aim: BOW_SKILL.maxMs + 1500 },   // aşama başına süre (roll: silah seç + zar at)
         DISCONNECT_BOT_MS: 30000,    // sırası gelen kopmuş oyuncu için bot devralmadan önce bekleme
         AFK_BOT_DELAY_MS: 3000,      // AFK oyuncunun turunda bot oynamadan önce bekleme (insan "Ben buradayım" diyebilsin)
         AFK_TURNS: 2,                // üst üste bu kadar AFK turdan sonra bot devralır
         DISCONNECT_MS: 180000,       // kopan oyuncuyu bekleme
         BOT_DELAY_MS: 900,           // bot eylemleri arası (görünürlük)
+        // Beceri silahları (aim aşaması): lider kenetleme penceresi (bozuk istemci koruması, kesin hile savunması DEĞİL), en erken kabul, süre sonrası ek,
+        // sonuç etiketi süresi, referans oyuncu hatası (kalibrasyon)
+        AIM_SLACK_MS: 450,
+        AIM_MIN_MS: 250,
+        AIM_GRACE_MS: 600,
+        AIM_RESULT_MS: 1400,
+        AIM_REF_SIGMA: 0.15,
         MINI_HOLD_MS: 5000,          // minioyun sonucu ekranda kalma
         // Düelloda TOPLAM süre sınırı yoktur (oyunlar yarıda kesilmez). Yalnız kopma (DUEL_RECONNECT_MS) ve hamle başına boşta sınırı:
         // sırası gelen oyuncu bu kadar hiç hamle yapmazsa o maçı kaybeder.

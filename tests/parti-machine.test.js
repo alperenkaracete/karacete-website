@@ -747,7 +747,7 @@ function nonLeaderTurn(r) {
 }
 
 test('aşama süreleri: zar aşaması (silah+zar) 20 sn, yön 8 sn; act/swap yok', () => {
-    assert.deepEqual(C.STAGE_MS, { roll: 20000, choose: 8000 });
+    assert.deepEqual(C.STAGE_MS, { roll: 20000, choose: 8000, aim: 4500 });      // aim: yay çubuğu 3 sn + 1,5 sn
     const r = started(2);
     const dl = () => r.view('A').dlLeft;
     assert.ok(dl() > 19000 && dl() <= 20000, 'zar ' + dl());
