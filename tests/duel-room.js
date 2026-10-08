@@ -214,7 +214,7 @@ const rewardsFromFx = (r, id) => {
 async function reachFfa(opts) {
     opts = opts || {};
     const humans = opts.humans || 3;
-    const r = room(opts.seed || 5, Object.assign({ forceMini: { game: 'kurbaga' } }, opts.extra || {}));
+    const r = room(opts.seed || 5, Object.assign({ forceMini: { game: opts.game || 'kurbaga' } }, opts.extra || {}));
     for (let i = 0; i < humans; i++) r.join(IDS[i], NAMES[i]);
     for (let i = 0; i < (opts.bots || 0); i++) r.m('A').dispatch({ type: 'bot_add' });
     r.flush();

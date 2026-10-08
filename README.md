@@ -61,6 +61,7 @@ games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dek
 games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
 games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
 games/parti/mini/registry.js      minioyun kaydı: { id, name, icon, kind: ffa|duel|grup, min, max, weight }; seçim, config ve arayüz buradan okur
+games/parti/mini/ffa-drivers.js    ffa oyun sürücüleri (machine.js oyuna özel kuralı bilmez): rep şeması, rapor denetimi, bitiş, sıralama, izleyici satırı
 games/parti/mini/kurbaga-rules.js   Kurbağa saf kurallar: tohumlu araçlar f(t), çarpışma, makullük denetimi, bot ilerleme, sıralama
 games/parti/mini/kurbaga-session.js Kurbağa oyuncu oturumu (DOM'suz): sıçrama sınırı, çarpışma, ağ raporu birleştirme, kalp atışı
 games/parti/mini/kurbaga-ui.js      Kurbağa arayüzü: kanvas, 4 ok düğmesi, klavye, akran yumuşatması
@@ -321,12 +322,12 @@ Seçim `games/parti/mini/registry.js` kaydından yapılır (`rules.minigameSpec`
   `minigameSpec` saf kalır, `lm` yazmaz; çark yedeği `lm`'yi değiştirmez).
 - **Şans Çarkı yalnız acil yedektir:** uygun oyun yok (`game: null`), Kurbağa'da hiç rapor gelmedi ya da oyun kurulamadı.
 
-| Odadaki durum | xox | connect4 | catdog | kurbaga |
-|---|---|---|---|---|
-| 2+ insan (bot olsun olmasın) | %25 | %25 | %25 | %25 |
-| 1 insan + botlar | - | - | - | %100 |
+| Odadaki durum | xox | connect4 | catdog | kurbaga | dusenzemin |
+|---|---|---|---|---|---|
+| 2+ insan (bot olsun olmasın) | %20 | %20 | %20 | %20 | %20 |
+| 1 insan + botlar | - | - | - | %50 | %50 |
 
-(Oranlar `tests/parti-mini-registry.test.js` içinde 8000 çekilişlik süpürmeyle doğrulanır; "bir önceki hariç" kuralı uzun vadede oranı
+(Oranlar `tests/parti-mini-registry.test.js` içinde 10000 çekilişlik süpürmeyle doğrulanır; "bir önceki hariç" kuralı uzun vadede oranı
 değiştirmez, yalnız üst üste tekrarı önler. Havuz ≤ 2 ise hariç tutma yoktur.)
 
 **Test bayrağı `?mini=<oyun-id>`** (`xox` | `connect4` | `catdog` | `kurbaga`): havuzu o oyuna indirir. `?mini=duel` rastgele düello,
@@ -365,8 +366,8 @@ düğmesi; klavye: oklar / WASD. Çarpınca başlangıç satırına dönülür (
 1. `games/parti/mini/registry.js`'e satır ekle: `{ id, name, icon, kind: 'duel' | 'ffa', min, max, weight: 1 }`. Seçim, `Config.DUEL_GAMES` ve oranlar
    otomatik güncellenir; `tests/parti-mini-registry.test.js` dağılımını (≈ %100/oyun sayısı) ve şemayı doğrular.
 2. **Düello** ise aşağıdaki "Yeni düello minioyunu eklemek" adımlarını izle. **ffa** ise: saf kural + oturum modülü yaz (`kurbaga-*` örnek), `minigame.js`
-   içindeki `FFA` tablosuna oturumu ekle, `machine.js`'te rapor denetimini oyuna özel yap (şimdi Kurbağa'ya göre), `ui.js`'te `FFA_TITLES` ve
-   izleyici kartını ekle.
+   içindeki `FFA` tablosuna oturumu ekle ve `mini/ffa-drivers.js`'e sürücü ekle (rep şeması, `accept`, `allDone`, `rank`, `summaryRow` ...); `machine.js`
+   ve `ui.js` değişmez (başlık registry'den, izleyici satırı sürücüden).
 3. Bayrakla (`?mini=<id>`) uçtan uca dene; 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
 **Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı; çoklu düelloda otomatik çalışır, ek adım yok):

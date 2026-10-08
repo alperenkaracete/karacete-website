@@ -13,8 +13,8 @@ const mk = (seed, seats) => { const st = R.createGame({ seed, cfg: { mode: 'solo
 const humansAndBot = [seat('h1', 0), seat('h2', 1), seat('h3', 2), seat('b1', 3, true)];
 const oneHuman = [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)];
 
-test('registry: şema, dört oyun, tür ve sınırlar; config.DUEL_GAMES registry\'den türer', () => {
-    assert.deepEqual(Registry.GAMES.map((g) => g.id), ['xox', 'connect4', 'catdog', 'kurbaga']);
+test('registry: şema, beş oyun, tür ve sınırlar; config.DUEL_GAMES registry\'den türer', () => {
+    assert.deepEqual(Registry.GAMES.map((g) => g.id), ['xox', 'connect4', 'catdog', 'kurbaga', 'dusenzemin']);
     Registry.GAMES.forEach((g) => {
         assert.equal(typeof g.name, 'string');
         assert.equal(typeof g.icon, 'string');
@@ -23,7 +23,7 @@ test('registry: şema, dört oyun, tür ve sınırlar; config.DUEL_GAMES registr
         assert.equal(g.weight, 1, g.id);
     });
     assert.deepEqual(Registry.ids('duel'), ['xox', 'connect4', 'catdog']);
-    assert.deepEqual(Registry.ids('ffa'), ['kurbaga']);
+    assert.deepEqual(Registry.ids('ffa'), ['kurbaga', 'dusenzemin']);
     assert.ok(Registry.KINDS.includes('grup'), 'grup şemada tanımlı');
     assert.deepEqual(C.DUEL_GAMES, Registry.ids('duel'));
     assert.equal(Registry.get('kurbaga').kind, 'ffa');
@@ -32,8 +32,8 @@ test('registry: şema, dört oyun, tür ve sınırlar; config.DUEL_GAMES registr
 
 test('registry.eligible: düello ≥2 İNSAN ister; ffa 1 insanla da; grup hiç seçilmez', () => {
     assert.deepEqual(Registry.eligible(0).map((g) => g.id), []);
-    assert.deepEqual(Registry.eligible(1).map((g) => g.id), ['kurbaga']);
-    assert.deepEqual(Registry.eligible(2).map((g) => g.id), ['xox', 'connect4', 'catdog', 'kurbaga']);
+    assert.deepEqual(Registry.eligible(1).map((g) => g.id), ['kurbaga', 'dusenzemin']);
+    assert.deepEqual(Registry.eligible(2).map((g) => g.id), ['xox', 'connect4', 'catdog', 'kurbaga', 'dusenzemin']);
     const grup = { id: 'grupdeneme', name: 'G', icon: 'G', kind: 'grup', min: 1, max: 8, weight: 1 };
     Registry.GAMES.push(grup);
     try {
@@ -56,17 +56,23 @@ function sweep(seats, n) {
     return { counts, seq };
 }
 
-test('dağılım: 2+ insanda dört oyun ≈ %25 (üst üste tekrar yok); 1 insanda Kurbağa %100', () => {
-    const N = 8000;
+test('dağılım: 2+ insanda beş oyun ≈ %20 (düello 3/5, ffa 2/5; üst üste tekrar yok); 1 insanda iki ffa oyunu ≈ %50/%50', () => {
+    const N = 10000;
     const a = sweep(humansAndBot, N);
-    ['xox', 'connect4', 'catdog', 'kurbaga'].forEach((id) => {
+    ['xox', 'connect4', 'catdog', 'kurbaga', 'dusenzemin'].forEach((id) => {
         const p = a.counts[id] / N;
-        assert.ok(p > 0.22 && p < 0.28, id + ' oranı ' + p.toFixed(3));
+        assert.ok(p > 0.17 && p < 0.23, id + ' oranı ' + p.toFixed(3));
     });
+    const duel = (a.counts.xox + a.counts.connect4 + a.counts.catdog) / N;
+    assert.ok(duel > 0.55 && duel < 0.65, 'düello 3/5: ' + duel.toFixed(3));
     for (let i = 1; i < a.seq.length; i++) assert.notEqual(a.seq[i], a.seq[i - 1], 'üst üste aynı oyun: ' + i);
-    const b = sweep(oneHuman, 500);
-    assert.deepEqual(Object.keys(b.counts), ['kurbaga']);
-    assert.equal(b.counts.kurbaga, 500, 'havuz ≤2: önceki oyun hariç tutulmaz, Kurbağa tekrar edebilir');
+    const b = sweep(oneHuman, 4000);
+    assert.deepEqual(Object.keys(b.counts).sort(), ['dusenzemin', 'kurbaga']);
+    ['kurbaga', 'dusenzemin'].forEach((id) => {
+        const p = b.counts[id] / 4000;
+        assert.ok(p > 0.45 && p < 0.55, id + ' tek insanda ' + p.toFixed(3));
+    });
+    assert.ok(b.seq.some((x, i) => i && x === b.seq[i - 1]), 'havuz ≤2: önceki oyun hariç tutulmaz, aynı oyun üst üste gelebilir');
 });
 
 test('spec saf: lm minigameSpec içinde yazılmaz; applyMinigame oynanan oyunu yazar; çark yedeği lm\'yi değiştirmez', () => {
@@ -102,7 +108,7 @@ test('çark yalnız acil yedek: uygun oyun yoksa game:null; bayrak uygun değils
     assert.equal(R.minigameSpec(botsOnly, { g: space }).game, null);
     assert.equal(R.minigameSpec(botsOnly, { g: space }).type, 'ffa');
     const st = mk(6, oneHuman);
-    assert.equal(R.minigameSpec(st, { g: space, mini: { game: 'catdog' } }).game, 'kurbaga', 'düello bayrağı 1 insanda yok sayılır');
+    assert.ok(['kurbaga', 'dusenzemin'].includes(R.minigameSpec(st, { g: space, mini: { game: 'catdog' } }).game), 'düello bayrağı 1 insanda yok sayılır (ffa havuzu)');
     const two = mk(7, humansAndBot);
     two.lm = 'xox';
     assert.equal(R.minigameSpec(two, { g: space, mini: { game: 'xox' } }).game, 'xox', 'bayrakla tek oyun: havuz 1 olduğundan lm hariç tutulmaz');

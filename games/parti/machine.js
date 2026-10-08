@@ -9,11 +9,11 @@
 //           pt_mg {mg, from, m} (minioyun yükü; durum DEĞİL: yalnızca eşleşen oturuma, düellodaki ikiliden ya da liderden kabul edilir)
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'), require('./mini/kurbaga-rules.js'));
+        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'), require('./mini/ffa-drivers.js'));
     } else {
-        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch, root.PartiKurbagaRules);
+        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch, root.PartiFfaDrivers);
     }
-})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch, KRules) {
+})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch, Drivers) {
     'use strict';
 
     var PHASES = ['lobby', 'play', 'over'];
@@ -99,14 +99,11 @@
             };
         }
 
-        // Kurbağa (ffa): st/ea oyunun başlangıcı ve sonu (yayın anına göre işaretli ms), sn rapor veren insan sayısı,
-        // rp: { id: [satır, sütun, ölüm, varış ms | -1] }. Araçlar ve botlar tohumdan, ağda yok.
-        function packFf(ff, t) {
+        // ffa (Kurbağa, Düşen Zemin ...): st/ea oyunun başlangıcı ve sonu (yayın anına göre işaretli ms), sn rapor veren insan sayısı,
+        // rp: { id: sürücünün packRep dizisi }. Takvim/araç/bot tohumdan, ağda yok. Oyuna özel kısım sürücüde (mini/ffa-drivers.js).
+        function packFf(ff, t, drv) {
             var rp = {};
-            Object.keys(ff.rep).forEach(function (id) {
-                var q = ff.rep[id];
-                rp[id] = [q.r, q.c, q.d, q.f];
-            });
+            Object.keys(ff.rep).forEach(function (id) { rp[id] = drv.packRep(ff.rep[id]); });
             return { st: Math.round(ff.stAt - t), ea: Math.round(ff.endAt - t), sn: ff.sn || 0, rp: rp };
         }
 
@@ -121,7 +118,7 @@
                         o: x.out ? { w: x.out.w || '', l: x.out.l || '', d: x.out.d ? 1 : 0, r: x.out.r || '' } : null };
                 }),
                 ex: m.ex || null, nf: m.nFirst || 0, oc: m.oc || null,
-                ff: m.ff ? packFf(m.ff, t) : null
+                ff: m.ff && Drivers[m.gm] ? packFf(m.ff, t, Drivers[m.gm]) : null
             };
         }
 
@@ -248,15 +245,16 @@
                 var mff = null;
                 if (msg.mn.ff) {
                     var fx = msg.mn.ff;
+                    var fdrv = gm ? Drivers[gm] : null;
+                    if (!fdrv) return null;
                     if (typeof fx !== 'object' || !isInt(fx.st, -1000000, 1000000) || !isInt(fx.ea, -1000000, 1000000) || !isInt(fx.sn, 0, 8) || !fx.rp || typeof fx.rp !== 'object') return null;
                     var fks = Object.keys(fx.rp);
                     if (fks.length > C.MAX_PLAYERS) return null;
                     var frep = {};
                     for (var fi = 0; fi < fks.length; fi++) {
-                        var fa = fx.rp[fks[fi]];
-                        if (!Array.isArray(fa) || fa.length !== 4 || !isInt(fa[0], 0, KRules.GOAL_ROW) || !isInt(fa[1], 0, KRules.COLS - 1) || !isInt(fa[2], 0, 100000) || !isInt(fa[3], -1, 10000000)) return null;
-                        // n/at: lider devrinde ilk rapor için cömert zaman bütçesi (oyun başlangıcından beri)
-                        frep[fks[fi]] = { r: fa[0], c: fa[1], d: fa[2], f: fa[3], n: -1, at: t + fx.st, seen: 1 };
+                        var fr = fdrv.unpackRep(fx.rp[fks[fi]], { stAt: t + fx.st });
+                        if (!fr) return null;
+                        frep[fks[fi]] = fr;
                     }
                     mff = { stAt: t + fx.st, endAt: t + fx.ea, sn: fx.sn, rep: frep };
                 }
@@ -396,17 +394,19 @@
                 return;
             }
             var ent = spec.type === 'ffa' && spec.game ? C.MINI.get(spec.game) : null;
-            if (ent && ent.kind === 'ffa') {
-                // Kurbağa (ffa): tüm insan istemcilerde yerel oturum (syncMini), lider raporlardan sonucu hesaplar (ffaWatch)
+            if (ent && ent.kind === 'ffa' && Drivers[spec.game]) {
+                // ffa: tüm insan istemcilerde yerel oturum (syncMini), lider raporlardan sonucu hesaplar (ffaWatch); kural sürücüde
+                var fd = Drivers[spec.game];
                 var t0 = now();
+                var fStAt = t0 + fd.countdownMs;
                 var rep = {};
                 spec.players.forEach(function (id) {
                     var st = seatOf(id);
-                    if (st && !st.b) rep[id] = { r: 0, c: Math.floor(KRules.COLS / 2), d: 0, f: -1, n: -1, at: t0 + C.KURBAGA_COUNTDOWN_MS, seen: 0 };
+                    if (st && !st.b) rep[id] = fd.newRep(id, { stAt: fStAt });
                 });
                 token.gm = spec.game;
                 token.pl = spec.players.slice();
-                token.ff = { stAt: t0 + C.KURBAGA_COUNTDOWN_MS, endAt: t0 + C.KURBAGA_COUNTDOWN_MS + C.KURBAGA_MS, sn: 0, rep: rep, pubAt: 0, dirty: false };
+                token.ff = { stAt: fStAt, endAt: fStAt + fd.durationMs, sn: 0, rep: rep, pubAt: 0, dirty: false };
                 return;
             }
             var p = startMinigame({ type: spec.type, players: spec.players.slice(), seed: spec.seed });
@@ -782,8 +782,8 @@
                     if (!x.out) x.actAt = now();          // yeni lider boşta sayacını sıfırdan başlatır
                 });
             } else if (M.mn && M.mn.ff && !M.mn.applyAt) {
-                // Kurbağa: rapor durumu pt_state ile geldi; istemciler son durumu kalp atışıyla yeniden gönderir
-                Object.keys(M.mn.ff.rep).forEach(function (id) { M.mn.ff.rep[id].n = -1; M.mn.ff.rep[id].at = M.mn.ff.stAt; });
+                // ffa: rapor durumu pt_state ile geldi; istemciler son durumu kalp atışıyla yeniden gönderir
+                if (Drivers[M.mn.gm]) Drivers[M.mn.gm].onTakeover(M.mn.ff);
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -1094,8 +1094,7 @@
                     return function () { var i = s.handlers.indexOf(fn); if (i >= 0) s.handlers.splice(i, 1); };
                 }
             };
-            var q = ff.rep[me.id];
-            var resume = q && (q.seen || q.f >= 0 || q.r > 0 || q.d > 0) ? { r: q.r, c: q.c, d: q.d, f: q.f } : null;
+            var resume = Drivers[token.gm].resume(ff.rep[me.id]);
             startMinigame({
                 type: 'ffa', game: token.gm, players: token.pl.slice(), bots: token.pl.filter(function (id) { return !ff.rep[id]; }), seed: token.sd,
                 me: { id: me.id, name: me.name }, isLeader: isLeader(), leader: M.ld, root: opts.miniRoot ? opts.miniRoot() : null, observer: false,
@@ -1106,56 +1105,35 @@
             });
         }
 
-        // Lider (Kurbağa): bir insanın raporunu denetleyip kaydeder. Makul değilse ya da eski sıra noktasıysa yok sayılır.
+        // Lider (ffa): bir insanın raporunu sürücüyle denetleyip kaydeder. Makul değilse ya da eski sıra noktasıysa yok sayılır.
         function leaderFfaReport(from, m) {
             var mn = M.mn;
-            if (!mn || !mn.ff || mn.applyAt || !m || m.k !== 'pos') return;
+            if (!mn || !mn.ff || mn.applyAt || !m || typeof m !== 'object') return;
+            var drv = Drivers[mn.gm];
             var ff = mn.ff;
-            var q = ff.rep[from];
             var seat = seatOf(from);
-            if (!q || !seat || seat.b) return;
-            if (!isInt(m.n, 0, 1000000000) || m.n <= q.n) return;
+            if (!drv || !ff.rep[from] || !seat || seat.b) return;
             var t = now();
-            if (!KRules.plausible({ r: q.r, c: q.c, d: q.d }, { r: m.r, c: m.c, d: m.d }, t - q.at)) return;
-            if (q.f >= 0) { q.n = m.n; return; }              // varmış: sonuç donuk
-            var fin = -1;
-            if (m.r === KRules.GOAL_ROW) {
-                if (!KRules.plausibleFinish(m.e, t - ff.stAt)) return;
-                fin = m.e;
-            }
-            var changed = q.r !== m.r || q.c !== m.c || q.d !== m.d;
-            q.r = m.r; q.c = m.c; q.d = m.d; q.n = m.n; q.at = t;
-            var now1 = false;
-            if (!q.seen) { q.seen = 1; ff.sn = (ff.sn || 0) + 1; now1 = true; }
-            if (fin >= 0) {
-                q.f = fin;
-                // ilk varıştan sonra kalan süre KURBAGA_LAST_CALL_MS'e düşer (min: sonraki varışlar uzatmaz)
-                ff.endAt = Math.min(ff.endAt, t + C.KURBAGA_LAST_CALL_MS);
-                now1 = true;
-            }
-            if (now1) { ff.pubAt = t; ff.dirty = false; publish(); }
-            else if (changed) ff.dirty = true;
+            var res = drv.accept(ff, from, m, t);
+            if (!res.ok) return;
+            if (res.final) { ff.pubAt = t; ff.dirty = false; publish(); }
+            else if (res.changed) ff.dirty = true;
         }
 
-        // Lider (Kurbağa): ilerleme yayınını sınırlar; tüm bağlı insanlar vardı ya da süre dolduysa sonucu hesaplar
+        // Lider (ffa): ilerleme yayınını sınırlar; sürücü "hepsi bitti" derse ya da süre dolduysa sonucu hesaplar
         function ffaWatch(t) {
             var mn = M.mn;
             if (!mn || !mn.ff || mn.applyAt) return;
+            var drv = Drivers[mn.gm];
             var ff = mn.ff;
-            if (ff.dirty && t - (ff.pubAt || 0) >= C.KURBAGA_PUBLISH_MS) { ff.dirty = false; ff.pubAt = t; publish(); }
+            if (!drv) return;
+            if (ff.dirty && t - (ff.pubAt || 0) >= drv.publishMs) { ff.dirty = false; ff.pubAt = t; publish(); }
             if (t < ff.stAt) return;
             var live = mn.pl.filter(function (id) { var st = seatOf(id); return !!st && !st.b && st.c && ff.rep[id]; });
-            var allIn = live.length > 0 && live.every(function (id) { return ff.rep[id].f >= 0; });
-            if (!allIn && t < ff.endAt) return;
+            if (!drv.allDone(ff, live, t) && t < ff.endAt) return;
             var endMs = Math.max(0, Math.min(t, ff.endAt) - ff.stAt);
-            var ranking;
-            if (!(ff.sn > 0)) {
-                ranking = Mini.wheelRanking({ players: mn.pl, seed: mn.sd });          // hiç rapor yok: acil yedek çark
-            } else {
-                var reports = {};
-                Object.keys(ff.rep).forEach(function (id) { reports[id] = { r: ff.rep[id].r, f: ff.rep[id].f, d: ff.rep[id].d }; });
-                ranking = KRules.rank({ players: mn.pl, bots: mn.pl.filter(function (id) { return !ff.rep[id]; }), seed: mn.sd, reports: reports, endMs: endMs });
-            }
+            var ranking = drv.rank({ players: mn.pl, bots: mn.pl.filter(function (id) { return !ff.rep[id]; }), seed: mn.sd, ff: ff, endMs: endMs });
+            if (!ranking) ranking = Mini.wheelRanking({ players: mn.pl, seed: mn.sd });          // hiç rapor yok: acil yedek çark
             applyMiniResult(mn, ranking, mn.pl);
         }
 
@@ -1247,16 +1225,12 @@
             pairs.forEach(function (x, i) { if (x.players.indexOf(me.id) >= 0 && !x.done && mine < 0) mine = i; });
             var p0 = pairs[0];
             var ffv = null;
-            if (m.ff) {
+            if (m.ff && Drivers[m.gm]) {
                 var el = t - m.ff.stAt;
+                var sdrv = Drivers[m.gm];
                 ffv = {
                     started: el >= 0, countdown: Math.max(0, -el), elapsed: Math.max(0, el), left: Math.max(0, m.ff.endAt - t),
-                    rows: m.pl.map(function (id) {
-                        var q = m.ff.rep[id];
-                        if (q) return { id: id, bot: false, row: q.r, fin: q.f >= 0 ? q.f : null, d: q.d };
-                        var bf = KRules.botFinish(m.sd, id);
-                        return { id: id, bot: true, row: el >= 0 ? KRules.botProgress(m.sd, id, el) : 0, fin: bf !== null && bf <= el ? bf : null, d: 0 };
-                    })
+                    rows: m.pl.map(function (id) { return sdrv.summaryRow(m.ff, id, t, { seed: m.sd }); })
                 };
             }
             return { type: m.ty, ff: ffv, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, medals: hidden ? null : medalsOf(m), pairs: pairs, extra: m.ex || null, myPair: mine,

@@ -39,7 +39,8 @@
     var watchScenes = {};      // çift no -> Kedi-Köpek canlı izleme sahnesi (kalıcı kanvas; overlay yeniden çizilse de animasyon sürer)
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
     var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
-    var FFA_TITLES = { kurbaga: '🐸 Kurbağa' };    // ffa (herkes aynı anda) minioyunları; mini/registry.js ile aynı kimlikler
+    // ffa (herkes aynı anda) minioyunları: başlık mini/registry.js kaydından
+    function ffaTitle(id) { var e = C.MINI.get(id); return e && e.kind === 'ffa' ? e.icon + ' ' + e.name : null; }
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -235,17 +236,12 @@
 
     // ffa (Kurbağa): jeton ff taşır. Oynayan bağlı insan oyunu kalıcı köke çizer; diğerleri ilerleme çubuklarını, bitince sıralamayı görür.
     function ffaGame(mn) {
-        return mn.type === 'ffa' && !!mn.game && !!FFA_TITLES[mn.game] && !!mn.ff;
-    }
-
-    function progressText(row, fin) {
-        var n = Math.max(0, Math.min(9, row));
-        return new Array(n + 1).join('█') + new Array(10 - n).join('░') + ' ' + (fin !== null && fin !== undefined ? '🏁 ' + (fin / 1000).toFixed(1) + ' sn' : n + '/9');
+        return mn.type === 'ffa' && !!mn.game && !!ffaTitle(mn.game) && !!mn.ff;
     }
 
     function ffaCard(v, c) {
         var mn = v.mini;
-        c.appendChild(el('strong', 'pt-card-title', FFA_TITLES[mn.game]));
+        c.appendChild(el('strong', 'pt-card-title', ffaTitle(mn.game)));
         if (mn.ranking.length) {
             var res = el('ol', 'pt-rank');
             var pos = 0;
@@ -274,7 +270,7 @@
             var bar = el('span', 'pt-frog-bar', '');
             function barText(vv) {
                 var q = vv.mini && vv.mini.ff && vv.mini.ff.rows[i];
-                return q ? progressText(q.row, q.fin) : '';
+                return q ? q.text : '';
             }
             bar.textContent = barText(v);
             timerEls.push({ node: bar, fn: barText });
