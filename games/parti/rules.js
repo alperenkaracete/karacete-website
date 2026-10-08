@@ -602,6 +602,10 @@
         return e && e.kind !== 'grup' ? { game: e.id } : null;
     }
 
+    // Test bayrağı: adreste ?kit=1 -> lider tarayıcısı herkese her silahtan 3 adet (kalkan 1) verir (beceri silahlarını denemek için; YALNIZ TEST,
+    // envanter sınırlarını aşar). -> true | false
+    function parseKitFlag(search) { return /[?&]kit=1(&|#|$)/.test(search || ''); }
+
     // Eşit dereceli sıralamadan derece: [[a,b],[c]] -> a:1, b:1, c:3
     function ranksOf(ranking) {
         var ranks = {};
@@ -738,7 +742,7 @@
 
     return {
         createGame: createGame, reduce: reduce, autoAction: autoAction, botAction: botAction, attackOptions: attackOptions,
-        minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
+        minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, parseKitFlag: parseKitFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
         effectiveGoal: effectiveGoal, standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
         checkWin: checkWin, clone: clone, nextRand: nextRand
     };

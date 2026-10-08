@@ -1199,7 +1199,7 @@
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
             onChange: onView, startMinigame: PartiMinigame.startMinigame, miniRoot: function () { return miniRoot; },
-            forceMini: PartiRules.parseMiniFlag(location.search),
+            forceMini: PartiRules.parseMiniFlag(location.search), kit: PartiRules.parseKitFlag(location.search),
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         buildLegend(els.legend);
