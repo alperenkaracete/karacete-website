@@ -1,9 +1,9 @@
 // Parti: oyun kuralları (saf, DOM'suz, deterministik). Durum düz JSON'dur; rastgelelik durumdaki tohumdan (rs) gelir,
 // bu yüzden yalnızca lider çağırır ve sonuç herkese durumla gider. Her reduce çağrısı yeni durum döndürür.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./config.js'), require('./graph.js'));
-    else root.PartiRules = factory(root.PartiConfig, root.PartiGraph);
-})(typeof self !== 'undefined' ? self : this, function (C, G) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./config.js'), require('./graph.js'), require('./aim.js'));
+    else root.PartiRules = factory(root.PartiConfig, root.PartiGraph, root.PartiAim);
+})(typeof self !== 'undefined' ? self : this, function (C, G, Aim) {
     'use strict';
 
     // ---- Rastgelelik ----
@@ -50,7 +50,7 @@
             goal: opts.cfg.goal > 0 ? opts.cfg.goal : C.autoGoal(opts.seats.length),
             mapId: opts.cfg.map,
             home: g.start, rev: 0, atk: 0, rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
-            order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
+            order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0, aim: null
         };
         if (state.mode === 'team') {
             // takım büyüklüğü (eşit takımlar): etkin hedef bununla çarpılır
@@ -286,6 +286,7 @@
 
     function nextTurn(state, g, rng, evts) {
         state.choices = null;
+        state.aim = null;                 // yarım kalan nişan (tur geçildi / oyuncu ayrıldı) temizlenir
         state.steps = 0;
         var idx = state.turn + 1;
         for (var guard = 0; guard < 1000; guard++) {
@@ -429,8 +430,17 @@
                     var dmg = weaponDamage(def, d);
                     if (dmg === null) return fail('hedef menzil dışında');
                     takeItem(p, wid);
+                    if (def.skill && def.skill.kind === 'bar') {
+                        // Beceri silahı (yay): hasar şimdi uygulanmaz; nişan aşamasına geçilir, hasar 'aim' eyleminde (oyuncunun becerisiyle) belirlenir.
+                        // Saldırı hakkı (atk) sonuç gelince harcanır; silah envanterden şimdi düşer.
+                        evts.push({ t: 'aimstart', id: id, w: def.id, target: action.target });
+                        state.stage = 'aim';
+                        state.aim = { w: def.id, by: id, target: action.target, d: d, seed: Math.floor(rng.f() * 4294967296) >>> 0 };
+                        return done();
+                    }
                     evts.push({ t: 'attack', id: id, w: def.id, target: action.target });
                     hit(state, action.target, dmg, id, evts);
+                    if (def.skill && def.skill.kind === 'show') evts.push({ t: 'aimres', id: id, w: def.id, tier: 'garanti', q: -1, target: action.target, dmg: dmg });     // yumruk şovu: çözüm anlık, aşama yok
                 } else {
                     var node = action.node;
                     if (!validNode(g, node)) return fail('geçersiz kutucuk');
@@ -448,6 +458,22 @@
                 state.atk = 1;                // silah turu bitirmez: ardından zar atılır
                 return done();
             }
+            case 'aim': {
+                // Nişan sonucu: q = bırakma konumu (0..1000 tamsayı) ya da -1 (süre doldu / AFK = ıska). Lider insan q'sunu göstergeye göre kenetler (machine).
+                if (state.stage !== 'aim' || !state.aim) return fail('nişan aşaması değil');
+                if (!Number.isInteger(action.q) || action.q < -1 || action.q > 1000) return fail('geçersiz konum');
+                var ai = state.aim;
+                var spec = Aim.makeAim(ai.w, ai.seed, ai.d);
+                var res = spec ? Aim.resolve(spec, action.q / 1000) : { tier: 'iska', dmg: 0, off: null };
+                var tg = has(state.P, ai.target) ? state.P[ai.target] : null;
+                if (!tg) res = { tier: 'iska', dmg: 0, off: null };                 // hedef bu arada oyundan ayrıldı
+                evts.push({ t: 'aimres', id: id, w: ai.w, tier: res.tier, q: action.q, target: ai.target, dmg: res.dmg });
+                if (res.dmg > 0 && tg) hit(state, ai.target, res.dmg, id, evts);
+                state.aim = null;
+                state.atk = 1;
+                if (state.stage === 'aim') state.stage = 'roll';                      // isabet oyunu bitirdiyse ('over') korunur
+                return done();
+            }
             default:
                 return fail('bilinmeyen eylem');
         }
@@ -459,6 +485,7 @@
         var id = current(state);
         if (state.stage === 'roll') return { type: 'roll', by: id };
         if (state.stage === 'choose') return { type: 'dir', by: id, to: rng.pick(state.choices) };
+        if (state.stage === 'aim') return { type: 'aim', by: id, q: -1 };          // süre doldu / AFK: ıska
         return null;
     }
 
@@ -505,6 +532,11 @@
         var rng = Rng(clone(state), ctx);
         var id = current(state);
         var auto = autoAction(state, ctx);
+        if (state.stage === 'aim' && state.aim) {
+            // bot nişanı: tohumlu referans oyuncu (bölge merkezi + Normal(0, AIM_REF_SIGMA)); lider içi eylem, kenetleme yok
+            var bspec = Aim.makeAim(state.aim.w, state.aim.seed, state.aim.d);
+            return { type: 'aim', by: id, q: bspec ? Math.round(Aim.botQ(state.aim.seed, id, bspec) * 1000) : -1 };
+        }
         if (!auto || state.stage !== 'roll' || state.atk) return auto;
         var p = state.P[id];
         if (invCount(p, 'shield') > 0 && !shieldBlocked(p) && rivalNear(state, ctx, 3)) return { type: 'use', by: id, w: 'shield' };
@@ -569,6 +601,10 @@
         var e = C.MINI.get(v);
         return e && e.kind !== 'grup' ? { game: e.id } : null;
     }
+
+    // Test bayrağı: adreste ?kit=1 -> lider tarayıcısı herkese her silahtan 3 adet (kalkan 1) verir (beceri silahlarını denemek için; YALNIZ TEST,
+    // envanter sınırlarını aşar). -> true | false
+    function parseKitFlag(search) { return /[?&]kit=1(&|#|$)/.test(search || ''); }
 
     // Eşit dereceli sıralamadan derece: [[a,b],[c]] -> a:1, b:1, c:3
     function ranksOf(ranking) {
@@ -651,6 +687,7 @@
         if (at <= state.turn) state.turn--;
         if (state.order.length < 2) {
             state.stage = 'over';
+            state.aim = null;
             state.winner = state.order.length ? (state.mode === 'team' ? { kind: 'team', id: state.P[state.order[0]].t } : { kind: 'player', id: state.order[0] }) : null;
         } else if (wasCurrent) {
             nextTurn(state, ctx.g, rng, evts);
@@ -705,7 +742,7 @@
 
     return {
         createGame: createGame, reduce: reduce, autoAction: autoAction, botAction: botAction, attackOptions: attackOptions,
-        minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
+        minigameSpec: minigameSpec, parseMiniFlag: parseMiniFlag, parseKitFlag: parseKitFlag, applyMinigame: applyMinigame, ranksOf: ranksOf, removePlayer: removePlayer,
         effectiveGoal: effectiveGoal, standings: standings, turnsUntil: turnsUntil, teamStars: teamStars, current: current, isTeammate: isTeammate, spawnChests: spawnChests,
         checkWin: checkWin, clone: clone, nextRand: nextRand
     };

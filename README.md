@@ -59,6 +59,8 @@ games/parti/config.js    Parti ayarları: silahlar, olaylar, ödüller, süreler
 games/parti/graph.js     tahta grafı: yürüme, en kısa adım mesafesi, harita doğrulayıcı (saf)
 games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dekor
 games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
+games/parti/aim.js       beceri silahları nişan mantığı (saf): bölge/gösterge/kademe/kenetleme/bot nişanı/kalibrasyon
+games/parti/aim-ui.js    nişan çubuğu arayüzü (kalıcı DOM düğümü): atan BIRAK/Boşluk, izleyici salt okunur, sonuç etiketi, yumruk şovu
 games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
 games/parti/mini/registry.js      minioyun kaydı: { id, name, icon, kind: ffa|duel|grup, min, max, weight }; seçim, config ve arayüz buradan okur
 games/parti/mini/ffa-drivers.js    ffa oyun sürücüleri (machine.js oyuna özel kuralı bilmez): rep şeması, rapor denetimi, bitiş, sıralama, izleyici satırı
@@ -181,7 +183,7 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
 - **Envanter:** sınırsız ama sayaçlı: her silah türünden en çok **3**, toplam en çok **6**, kalkan en çok **1**; sığmayan öğe "kaçtı"
   (seçim ekranı yok). Kartlarda `×N` görünür; oyuncu kartına dokununca ayrıntı açılır.
 - **Silahlar** (tek atımlık, can 100; menzil = tahtadaki en kısa adım sayısı): 👊 Yumruk menzil 0–1 (aynı ya da komşu kutucuk), tek
-  vuruş 100 hasar · 🔫 Pompalı menzil 0–3, 1/2/3 adımda 45/30/15 · 🏹 Yay menzil 0–5 / 20 · 💣 Bomba menzil 4, seçilen kutucuktaki
+  vuruş 100 hasar · 🔫 Pompalı menzil 0–3, 1/2/3 adımda 45/30/15 · 🏹 Yay menzil 0–5, **beceri** (aşağıda; referans oyuncuyla ortalama ≈ 20) · 💣 Bomba menzil 4, seçilen kutucuktaki
   herkese (kendine de) 30 · 🛡️ Kalkan bir saldırıyı engeller. **Silah yalnızca zardan önce kullanılır ve turda tek saldırı hakkı vardır**
   (silah turu bitirmez, ardından zar atılır); menzilde hedef ya da kullanılabilir silah yoksa silah satırı hiç görünmez. Yürüyüşte/olayda
   bulunan silah sonraki turun başında kullanılabilir. Kalkan kurmak da o turun saldırı hakkını harcar; **3 kendi tur** sonra düşer,
@@ -197,6 +199,28 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
   ve oyun boyunca sandık sayıları ×2 olur (bir kez tetiklenir; hazine noktaları yettiği kadar).
 - **Emoji tepkileri:** 😂 😱 👏 🤡 (`pt_emote {id, e}`): oyun durumuna yazılmaz, yalnızca iletilir; oyuncu başına en çok saniyede 1;
   tahtada oyuncunun jetonunun üstünde ~2 sn baloncuk olarak görünür. Yalnızca koltuktaki insanlar atabilir.
+- **Beceri silahları (nişan / aim aşaması):** silah tanımındaki `skill` alanı (config `WEAPONS`) hasarın nasıl çözüleceğini belirler; skill yoksa anlık
+  (Pompalı, Bomba, Kalkan DEĞİŞMEDİ; çerçeve sonraki beceri silahlarına hazır: yeni silaha `skill` yazmak + `aim.js`'te kind tanımlamak yeter).
+  - **Akış (yay):** `use` hedefi doğrular (menzil 5, takım arkadaşı yok, güvenli bölge yok: eskisi gibi), silahı envanterden düşer ve `stage = 'aim'`,
+    `state.aim = { w, by, target, d, seed }` koyar; HASAR YOK, saldırı hakkı (`atk`) sonuç gelince harcanır. Atan `{type:'aim', q}` gönderir
+    (q: bırakma konumu 0..1000, `-1` = süre doldu/AFK); `resolve` kademeyi belirler, hasar `hit()` ile uygulanır (kalkan hâlâ engeller, ölüm/ödül
+    zinciri aynı), olay `aimres`, `stage = 'roll'` (zar atmak serbest). Bölge/periyot/faz tohumdan (`makeAim`), state küçük kalır.
+  - **Çubuk:** bölge hedefin AVATAR emojisiyle gösterilir; merkezi tohumdan (kenarlara taşmaz), genişliği uzaklığa göre doğrusal %44 (d ≤ 1) → %13 (d = 5).
+    Gösterge üçgen dalgayla gidip gelir (periyot 1,2–1,6 sn, tohumlu), en çok 3 sn, TEK dokunuş (basılı tutma yok). Kademeler yarı genişliğin oranıyla:
+    **merkez** (≤ %25) 50 · **bölge içi** (≤ %65) 30 · **kenar** (≤ %100) 15 · **ıska** 0. Tek vuruş ≤ 50.
+  - **Kalibrasyon:** referans oyuncu = dokunma hatası Normal(0, `AIM_REF_SIGMA` = 0,15) (çubuk birimi); d=1..5 beklenen yay hasarı **28,5 / 24,9 / 20,6 / 15,6 / 10,1 → ortalama 19,9**
+    (hedef 20 ± %10; eski düz yay 20). Yakın isabet uzaktan ≈ 2,8 kat kolay. Test: analitik formül + tohum süpürmesiyle Monte-Carlo (`tests/parti-aim.test.js`).
+    Botlar bu modelle nişan alır (`botQ`: bölge merkezi + Normal(0, 0,15)); AFK/kopuk/süresi dolan atacı **ıska** (bot yerine geçmez).
+  - **Ağ/saat:** gösterge ağda akmaz; herkes `indicatorAt(spec, şimdi − aimAt)` ile çizer. `aimAt` liderin yerel saatidir, `pt_state`'e göreli ms (`as`) olarak girer.
+    Lider insan q'sunu liderin ölçtüğü geçen süredeki göstergeye göre **±`AIM_SLACK_MS` (450 ms) penceresine kenetler**; en erken `AIM_MIN_MS` (250 ms) kabul;
+    süre dolunca (`maxMs + AIM_GRACE_MS` 600 ms) lider q = −1 ile çözer. Bu **bozuk istemci/gecikme koruması, kesin hile savunması DEĞİLDİR** (periyot 1,2–1,6 sn iken
+    ±450 ms penceresi periyodun büyük kısmını kapsar: gevşek; sıkılaştırmak için `AIM_SLACK_MS` azaltılır). Bot/otomatik nişan lider içidir (kenetleme yok).
+    Lider devrinde nişan aşaması yeni liderde yeniden başlar (`aimAt` = şimdi). Aşama süresi `STAGE_MS.aim` = `maxMs` + 1500 (yedek). `unpack`: geçersiz `aim` ya da `as` → yayın reddi.
+  - **Şov ve arayüz (`aim-ui.js`):** atan hedef seçince tam genişlik çubuk + büyük **BIRAK** alanı (çubuğun tamamı dokunulabilir, `touch-action: none`) + Boşluk; tek dokunuş = bırak,
+    gösterge hemen donar. Diğer herkes aynı çubuğu SALT OKUNUR izler ("🏹 Ali → Veli nişan alıyor"); sonuç etiketi ~1,4 sn ("🎯 Tam isabet! −50" / "İsabet −30" / "Kıl payı −15" / "Iska!").
+    **Yumruk** şovu: çözüm anlık (aşama yok), kısa "👊 −100" etiketi (0,9 sn) UI'ı ve zar düğmesini ENGELLEMEZ (`pointer-events: none`). Kurban savuşturma yok. Emoji tepkileri şov sırasında kullanılabilir.
+    Yenileyen/geç katılan `aim` durumundan doğru konumla açılır; çubuk kalıcı düğümde yaşar (overlay yeniden çizilmez).
+  - **Test bayrağı `?kit=1`** (yalnız lider sekmesi okur; **yalnız test**): oyun başında herkese her silahtan 3 adet (kalkan 1) verir (envanter sınırlarını doğrudan atamayla aşar; rozetler `×3` gösterir).
 - **Silah düşme ağırlıkları:** yumruk 1, pompalı 3, yay 3, bomba 2, kalkan 2.
 - **Takım sayısı:** takım modunda lider takım sayısını seçer (Otomatik = 2'şerli, en çok 4 takım; ya da 2 / 3 / 4). Takımlar **eşit** olmalıdır:
   oyuncu sayısı takım sayısına tam bölünmeli, takım başına en az 2 oyuncu, en az 2 takım (8 kişi 4+4 ya da 2+2+2+2, 6 kişi 3+3 ya da 2+2+2; 8 kişi 3 takıma
@@ -535,6 +559,8 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
   uzun süre arka planda kalınca sayfayı tamamen dondurabilir; bu durumda lider olan oyuncunun cihazı oyunu durdurur (diğerlerinde
   "lider sessiz" gibi görünür, kopma/lider devri süreci devreye girmez çünkü bağlantı hâlâ açıktır). Test ortamında yalnızca
   `requestAnimationFrame` durdurma + `document.hidden` taklidi doğrulanabildi.
+- Parti nişan aşaması: gösterge ile lider saati arasında ±birkaç yüz ms fark olur (kenetleme penceresi payı karşılar, ama hissi gerçek ağda doğrulanmadı); kenetleme kesin hile savunması değil;
+  eski önbellekli JS ile açılan sekme yeni `pt_state`'i (`as`, `g.aim`, stage 'aim') anlamaz → **sert yenile** (Ctrl+F5).
 - Parti: minioyunlar XOX, Dörtlü Bağla, Kedi - Köpek (düello) ve Kurbağa (ffa); düello sırasında
   lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar (Kurbağa'da ilerleme korunur).
   **Eski önbellekli JS ile açılan sekme yeni `pt_state`'i (`mn.ff`, `lm`) anlamaz: sert yenile** (Ctrl+F5 / sayfayı yeniden yükle), aksi halde Kurbağa turunda

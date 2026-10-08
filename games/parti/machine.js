@@ -9,11 +9,11 @@
 //           pt_mg {mg, from, m} (minioyun yükü; durum DEĞİL: yalnızca eşleşen oturuma, düellodaki ikiliden ya da liderden kabul edilir)
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'), require('./mini/ffa-drivers.js'));
+        module.exports = factory(require('./config.js'), require('./graph.js'), require('./rules.js'), require('./minigame.js'), require('./mini/duel-watch.js'), require('./mini/ffa-drivers.js'), require('./aim.js'));
     } else {
-        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch, root.PartiFfaDrivers);
+        root.PartiMachine = factory(root.PartiConfig, root.PartiGraph, root.PartiRules, root.PartiMinigame, root.PartiDuelWatch, root.PartiFfaDrivers, root.PartiAim);
     }
-})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch, Drivers) {
+})(typeof self !== 'undefined' ? self : this, function (C, G, R, Mini, Watch, Drivers, Aim) {
     'use strict';
 
     var PHASES = ['lobby', 'play', 'over'];
@@ -91,6 +91,7 @@
             var t = now();
             return {
                 type: 'pt_state', ep: M.ep, rv: M.rv, ld: M.ld, ph: M.ph, cf: M.cf,
+                as: M.g && M.g.stage === 'aim' && M.aimAt ? Math.round(M.aimAt - t) : 0,       // nişan aşaması liderin saatinde başladığı an (yayın anına göre ≤ 0 ms)
                 S: M.S.map(function (s) { return { i: s.i, n: s.n, a: s.a, t: s.t, b: s.b, c: s.c, d: s.c ? 0 : Math.max(0, Math.round(s.dAt - t)) }; }),
                 g: M.g,
                 dl: M.pz ? Math.round(M.dlLeft) : Math.max(0, Math.round(M.dlAt - t)), pz: M.pz ? 1 : 0, bt: M.bt,
@@ -132,12 +133,25 @@
         // ---- Doğrulama (gelen anlık görüntü) ----
         function isInt(x, lo, hi) { return typeof x === 'number' && isFinite(x) && Math.floor(x) === x && x >= lo && x <= hi; }
 
+        // Nişan belirtimi: { w (beceri silahı), by (sıradaki oyuncu), target (oyuncu kimliği; ayrılmış olabilir), d, seed }
+        function validAim(g) {
+            var a = g.aim;
+            if (!a || typeof a !== 'object') return false;
+            var def = typeof a.w === 'string' && Object.prototype.hasOwnProperty.call(C.WEAPONS, a.w) ? C.WEAPONS[a.w] : null;
+            if (!def || !def.skill || def.skill.kind !== 'bar') return false;
+            if (typeof a.by !== 'string' || !Object.prototype.hasOwnProperty.call(g.P, a.by) || g.order[g.turn] !== a.by) return false;
+            if (typeof a.target !== 'string' || a.target.length > 64) return false;
+            return isInt(a.d, 0, 20) && isInt(a.seed, 0, 4294967295);
+        }
+
         // Oyun durumu doğrulaması: sonlu can/yıldız/konum (NaN/undefined arayüze ve kurallara hiç girmesin).
         function validGame(g) {
             if (!g || typeof g !== 'object' || !g.P || typeof g.P !== 'object' || !Array.isArray(g.order)) return false;
             if (g.order.length > C.MAX_PLAYERS) return false;
             if (!isInt(g.rd, 1, 1e6) || !isInt(g.turn, -1, 64) || !isInt(g.goal, 1, 100)) return false;
             if (g.ts !== undefined && !isInt(g.ts, 1, C.MAX_PLAYERS)) return false;
+            if (g.aim !== undefined && g.aim !== null && !validAim(g)) return false;
+            if (g.stage === 'aim' && !g.aim) return false;                          // nişan aşaması nişan belirtimi olmadan olmaz
             for (var i = 0; i < g.order.length; i++) {
                 var id = g.order[i];
                 if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(g.P, id)) return false;
@@ -209,6 +223,7 @@
             if (msg.g !== null && !validGame(msg.g)) return null;
             if (msg.g !== null) migrateGame(msg.g, msg.cf.mp);
             if (!isInt(msg.dl, 0, 3600000)) return null;
+            if (msg.as !== undefined && !isInt(msg.as, -600000, 5000)) return null;
             var mn = null;
             if (msg.mn) {
                 if (!Array.isArray(msg.mn.pl) || !Array.isArray(msg.mn.rk) || !isInt(msg.mn.ms, -1, 600000)) return null;
@@ -264,7 +279,7 @@
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
                 ep: msg.ep, rv: msg.rv, ld: msg.ld, ph: msg.ph, cf: { m: msg.cf.m, mp: msg.cf.mp, gl: msg.cf.gl, tc: msg.cf.tc || 0 },
-                S: seats, g: msg.g, dlAt: t + msg.dl, dlLeft: msg.dl, pz: !!msg.pz, bt: typeof msg.bt === 'string' ? msg.bt : null, mn: mn,
+                S: seats, g: msg.g, aimAt: msg.g && msg.g.stage === 'aim' ? t + (msg.as || 0) : 0, dlAt: t + msg.dl, dlLeft: msg.dl, pz: !!msg.pz, bt: typeof msg.bt === 'string' ? msg.bt : null, mn: mn,
                 lg: msg.lg.map(String).slice(-C.LOG_MAX), fx: msg.fx.slice(0, 40), fq: msg.fq, kk: Array.isArray(msg.kk) ? msg.kk.map(String) : []
             };
         }
@@ -284,6 +299,11 @@
                 case 'item': return nm(e.id) + ' aldı: ' + wn(e.w);
                 case 'zone': return nm(e.id) + ' silah bölgesinde ' + wn(e.w) + ' buldu';
                 case 'attack': return nm(e.id) + ' ' + wn(e.w) + ' kullandı' + (e.target ? ' → ' + nm(e.target) : '');
+                case 'aimres': {
+                    if (e.tier === 'garanti') return null;                          // yumruk: 'attack' satırı yeter
+                    var lab = { merkez: '🎯 tam isabet', bolge: 'isabet', kenar: 'kıl payı', iska: 'ıska' }[e.tier] || e.tier;
+                    return nm(e.id) + ' ' + wn(e.w) + ' ' + (e.target ? '→ ' + nm(e.target) + ' ' : '') + lab + (e.dmg ? ' (−' + e.dmg + ')' : '');
+                }
                 case 'dmg': return nm(e.id) + ' ' + e.n + ' hasar aldı';
                 case 'block': return nm(e.id) + ' kalkanla korundu (kalkan kırıldı)';
                 case 'shieldend': return nm(e.id) + ' kalkanının süresi doldu';
@@ -363,6 +383,8 @@
                 setDeadline();
             }
             botAt = now() + C.BOT_DELAY_MS;
+            if (M.g.stage === 'aim') { if (!M.aimAt) M.aimAt = now(); }              // nişan aşamasına giriş: gösterge bu anda başlar
+            else M.aimAt = 0;
             if (!quiet) publish();
         }
 
@@ -577,6 +599,8 @@
             M.g = R.createGame({ seed: Math.floor(rand() * 4294967295) + 1, cfg: cfg, seats: seats }, rctx());
             M.ph = 'play';
             M.mn = null;
+            M.aimAt = 0;
+            if (opts.kit) M.g.order.forEach(function (id) { M.g.P[id].w = { fist: 3, shotgun: 3, bow: 3, bomb: 3, shield: 1 }; });       // ?kit=1: yalnız test
             M.lg = [];
             M.kk = [];
             M.fx = [];
@@ -707,11 +731,21 @@
                 if (M.g.stage !== 'mini' && M.g.stage !== 'over' && R.current(M.g) === by) setDeadline();
                 return true;
             }
-            var allowed = { roll: 1, dir: 1, use: 1 };
+            var allowed = { roll: 1, dir: 1, use: 1, aim: 1 };
             if (!allowed[a.type]) return false;
             var act = { type: a.type, by: by };
             if (a.type === 'dir') act.to = a.to;
             if (a.type === 'use') { act.w = a.w; act.target = a.target; act.node = a.node; }
+            if (a.type === 'aim') {
+                // İnsan nişanı: bırakma konumu liderin ölçtüğü geçen süredeki göstergeye göre kenetlenir (bozuk istemci/gecikme koruması; kesin hile
+                // savunması değil). Çok erken kabul edilmez; süre dolduysa ıska. (Bot/otomatik nişan lider içidir: runAction, kenetleme yok.)
+                if (M.g.stage !== 'aim' || !M.g.aim || !M.aimAt || typeof a.q !== 'number' || !isFinite(a.q) || Math.floor(a.q) !== a.q || a.q < 0 || a.q > 1000) return false;
+                var elapsedAim = now() - M.aimAt;
+                var skAim = C.WEAPONS[M.g.aim.w].skill;
+                if (elapsedAim < C.AIM_MIN_MS) return false;
+                var specAim = Aim.makeAim(M.g.aim.w, M.g.aim.seed, M.g.aim.d);
+                act.q = elapsedAim > skAim.maxMs + C.AIM_GRACE_MS || !specAim ? -1 : Math.round(Aim.clampQ(specAim, a.q / 1000, elapsedAim, C.AIM_SLACK_MS) * 1000);
+            }
             // çift dokunuş koruması: eylem, istemcinin gördüğü oyun revizyonunu (rv) taşır; eşleşmezse reddedilir (rv yoksa eski davranış)
             if (a.rv !== undefined && a.rv !== M.g.rev) return false;
             // duraklatılmış (kopan oyuncu bekleniyor) turda yalnızca o oyuncu dışındakiler işlem yapamaz zaten
@@ -789,6 +823,7 @@
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
                 M.mn.applyAt = now() + C.MINI_HOLD_MS;
             }
+            if (M.g && M.g.stage === 'aim') { M.aimAt = now(); botAt = now() + C.BOT_DELAY_MS; }       // nişan aşaması yeni liderde yeniden başlar
             M.dlAt = now() + Math.max(M.dlLeft || 0, 1000);
             addLog('👑 ' + nm(me.id) + ' lider oldu');
             publish();
@@ -977,6 +1012,15 @@
                 return;
             }
             if (stage === 'over') return;
+            if (stage === 'aim' && M.g.aim) {
+                var aimSeat = seatOf(M.g.aim.by);
+                if (aimSeat && aimSeat.b) {
+                    if (t >= botAt) { var bq = R.botAction(M.g, rctx()); if (bq) runAction(bq); }        // bot: BOT_DELAY sonrası tohumlu nişan
+                } else if (M.aimAt && t >= M.aimAt + C.WEAPONS[M.g.aim.w].skill.maxMs + C.AIM_GRACE_MS) {
+                    runAction({ type: 'aim', by: M.g.aim.by, q: -1 });                                  // insan/AFK/kopuk: süre doldu -> ıska
+                }
+                return;
+            }
             var cur = R.current(M.g);
             var seat = seatOf(cur);
             var P = M.g.P[cur];
@@ -1272,6 +1316,10 @@
                 wait: wait,
                 disconnected: dcs,
                                 mini: M.mn ? miniView(t) : null,
+                aim: M.g && M.g.stage === 'aim' && M.g.aim && M.aimAt ? {
+                    w: M.g.aim.w, by: M.g.aim.by, target: M.g.aim.target, d: M.g.aim.d, seed: M.g.aim.seed, startAt: M.aimAt, elapsed: Math.max(0, t - M.aimAt),
+                    maxMs: C.WEAPONS[M.g.aim.w].skill.maxMs
+                } : null,
                 log: M.lg,
                 fx: M.fx,
                 fq: M.fq,

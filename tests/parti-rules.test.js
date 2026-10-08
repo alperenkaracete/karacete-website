@@ -46,6 +46,22 @@ function apply(state, action, extra) {
     return r;
 }
 
+// Beceri silahı (yay): 'use' nişan aşamasını açar (hasar yok); bu yardımcı sonucu verilen kademede çözer: 'merkez' 50, 'bolge' 30 (varsayılan),
+// 'kenar' 15, 'iska' 0. Beceri silahı olmayanlarda apply ile aynıdır. (Yay hasarı artık anlık 20 değil: aim eylemi.)
+const Aim = require('../games/parti/aim.js');
+function aimQ(state, tier) {
+    const sp = Aim.makeAim(state.aim.w, state.aim.seed, state.aim.d);
+    if (tier === 'iska') return -1;
+    const off = { merkez: 0, bolge: 0.5, kenar: 0.9 }[tier];
+    return Math.round((sp.c + off * sp.half) * 1000);
+}
+function applyAim(state, action, tier) {
+    const r = apply(state, action);
+    if (r.state.stage !== 'aim') return r;
+    const r2 = apply(r.state, { type: 'aim', by: action.by, q: aimQ(r.state, tier || 'bolge') });
+    return { ok: true, state: r2.state, events: r.events.concat(r2.events) };
+}
+
 // düğüm x'ten d adım uzaktaki (yönsüz) düğüm
 function nodeAt(from, d, skip) {
     const dist = G.distances(g, from);
@@ -192,8 +208,18 @@ test('pompalı: 1/2/3 adımda 45/30/15; 4 adım menzil dışı (mesafe düşüş
     assert.equal(reduceT(duelSetup('shotgun', 4), { type: 'use', by: 'p0', w: 'shotgun', target: 'p1' }, ctx()).ok, false);
 });
 
-test('yay: menzil 5, hasar 20', () => {
-    assert.equal(100 - apply(duelSetup('bow', 5), { type: 'use', by: 'p0', w: 'bow', target: 'p1' }).state.P.p1.hp, 20);
+test('yay: menzil 5; use nişan aşamasını açar (hasar yok), hasar aim eyleminde kademeye göre (50/30/15/0)', () => {
+    const r = apply(duelSetup('bow', 5), { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    assert.equal(r.state.stage, 'aim');
+    assert.equal(r.state.P.p1.hp, 100, 'hasar henüz yok');
+    assert.equal(r.state.atk, 0, 'saldırı hakkı sonuç gelince harcanır');
+    assert.equal(r.state.P.p0.w.bow, undefined, 'silah envanterden düştü');
+    for (const [tier, dmg] of [['merkez', 50], ['bolge', 30], ['kenar', 15], ['iska', 0]]) {
+        const res = applyAim(duelSetup('bow', 5), { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, tier);
+        assert.equal(100 - res.state.P.p1.hp, dmg, tier);
+        assert.equal(res.state.stage, 'roll');
+        assert.equal(res.state.atk, 1);
+    }
     assert.equal(reduceT(duelSetup('bow', 6), { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false);
 });
 
@@ -824,11 +850,11 @@ test('Son Çılgınlık: takım modunda takımın toplamı hedefe ≤3 kalınca 
 
 // ---- acil hata: aynı kutucukta saldırı (mesafe 0) NaN üretmemeli ----
 test('aynı kutucukta (mesafe 0) yumruk/pompalı/yay vurur: can düşer, NaN yok', () => {
-    const want = { fist: 100, shotgun: 45, bow: 20 };
+    const want = { fist: 100, shotgun: 45, bow: 30 };          // yay: 'bolge' kademesi
     for (const w of ['fist', 'shotgun', 'bow']) {
         const s = duelSetup(w, 0);
         assert.equal(s.P.p0.pos, s.P.p1.pos);
-        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        const r = applyAim(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
         if (w === 'fist') assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'), 'yumruk 100: öldürür');
         else assert.equal(r.state.P.p1.hp, 100 - want[w], w);
         assert.ok(Number.isFinite(r.state.P.p1.hp));
@@ -841,7 +867,7 @@ test('aynı kutucukta hasar 0\'da ölümle biter (NaN ölümsüzlük yok); botla
     for (const w of ['fist', 'shotgun', 'bow']) {
         const s = duelSetup(w, 0);
         s.P.p1.hp = 10; s.P.p1.s = 4;
-        const r = apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        const r = applyAim(s, { type: 'use', by: 'p0', item: 0, target: 'p1' });
         assert.ok(r.events.some((e) => e.t === 'death' && e.id === 'p1'), w + ' öldürdü');
         assert.equal(r.state.P.p1.hp, 100, 'öldükten sonra can dolar');
     }
@@ -869,9 +895,9 @@ test('hit güvenliği: geçersiz hasar yok sayılır, bozuk (NaN) can onarılır
     try {
         assert.equal(reduceT(bad, { type: 'use', by: 'p0', item: 0, target: 'p1' }, ctx()).ok, false);
     } finally { C.WEAPONS.fist.dmg = original; }
-    for (const [w, d1] of [['fist', 100], ['shotgun', 45], ['bow', 20]]) {
-        const a = apply(duelSetup(w, 0), { type: 'use', by: 'p0', item: 0, target: 'p1' });
-        const b = apply(duelSetup(w, 1), { type: 'use', by: 'p0', item: 0, target: 'p1' });
+    for (const [w, d1] of [['fist', 100], ['shotgun', 45], ['bow', 30]]) {
+        const a = applyAim(duelSetup(w, 0), { type: 'use', by: 'p0', item: 0, target: 'p1' });
+        const b = applyAim(duelSetup(w, 1), { type: 'use', by: 'p0', item: 0, target: 'p1' });
         const dmgOf = (r) => r.events.find((e) => e.t === 'dmg').n;
         assert.equal(dmgOf(a), d1, w + ' mesafe 0');
         assert.equal(dmgOf(b), d1, w + ' mesafe 1');
@@ -1021,7 +1047,7 @@ test('başlangıçtan çıkınca hasar alınır (güvenli bölge yalnızca başl
     const s = startSetup('bow', 0);
     const next = nodeAt(g.start, 1, [g.start]);
     s.P.p0.pos = next; s.P.p1.pos = next;
-    assert.equal(apply(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }).state.P.p1.hp, 80);
+    assert.equal(applyAim(s, { type: 'use', by: 'p0', item: 0, target: 'p1' }).state.P.p1.hp, 70);        // yay 'bolge': 30
 });
 
 test('başlangıç düğümünden en az 2 dal çıkar: ilk hamle yön seçtirir', () => {
@@ -1124,7 +1150,7 @@ test('silah yalnızca roll aşamasında (zardan önce) kullanılır; choose aşa
 test('turda tek saldırı hakkı: silah turu bitirmez, ikinci silah reddedilir, zar serbest; yeni turda hak yenilenir', () => {
     const s = duelSetup('bow', 2);
     s.P.p0.w = inv('bow', 'bow', 'fist');
-    const r = apply(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const r = applyAim(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
     assert.equal(R.current(r.state), 'p0', 'tur bitmedi');
     assert.equal(r.state.stage, 'roll');
     assert.equal(r.state.atk, 1);
@@ -1232,7 +1258,7 @@ test('kalkan: kırılınca 2 kendi tur yeniden kurulamaz, 3. turda kurulabilir',
     s.P.p1.pos = s.P.p0.pos;
     s.P.p1.w = inv('bow');
     s.turn = 1; s.stage = 'roll'; s.atk = 0;
-    const r = apply(s, { type: 'use', by: 'p1', w: 'bow', target: 'p0' });
+    const r = applyAim(s, { type: 'use', by: 'p1', w: 'bow', target: 'p0' });
     assert.ok(r.events.some((e) => e.t === 'block'));
     assert.equal(r.state.P.p0.shield, false);
     assert.ok(r.state.P.p0.scd > 0, 'bekleme başladı');
@@ -1369,4 +1395,166 @@ test('turnsUntil: atlanacak oyuncular sayılmaz; minioyun/oyun sonu/bilinmeyen o
     assert.equal(R.turnsUntil(s, 'yok'), null);
     assert.equal(R.turnsUntil(s, '__proto__'), null);
     assert.equal(R.turnsUntil(null, 'p0'), null);
+});
+
+// ---- Beceri silahları: nişan (aim) aşaması ----
+const startSetupAim = (weapon, dist) => startSetup(weapon, dist);
+
+test('aim: use yay\'da hasar uygulamaz, stage=aim + state.aim (tohum rng\'den), envanterden düşer; menzil/takım arkadaşı/güvenli bölge kuralları AYNI', () => {
+    const r = apply(duelSetup('bow', 3), { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    assert.equal(r.state.stage, 'aim');
+    assert.deepEqual(Object.keys(r.state.aim).sort(), ['by', 'd', 'seed', 'target', 'w']);
+    assert.deepEqual({ w: r.state.aim.w, by: r.state.aim.by, target: r.state.aim.target, d: r.state.aim.d }, { w: 'bow', by: 'p0', target: 'p1', d: 3 });
+    assert.ok(Number.isInteger(r.state.aim.seed) && r.state.aim.seed >= 0);
+    assert.ok(r.events.some((e) => e.t === 'aimstart' && e.id === 'p0' && e.target === 'p1'));
+    assert.ok(!r.events.some((e) => e.t === 'dmg' || e.t === 'attack'), 'hasar/saldırı olayı yok');
+    // aynı durumdan aynı tohum (rng deterministik)
+    assert.equal(apply(duelSetup('bow', 3), { type: 'use', by: 'p0', w: 'bow', target: 'p1' }).state.aim.seed, r.state.aim.seed);
+    // menzil dışı, kendine, geçersiz hedef
+    assert.equal(reduceT(duelSetup('bow', 6), { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false, 'menzil dışı');
+    assert.equal(reduceT(duelSetup('bow', 2), { type: 'use', by: 'p0', w: 'bow', target: 'p0' }, ctx()).ok, false, 'kendine');
+    assert.equal(reduceT(duelSetup('bow', 2), { type: 'use', by: 'p0', w: 'bow', target: 'yok' }, ctx()).ok, false);
+    // takım arkadaşı
+    const t = game(4, { mode: 'team' });
+    t.P.p0.pos = loopNode.id; t.P.p1.pos = nodeAt(loopNode.id, 2); t.P.p0.w = inv('bow');
+    assert.equal(R.current(t), 'p0');
+    assert.equal(reduceT(t, { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false, 'takım arkadaşına nişan alınamaz');
+    // güvenli bölge (başlangıç)
+    const sf = startSetupAim('bow', 0);
+    sf.P.p1.pos = g.start;
+    assert.equal(reduceT(sf, { type: 'use', by: 'p0', w: 'bow', target: 'p1' }, ctx()).ok, false, 'başlangıç güvenli bölgedir');
+    // nişan sürerken başka eylem yok
+    assert.equal(reduceT(r.state, { type: 'roll', by: 'p0' }, ctx()).ok, false, 'zar atılamaz');
+    assert.equal(reduceT(r.state, { type: 'use', by: 'p0', w: 'fist', target: 'p1' }, ctx()).ok, false, 'ikinci silah yok');
+    assert.deepEqual(R.attackOptions(r.state, ctx()), [], 'aim aşamasında saldırı seçeneği yok');
+    assert.equal(reduceT(r.state, { type: 'aim', by: 'p1', q: 500 }, ctx()).ok, false, 'sıra atacıda (hedef nişan alamaz)');
+});
+
+test('aim eylemi: kademe hasarı hit() ile uygulanır; q doğrulanır; aşama dışında reddedilir; sonra zar atılabilir', () => {
+    const r = apply(duelSetup('bow', 2), { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const sp = Aim.makeAim('bow', r.state.aim.seed, r.state.aim.d);
+    const q = (off) => Math.round((sp.c + off * sp.half) * 1000);
+    for (const [tier, dmg, off] of [['merkez', 50, 0], ['bolge', 30, 0.5], ['kenar', 15, 0.9]]) {
+        const res = apply(r.state, { type: 'aim', by: 'p0', q: q(off) });
+        const ev = res.events.find((e) => e.t === 'aimres');
+        assert.deepEqual({ id: ev.id, w: ev.w, tier: ev.tier, target: ev.target, dmg: ev.dmg }, { id: 'p0', w: 'bow', tier, target: 'p1', dmg });
+        assert.equal(res.state.P.p1.hp, 100 - dmg, tier);
+        assert.ok(res.events.some((e) => e.t === 'dmg' && e.id === 'p1' && e.n === dmg && e.by === 'p0'));
+        assert.equal(res.state.stage, 'roll');
+        assert.equal(res.state.aim, null);
+        assert.equal(res.state.atk, 1);
+        assert.equal(apply(res.state, { type: 'roll', by: 'p0' }, { dice: () => 1 }).state.atk, 0, 'zar atmak serbest');
+    }
+    // ıska: q=-1, bölge dışı; hasar/ölüm yok ama saldırı hakkı harcandı
+    for (const miss of [-1, Math.round(Math.min(1, sp.c + 1.2 * sp.half) * 1000) === q(1.2) ? q(1.2) : q(-1.2)]) {
+        const res = apply(r.state, { type: 'aim', by: 'p0', q: miss });
+        assert.equal(res.events.find((e) => e.t === 'aimres').tier, 'iska');
+        assert.equal(res.state.P.p1.hp, 100);
+        assert.ok(!res.events.some((e) => e.t === 'dmg'));
+        assert.equal(res.state.atk, 1);
+        assert.equal(res.state.stage, 'roll');
+    }
+    // doğrulama
+    [undefined, null, 'x', 500.5, 1001, -2, NaN, Infinity].forEach((bad) => assert.equal(reduceT(r.state, { type: 'aim', by: 'p0', q: bad }, ctx()).ok, false, String(bad)));
+    assert.equal(reduceT(duelSetup('bow', 2), { type: 'aim', by: 'p0', q: 500 }, ctx()).ok, false, 'aim aşaması yok');
+    // otomatik (süre doldu / AFK) ıska
+    assert.deepEqual(R.autoAction(r.state, ctx()), { type: 'aim', by: 'p0', q: -1 });
+    assert.equal(apply(r.state, R.autoAction(r.state, ctx())).events.find((e) => e.t === 'aimres').tier, 'iska');
+});
+
+test('aim: yumruk anlık çözülür (aşama yok), aimres tier garanti; zar atmak engellenmez', () => {
+    const s = duelSetup('fist', 1);
+    s.P.p1.s = 0;
+    const r = apply(s, { type: 'use', by: 'p0', w: 'fist', target: 'p1' });
+    assert.notEqual(r.state.stage, 'aim', 'yumruk için aşama yok');
+    assert.equal(r.state.aim, null);
+    const ev = r.events.find((e) => e.t === 'aimres');
+    assert.deepEqual({ id: ev.id, w: ev.w, tier: ev.tier, dmg: ev.dmg }, { id: 'p0', w: 'fist', tier: 'garanti', dmg: 100 });
+    assert.ok(r.events.some((e) => e.t === 'dmg' && e.n === 100), 'hasar anlık');
+    assert.equal(r.state.stage, 'roll');
+    assert.equal(r.state.atk, 1);
+    assert.equal(apply(r.state, { type: 'roll', by: 'p0' }, { dice: () => 1 }).ok, true, 'şov zarı engellemez');
+    // pompalı / bomba / kalkan hâlâ anlık, aimres/aşama yok
+    const sg = apply(duelSetup('shotgun', 2), { type: 'use', by: 'p0', w: 'shotgun', target: 'p1' });
+    assert.equal(sg.state.P.p1.hp, 70);
+    assert.ok(!sg.events.some((e) => e.t === 'aimres' || e.t === 'aimstart') && sg.state.stage === 'roll');
+});
+
+test('aim: kalkan hâlâ engeller (isabette kırılır), ıskada kalkan harcanmaz; güvenli bölge hasarı yok', () => {
+    const mk = () => {
+        const s = duelSetup('bow', 2);
+        s.P.p1.shield = true; s.P.p1.shl = 3;
+        return apply(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    };
+    const r = mk();
+    const sp = Aim.makeAim('bow', r.state.aim.seed, r.state.aim.d);
+    const hit = apply(r.state, { type: 'aim', by: 'p0', q: Math.round(sp.c * 1000) });
+    assert.ok(hit.events.some((e) => e.t === 'block' && e.id === 'p1'));
+    assert.equal(hit.state.P.p1.hp, 100);
+    assert.equal(hit.state.P.p1.shield, false);
+    assert.ok(hit.state.P.p1.scd > 0);
+    const miss = apply(mk().state, { type: 'aim', by: 'p0', q: -1 });
+    assert.equal(miss.state.P.p1.shield, true, 'ıskada kalkan korunur');
+    assert.ok(!miss.events.some((e) => e.t === 'block'));
+});
+
+test('aim: ölüm/ödül zinciri bozulmaz (yıldız saldırana, can dolar), oyunu bitiren isabet stage over bırakır', () => {
+    const s = duelSetup('bow', 2);
+    s.P.p1.hp = 20; s.P.p1.s = 4;
+    const r = apply(s, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const sp = Aim.makeAim('bow', r.state.aim.seed, r.state.aim.d);
+    const res = apply(r.state, { type: 'aim', by: 'p0', q: Math.round(sp.c * 1000) });
+    assert.ok(res.events.some((e) => e.t === 'death' && e.id === 'p1'));
+    assert.equal(res.state.P.p1.hp, 100, 'öldükten sonra can dolar');
+    assert.equal(res.state.P.p1.s, 2, 'ölen min(3, ⌊4/2⌋)=2 yıldız kaybeder');
+    assert.equal(res.state.P.p0.s, 2, 'yıldızlar saldırana');
+    assert.equal(res.state.stage, 'roll');
+    // oyunu bitiren isabet
+    const w = duelSetup('bow', 2);
+    w.goal = 3; w.P.p1.hp = 10; w.P.p1.s = 6; w.P.p0.s = 1;
+    const rw = apply(w, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const spw = Aim.makeAim('bow', rw.state.aim.seed, rw.state.aim.d);
+    const fin = apply(rw.state, { type: 'aim', by: 'p0', q: Math.round(spw.c * 1000) });
+    assert.equal(fin.state.stage, 'over');
+    assert.deepEqual(fin.state.winner, { kind: 'player', id: 'p0' });
+});
+
+test('aim: forceskip ve oyuncu ayrılması aşamayı temizler; hedef ayrılırsa ıska; bot botQ ile nişan alır', () => {
+    const r = apply(duelSetup('bow', 2), { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const skipped = apply(r.state, { type: 'forceskip' });
+    assert.equal(skipped.state.aim, null);
+    assert.notEqual(skipped.state.stage, 'aim');
+    // atan ayrılır
+    const gone = R.removePlayer(r.state, 'p0', ctx());
+    assert.equal(gone.ok, true);
+    assert.equal(gone.state.aim, null);
+    assert.notEqual(gone.state.stage, 'aim');
+    // hedef ayrılır (3 oyunculu: oyun sürer): atan hâlâ nişan aşamasında, sonuç ıska
+    const s3 = game(3);
+    s3.P.p0.pos = loopNode.id; s3.P.p1.pos = nodeAt(loopNode.id, 2); s3.P.p0.w = inv('bow'); s3.stage = 'roll';
+    const r3 = apply(s3, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const rm = R.removePlayer(r3.state, 'p1', ctx());
+    assert.equal(rm.state.stage, 'aim');
+    const sp3 = Aim.makeAim('bow', rm.state.aim.seed, rm.state.aim.d);
+    const res = apply(rm.state, { type: 'aim', by: 'p0', q: Math.round(sp3.c * 1000) });
+    assert.equal(res.events.find((e) => e.t === 'aimres').tier, 'iska', 'hedef yok: ıska');
+    assert.ok(!res.events.some((e) => e.t === 'dmg'));
+    // bot: aim aşamasında botQ
+    const bs = duelSetup('bow', 2);
+    bs.P.p0.bot = true;
+    const br = apply(bs, { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const ba = R.botAction(br.state, ctx());
+    const bsp = Aim.makeAim('bow', br.state.aim.seed, br.state.aim.d);
+    assert.deepEqual(ba, { type: 'aim', by: 'p0', q: Math.round(Aim.botQ(br.state.aim.seed, 'p0', bsp) * 1000) });
+    assert.equal(apply(br.state, ba).state.stage, 'roll');
+});
+
+test('aim: eski/bozuk durumda state.aim yok iken aim eylemi reddedilir; nextTurn aim\'i temizler', () => {
+    const s = duelSetup('bow', 2);
+    s.stage = 'aim';
+    s.aim = null;
+    assert.equal(reduceT(s, { type: 'aim', by: 'p0', q: 500 }, ctx()).ok, false);
+    const r = apply(duelSetup('bow', 2), { type: 'use', by: 'p0', w: 'bow', target: 'p1' });
+    const sk = apply(r.state, { type: 'forceskip' });
+    assert.equal(sk.state.aim, null);
 });

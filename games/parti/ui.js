@@ -35,6 +35,7 @@
     var timerEls = [];
     var openCard = null;       // ayrıntısı açık oyuncu kartı (dokununca; tek seferde bir tane)
     var ticker = null;
+    var aimCtl = null;         // nişan çubuğu (kalıcı düğüm; games/parti/aim-ui.js)
     var TICK_MS = 250;
     var watchScenes = {};      // çift no -> Kedi-Köpek canlı izleme sahnesi (kalıcı kanvas; overlay yeniden çizilse de animasyon sürer)
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
@@ -378,9 +379,7 @@
     }
 
     // Envanter sayaç nesnesi {silahId: adet}: sabit silah sırasıyla [[id, adet], ...]
-    function invList(p) {
-        return C.WEAPON_IDS.filter(function (w) { return p.w[w] > 0; }).map(function (w) { return [w, p.w[w]]; });
-    }
+    function invList(p) { return PartiAimUi.invList(C, p); }
 
     function shortName(n) { return n.length > 6 ? n.slice(0, 6) : n; }
 
@@ -506,6 +505,7 @@
         var mid = '';
         if (g.stage === 'mini') mid = '🎡 Minioyun';
         else if (g.stage === 'over') mid = '🏆 Oyun bitti';
+        else if (g.stage === 'aim' && v.cur) mid = '🏹 ' + (v.cur === v.me.id ? 'Nişan al!' : nameOf(v, v.cur) + ' nişan alıyor');
         else if (v.cur) mid = (v.cur === v.me.id ? 'Sıra sende!' : nameOf(v, v.cur) + ' oynuyor' + (untilText(v) ? ' · ' + untilText(v) : ''));
         els.barMid.textContent = mid;
         els.barMid.classList.toggle('mine', v.cur === v.me.id);
@@ -603,7 +603,9 @@
             return;
         }
         var p = g.P[v.me.id];
-        if (g.stage === 'roll') {
+        if (g.stage === 'aim') {
+            Ctl.appendChild(el('span', 'pt-hint', '🏹 Nişan al: çubuğa dokun ya da Boşluk\'a bas (tek dokunuş).'));
+        } else if (g.stage === 'roll') {
             renderRollControls(Ctl, v, p);
         } else if (g.stage === 'choose') {
             Ctl.appendChild(el('span', 'pt-hint', 'Yön seç (' + g.steps + ' adım kaldı) — haritaya da dokunabilirsin:'));
@@ -795,6 +797,7 @@
                 var evText = C.eventAnnounce(e.e, plainName(v, e.id));
                 if (evText) announce(v, evText, t);
             } else if (e.t === 'attack' && e.w) pop(e.id, C.WEAPONS[e.w].emoji, '#ffffff');
+            else if (e.t === 'aimres' && aimCtl) aimCtl.result(e, Date.now());
         });
     }
 
@@ -1177,6 +1180,7 @@
         draw(t);
         Object.keys(watchScenes).forEach(function (k) { watchScenes[k].tick(t); });
         timerEls.forEach(function (te) { var txt = te.fn(view); if (te.node.textContent !== txt) te.node.textContent = txt; });
+        if (aimCtl && view) aimCtl.sync(view, Date.now());
     }
 
     function onView(v) {
@@ -1188,6 +1192,12 @@
         gctx = ctx;
         document.body.classList.add('parti-active');
         els = buildDom();
+        aimCtl = PartiAimUi.create(document, {
+            act: function (q) { act({ type: 'aim', q: q }); },
+            nameOf: function (id) { return view ? nameOf(view, id) : ''; },
+            avatarOf: function (id) { var s = view ? seatById(view, id) : null; return s ? s.a : (view && view.game && view.game.P[id] ? view.game.P[id].av : ''); }
+        });
+        els.root.appendChild(aimCtl.el);
         miniRoot = el('div', 'pt-duel-root');
         view = null;
         sig = '';
@@ -1199,7 +1209,7 @@
         machine = PartiMachine.create({
             me: ctx.me, players: ctx.players, send: ctx.send, now: Date.now, maps: window.PartiMaps, creator: creator,
             onChange: onView, startMinigame: PartiMinigame.startMinigame, miniRoot: function () { return miniRoot; },
-            forceMini: PartiRules.parseMiniFlag(location.search),
+            forceMini: PartiRules.parseMiniFlag(location.search), kit: PartiRules.parseKitFlag(location.search),
             onEmote: function (m) { bubbles[m.id] = { e: m.e, t0: nowMs() }; }
         });
         buildLegend(els.legend);
@@ -1235,6 +1245,8 @@
         ticker = null;
         if (machine) machine.destroy();         // düello oturumu: oyunu yık, dinleyicileri/zamanlayıcıları bırak
         miniRoot = null;
+        if (aimCtl) aimCtl.destroy();
+        aimCtl = null;
         watchScenes = {};
         listeners.forEach(function (off) { off(); });
         listeners = [];

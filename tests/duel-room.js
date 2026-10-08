@@ -42,7 +42,7 @@ function room(seed, extra) {
         node.root = fakeRoot();
         node.defs = [];
         node.m = Machine.create({
-            me: { id: node.id, name: node.name }, players: node.players, now: () => clock, rand, maps, timers, creator: node.creator, forceMini: extra && extra.forceMini,
+            me: { id: node.id, name: node.name }, players: node.players, now: () => clock, rand, maps, timers, creator: node.creator, forceMini: extra && extra.forceMini, kit: extra && extra.kit,
             miniRoot: () => node.root,
             startMinigame: (spec) => {
                 const info = RULES[spec.game];
