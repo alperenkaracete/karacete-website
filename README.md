@@ -184,7 +184,7 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
   kırılırsa **2 kendi tur** yeniden kurulamaz. Takım arkadaşına saldırılamaz; bomba arkadaşa vurmaz ama kendine vurur.
 - **Ölüm:** can 0 olunca `min(3, yıldız/2 aşağı)` yıldız saldırana (çoklu hedefte en çok hasar verene) gider; başlangıca dönülür,
   can dolar, envanter korunur; tur atlatılmaz.
-- **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda hedef **kişi başıdır**: etkin hedef = hedef × takım büyüklüğü (`TEAM_SIZE` = 2; `rules.effectiveGoal`, örn. 10 → 20) ve takımın toplam ⭐'ı buna ulaşınca takım anında kazanır. Tur çubuğu ve takım çipleri etkin hedefi gösterir.
+- **Kazanma:** hedef lobide "Otomatik" (2-3 oyuncuda 15, 4-8 oyuncuda 10) ya da 5-25 arası seçilir; bireyselde hedef yıldıza ilk ulaşan; takımda hedef **kişi başıdır**: etkin hedef = hedef × gerçek takım büyüklüğü (`state.ts`; `rules.effectiveGoal`, örn. 2'şerli takımda 10 → 20, 4+4'te 10 → 40) ve takımın toplam ⭐'ı buna ulaşınca takım anında kazanır. Tur çubuğu ve takım çipleri etkin hedefi gösterir.
 - **Minioyun ödülü:** 1.: 1 ⭐ + rastgele silah, 2.: rastgele silah, 3.: +25 ❤️ (üst sınır 100) (düelloda kazanan 1., kaybeden 2.;
   beraberlikte ikisi de 2.). **Düelloda olmayanlar** (sıralamada yer almayanlar) ödül değil **teselli** alır: +25 ❤️ (üst sınır 100,
   `MINI_CONSOLATION`); sıralamadakiler teselli almaz, 3. derece ödülüyle çakışmaz (düello sıralamasında 3. derece yoktur).
@@ -194,7 +194,11 @@ rastgele, silah kullanılmaz). Herkes oynayınca tur biter: minioyun → ödüll
 - **Emoji tepkileri:** 😂 😱 👏 🤡 (`pt_emote {id, e}`): oyun durumuna yazılmaz, yalnızca iletilir; oyuncu başına en çok saniyede 1;
   tahtada oyuncunun jetonunun üstünde ~2 sn baloncuk olarak görünür. Yalnızca koltuktaki insanlar atabilir.
 - **Silah düşme ağırlıkları:** yumruk 1, pompalı 3, yay 3, bomba 2, kalkan 2.
-- **Lobi:** lider mod (Bireysel / 2'şerli Takım), harita (Korsan Adası / Uzay), hedef ⭐ (5-25), bot ekleme/çıkarma ve oyuncu
+- **Takım sayısı:** takım modunda lider takım sayısını seçer (Otomatik = 2'şerli, en çok 4 takım; ya da 2 / 3 / 4). Takımlar **eşit** olmalıdır:
+  oyuncu sayısı takım sayısına tam bölünmeli, takım başına en az 2 oyuncu, en az 2 takım (8 kişi 4+4 ya da 2+2+2+2, 6 kişi 3+3 ya da 2+2+2; 8 kişi 3 takıma
+  bölünmez). Bölünmeyen seçenekler pasif görünür, `startBlock` nedenini yazar. Takım sayısı değişince takımlar yeniden karıştırılır; sonradan giren/bot en az dolu
+  takıma yerleşir. `cf.tc` (0 = otomatik) `pt_state` ile taşınır; eski yayında yoksa otomatiktir. 2 oyuncuyla takım modu artık başlamaz (en az 2 takım).
+- **Lobi:** lider mod (Bireysel / Takım), harita (Korsan Adası / Uzay), hedef ⭐ (5-25), bot ekleme/çıkarma ve oyuncu
   atma işlemlerini yapar; herkes benzersiz bir emoji avatar seçer. Takım modunda sayı çift ve her takımda tam 2 kişi olmalıdır.
 
 **Mimari.** Oda kurucusu **lider**dir: durumu hesaplar ve her kabul edilen eylemden sonra **tam** `pt_state` görüntüsünü

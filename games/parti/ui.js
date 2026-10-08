@@ -421,7 +421,7 @@
             if (v.cfg.m === 'team') {
                 if (v.isLeader) {
                     var sel = el('select', 'pt-select');
-                    C.TEAMS.forEach(function (t) { var o = el('option', '', t.name); o.value = t.id; if (t.id === s.t) o.selected = true; sel.appendChild(o); });
+                    C.TEAMS.slice(0, Math.max(C.teamCount(v.seats.length, v.cfg.tc), s.t + 1)).forEach(function (t) { var o = el('option', '', t.name); o.value = t.id; if (t.id === s.t) o.selected = true; sel.appendChild(o); });
                     sel.addEventListener('change', function () { act({ type: 'team', id: s.i, t: Number(sel.value) }); });
                     row.appendChild(sel);
                 } else {
@@ -453,9 +453,22 @@
         var modeRow = el('div', 'pt-row');
         modeRow.appendChild(el('span', 'pt-label', 'Mod'));
         modeRow.appendChild(btn('Bireysel', v.cfg.m === 'solo' ? 'primary' : '', function () { act({ type: 'cfg', mode: 'solo' }); }, !v.isLeader));
-        modeRow.appendChild(btn('2\'şerli Takım', v.cfg.m === 'team' ? 'primary' : '', function () { act({ type: 'cfg', mode: 'team' }); }, !v.isLeader));
+        modeRow.appendChild(btn('Takım', v.cfg.m === 'team' ? 'primary' : '', function () { act({ type: 'cfg', mode: 'team' }); }, !v.isLeader));
         if (v.cfg.m === 'team') modeRow.appendChild(btn('🎲 Karıştır', 'small', function () { act({ type: 'teams_random' }); }, !v.isLeader));
         settings.appendChild(modeRow);
+        if (v.cfg.m === 'team') {
+            // takım sayısı: eşit bölünmeyen / takım başına 2'den az kalan seçenekler pasif
+            var tcRow = el('div', 'pt-row');
+            tcRow.appendChild(el('span', 'pt-label', 'Takım sayısı'));
+            var nSeats = v.seats.length;
+            tcRow.appendChild(btn('Otomatik (2\'şerli)', (v.cfg.tc || 0) === 0 ? 'primary small' : 'small', function () { act({ type: 'cfg', tc: 0 }); }, !v.isLeader));
+            C.TEAM_COUNTS.forEach(function (k) {
+                var b = btn(String(k), v.cfg.tc === k ? 'primary small' : 'small', function () { act({ type: 'cfg', tc: k }); }, !v.isLeader || C.teamCheck(nSeats, k) !== null);
+                if (C.teamCheck(nSeats, k) !== null) b.title = C.teamCheck(nSeats, k);
+                tcRow.appendChild(b);
+            });
+            settings.appendChild(tcRow);
+        }
         var mapRow = el('div', 'pt-row');
         mapRow.appendChild(el('span', 'pt-label', 'Harita'));
         Object.keys(window.PartiMaps).forEach(function (id) {
@@ -470,9 +483,10 @@
         });
         settings.appendChild(goalRow);
         if (v.cfg.m === 'team') {
-            // takımda etkin hedef = kişi başı × TEAM_SIZE (Otomatik: oyuncu sayısına göre)
+            // takımda etkin hedef = kişi başı × takım büyüklüğü (Otomatik: oyuncu sayısına göre)
             var per = v.cfg.gl === C.GOAL_AUTO ? C.autoGoal(v.seats.length) : v.cfg.gl;
-            settings.appendChild(el('span', 'pt-hint', 'Takım hedefi: ' + per * C.TEAM_SIZE + ' ⭐'));
+            var tsz = C.teamSize(v.seats.length, v.cfg.tc);
+            if (tsz) settings.appendChild(el('span', 'pt-hint', 'Takım hedefi: ' + per * tsz + ' ⭐ (' + C.teamCount(v.seats.length, v.cfg.tc) + ' takım × ' + tsz + ' kişi)'));
         }
         panel.appendChild(settings);
 

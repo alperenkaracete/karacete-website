@@ -101,6 +101,24 @@
         };
     }
 
+    // Takım düzeni (saf): n oyuncu, tc = seçilen takım sayısı (0 = otomatik: 2'şerli, en çok 4 takım)
+    function teamCount(n, tc) {
+        return tc > 0 ? tc : Math.min(4, Math.max(1, Math.ceil(n / 2)));
+    }
+
+    // Takımlar eşit olmalı: oyuncu sayısı takım sayısına tam bölünmeli, takım başına en az 2 oyuncu, en az 2 takım. Uygunsa null.
+    function teamCheck(n, tc) {
+        var k = teamCount(n, tc);
+        if (k < 2) return 'Takım modunda en az 2 takım (4 oyuncu) gerekir.';
+        if (n % k) return tc > 0 ? n + ' oyuncu ' + k + ' takıma eşit bölünmez.' : 'Takım modunda oyuncu sayısı çift olmalı.';
+        if (n / k < 2) return 'Her takımda en az 2 oyuncu olmalı.';
+        return null;
+    }
+
+    function teamSize(n, tc) {
+        return teamCheck(n, tc) === null ? n / teamCount(n, tc) : null;
+    }
+
     return {
         MAX_HP: 100,
         INVENTORY_PER_TYPE: 3,       // sınırsız envanter: tür başına en çok 3
@@ -108,7 +126,11 @@
         SHIELD_MAX: 1,               // envanterde en çok 1 kalkan
         SHIELD_TURNS: SHIELD_TURNS_VALUE,             // kurulu kalkan 3 kendi tur sonra düşer
         SHIELD_COOLDOWN_TURNS: SHIELD_CD_VALUE,       // kalkan kırılınca 2 kendi tur yeniden kurulamaz
-        TEAM_SIZE: 2,                // takım büyüklüğü: takım modunda etkin hedef = kişi başı hedef × TEAM_SIZE (rules.effectiveGoal)
+        TEAM_SIZE: 2,                // varsayılan takım büyüklüğü (eski durumlarda state.ts yoksa); etkin hedef = kişi başı hedef × takım büyüklüğü
+        TEAM_COUNTS: [2, 3, 4],      // lobide seçilebilen takım sayıları (0 = otomatik: 2'şerli); en çok 4 takım rengi
+        teamCount: teamCount,
+        teamCheck: teamCheck,
+        teamSize: teamSize,
         MIN_PLAYERS: 2,
         MAX_PLAYERS: 8,
         STAGE_MS: { roll: 20000, choose: 8000 },   // aşama başına süre (roll: silah seç + zar at)
