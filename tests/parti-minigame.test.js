@@ -46,42 +46,54 @@ test('sözleşme: signal iptali Promise\'i aborted ile bitirir', async () => {
 
 const seat = (id, i, bot) => ({ id, name: id, av: C.AVATARS[i], t: 0, bot: !!bot });
 
-test('minigameSpec: düello yalnız insanlar arasında, hazır oyunlardan, deterministik', () => {
-    const g = G.index(require('../games/parti/maps/space.js'));
+const SP = () => G.index(require('../games/parti/maps/space.js'));
+const mkState = (seed, seats) => { const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: SP() }); st.stage = 'mini'; return st; };
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+test('minigameSpec: düello yalnız insanlar arasında, hazır oyunlardan, deterministik; ffa Kurbağa da seçilir', () => {
+    const g = SP();
     const seen = {};
     for (let seed = 1; seed < 400; seed++) {
-        const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: [seat('h1', 0), seat('h2', 1), seat('b1', 2, true), seat('h3', 3)] }, { g: g });
-        st.stage = 'mini';
-        const copy = JSON.parse(JSON.stringify(st));      // Rng durumu ilerletir: karşılaştırma için kopya
+        const st = mkState(seed, [seat('h1', 0), seat('h2', 1), seat('b1', 2, true), seat('h3', 3)]);
+        const copy = clone(st);      // Rng durumu ilerletir: karşılaştırma için kopya
         const spec = R.minigameSpec(st, { g: g });
         assert.deepEqual(spec, R.minigameSpec(copy, { g: g }), 'aynı durumdan aynı belirtim');
+        seen[spec.game] = true;
         if (spec.type === 'duel') {
-            seen[spec.game] = true;
             assert.ok(C.DUEL_GAMES.includes(spec.game));
             assert.equal(spec.players.length, 2);
             assert.ok(!spec.players.includes('b1'), 'bot düelloya seçilmez');
             assert.notEqual(spec.players[0], spec.players[1]);
         } else {
-            assert.equal(spec.game, undefined);
+            assert.equal(spec.type, 'ffa');
+            assert.equal(spec.game, 'kurbaga');
+            assert.deepEqual(spec.players, st.order, 'ffa: botlar dahil herkes');
         }
     }
-    assert.deepEqual(Object.keys(seen).sort(), ['catdog', 'connect4', 'xox'], 'üç oyun da seçilebiliyor');
+    assert.deepEqual(Object.keys(seen).sort(), ['catdog', 'connect4', 'kurbaga', 'xox'], 'dört oyun da seçilebiliyor');
 });
 
-test('minigameSpec: tek insan + botlar -> düello yok', () => {
-    const g = G.index(require('../games/parti/maps/space.js'));
+test('minigameSpec: tek insan + botlar -> düello yok, Kurbağa (çark değil)', () => {
+    const g = SP();
     for (let seed = 1; seed < 100; seed++) {
-        const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)] }, { g: g });
-        assert.equal(R.minigameSpec(st, { g: g }).type, 'ffa');
+        const st = mkState(seed, [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)]);
+        const spec = R.minigameSpec(st, { g: g });
+        assert.equal(spec.type, 'ffa');
+        assert.equal(spec.game, 'kurbaga');
     }
 });
 
-test('parseMiniFlag: duel, duel:<oyun>, geçersiz/yok', () => {
+test('parseMiniFlag: oyun kimliği, duel, duel:<oyun>, geçersiz/yok', () => {
     assert.deepEqual(R.parseMiniFlag('?mini=duel'), { game: null });
     assert.deepEqual(R.parseMiniFlag('?x=1&mini=duel:catdog'), { game: 'catdog' });
     assert.deepEqual(R.parseMiniFlag('?mini=duel%3Axox&debug=1'), { game: 'xox' });
     assert.deepEqual(R.parseMiniFlag('?mini=duel:connect4#a'), { game: 'connect4' });
+    assert.deepEqual(R.parseMiniFlag('?mini=kurbaga'), { game: 'kurbaga' });
+    assert.deepEqual(R.parseMiniFlag('?mini=xox'), { game: 'xox' });
+    assert.deepEqual(R.parseMiniFlag('?a=1&mini=catdog&b=2'), { game: 'catdog' });
+    assert.deepEqual(R.parseMiniFlag('?mini=connect4'), { game: 'connect4' });
     assert.equal(R.parseMiniFlag('?mini=duel:yok'), null);
+    assert.equal(R.parseMiniFlag('?mini=duel:kurbaga'), null, 'kurbağa düello değildir');
     assert.equal(R.parseMiniFlag('?mini=ffa'), null);
     assert.equal(R.parseMiniFlag('?mini=%E0%A4%A'), null, 'bozuk kodlama');
     assert.equal(R.parseMiniFlag(''), null);
@@ -89,47 +101,46 @@ test('parseMiniFlag: duel, duel:<oyun>, geçersiz/yok', () => {
     assert.equal(R.parseMiniFlag('?xmini=duel'), null);
 });
 
-test('minigameSpec bayrağı: ≥2 insanda her tur düello; <2 insanda yok; bayraksız %30 davranışı aynı', () => {
-    const g = G.index(require('../games/parti/maps/space.js'));
-    const mk = (seed, seats) => R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: g });
+test('minigameSpec bayrağı: havuzu o oyuna indirir; uygun değilse yok sayılır; bayrak çekiliş sırasını bozmaz', () => {
+    const g = SP();
     const humans = [seat('h1', 0), seat('h2', 1), seat('b1', 2, true)];
-    let plain = 0;
     for (let seed = 1; seed < 400; seed++) {
-        const st = mk(seed, humans);
-        st.stage = 'mini';
-        const copy = () => JSON.parse(JSON.stringify(st));
-        const none = R.minigameSpec(copy(), { g: g });
-        assert.deepEqual(none, R.minigameSpec(copy(), { g: g, mini: null }), 'mini: null = bayrak yok');
-        if (none.type === 'duel') plain++;
-        const any = R.minigameSpec(copy(), { g: g, mini: { game: null } });
-        assert.equal(any.type, 'duel');
+        const st = mkState(seed, humans);
+        const none = R.minigameSpec(clone(st), { g: g });
+        assert.deepEqual(none, R.minigameSpec(clone(st), { g: g, mini: null }), 'mini: null = bayrak yok');
+        const any = R.minigameSpec(clone(st), { g: g, mini: { game: null } });
+        assert.equal(any.type, 'duel', '?mini=duel: rastgele düello');
         assert.ok(C.DUEL_GAMES.includes(any.game));
-        const cd = R.minigameSpec(copy(), { g: g, mini: { game: 'catdog' } });
+        const cd = R.minigameSpec(clone(st), { g: g, mini: { game: 'catdog' } });
         assert.equal(cd.type, 'duel');
         assert.equal(cd.game, 'catdog');
         assert.deepEqual(cd.players.slice().sort(), ['h1', 'h2'], 'botlar seçilmez');
         assert.equal(cd.seed, none.seed, 'tohum aynı çekilişten');
-        if (none.type === 'duel') assert.deepEqual(cd.players, none.players, 'bayrak çekiliş sırasını bozmaz');
+        const kb = R.minigameSpec(clone(st), { g: g, mini: { game: 'kurbaga' } });
+        assert.equal(kb.type, 'ffa');
+        assert.equal(kb.game, 'kurbaga');
+        assert.deepEqual(kb.players, st.order);
     }
-    assert.ok(plain > 400 * 0.2 && plain < 400 * 0.4, 'bayraksız oran ≈ %30: ' + plain);
-    // tek insan: bayrak olsa da düello yok
+    // tek insan: düello bayrağı uygun değil -> yok sayılır, normal havuz (Kurbağa)
     for (let seed = 1; seed < 50; seed++) {
-        const st = mk(seed, [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)]);
-        assert.equal(R.minigameSpec(st, { g: g, mini: { game: 'xox' } }).type, 'ffa');
+        const st = mkState(seed, [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)]);
+        const spec = R.minigameSpec(st, { g: g, mini: { game: 'xox' } });
+        assert.equal(spec.type, 'ffa');
+        assert.equal(spec.game, 'kurbaga');
+        assert.equal(R.minigameSpec(mkState(seed, [seat('h1', 0), seat('b1', 1, true)]), { g: g, mini: { game: null } }).game, 'kurbaga');
     }
 });
 
 test('minigameSpec: 2–7 insanla çiftler ve extra (tohumlu, deterministik, herkes tam bir yerde)', () => {
-    const g = G.index(require('../games/parti/maps/space.js'));
+    const g = SP();
     for (let n = 2; n <= 7; n++) {
         const ids = Array.from({ length: n }, (_, i) => 'h' + i);
         const seats = ids.map((id, i) => seat(id, i)).concat([seat('bot', 7, true)]);       // bot hep var
         let duels = 0;
         const firstPairs = new Set();
         for (let seed = 1; seed < 300; seed++) {
-            const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: g });
-            st.stage = 'mini';
-            const copy = JSON.parse(JSON.stringify(st));
+            const st = mkState(seed, seats);
+            const copy = clone(st);
             const spec = R.minigameSpec(st, { g: g, mini: { game: null } });          // bayrak: her tur düello
             assert.deepEqual(spec, R.minigameSpec(copy, { g: g, mini: { game: null } }), 'deterministik');
             assert.equal(spec.type, 'duel');
@@ -145,25 +156,4 @@ test('minigameSpec: 2–7 insanla çiftler ve extra (tohumlu, deterministik, her
         assert.equal(duels, 299);
         if (n >= 3) assert.ok(firstPairs.size > 1, 'çiftleme tohuma göre değişiyor');
     }
-});
-
-test('minigameSpec: 1 insan -> çark; bayraksız 3+ insanda da %30 civarı düello ve geçerli çiftler', () => {
-    const g = G.index(require('../games/parti/maps/space.js'));
-    const seats = [seat('h1', 0), seat('h2', 1), seat('h3', 2), seat('h4', 3), seat('h5', 4)];
-    let duels = 0;
-    for (let seed = 1; seed < 400; seed++) {
-        const st = R.createGame({ seed, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats }, { g: g });
-        st.stage = 'mini';
-        const spec = R.minigameSpec(st, { g: g });
-        if (spec.type === 'duel') {
-            duels++;
-            assert.equal(spec.pairs.length, 2);
-            assert.ok(spec.extra);
-        } else {
-            assert.equal(spec.pairs, undefined);
-        }
-    }
-    assert.ok(duels > 400 * 0.2 && duels < 400 * 0.4, 'oran ≈ %30: ' + duels);
-    const one = R.createGame({ seed: 3, cfg: { mode: 'solo', goal: 10, map: 'space' }, seats: [seat('h1', 0), seat('b1', 1, true), seat('b2', 2, true)] }, { g: g });
-    assert.equal(R.minigameSpec(one, { g: g, mini: { game: null } }).type, 'ffa');
 });

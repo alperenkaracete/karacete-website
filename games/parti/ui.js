@@ -39,6 +39,7 @@
     var watchScenes = {};      // çift no -> Kedi-Köpek canlı izleme sahnesi (kalıcı kanvas; overlay yeniden çizilse de animasyon sürer)
     var miniRoot = null;       // düello oyununun çizildiği KALICI düğüm (overlay her renderda silinir; bu düğüm yeniden eklenir)
     var DUEL_TITLES = { xox: 'XOX', connect4: 'Dörtlü Bağla', catdog: 'Kedi - Köpek' };
+    var FFA_TITLES = { kurbaga: '🐸 Kurbağa' };    // ffa (herkes aynı anda) minioyunları; mini/registry.js ile aynı kimlikler
 
     function listen(target, type, handler, opts) {
         target.addEventListener(type, handler, opts);
@@ -232,6 +233,59 @@
         return mn.type === 'duel' && !!mn.game && !!mn.live && !!DUEL_TITLES[mn.game];
     }
 
+    // ffa (Kurbağa): jeton ff taşır. Oynayan bağlı insan oyunu kalıcı köke çizer; diğerleri ilerleme çubuklarını, bitince sıralamayı görür.
+    function ffaGame(mn) {
+        return mn.type === 'ffa' && !!mn.game && !!FFA_TITLES[mn.game] && !!mn.ff;
+    }
+
+    function progressText(row, fin) {
+        var n = Math.max(0, Math.min(9, row));
+        return new Array(n + 1).join('█') + new Array(10 - n).join('░') + ' ' + (fin !== null && fin !== undefined ? '🏁 ' + (fin / 1000).toFixed(1) + ' sn' : n + '/9');
+    }
+
+    function ffaCard(v, c) {
+        var mn = v.mini;
+        c.appendChild(el('strong', 'pt-card-title', FFA_TITLES[mn.game]));
+        if (mn.ranking.length) {
+            var res = el('ol', 'pt-rank');
+            var pos = 0;
+            mn.ranking.forEach(function (group) {
+                var medal = ['🥇', '🥈', '🥉'][pos] || '▫️';
+                group.forEach(function (id) { res.appendChild(el('li', '', medal + ' ' + nameOf(v, id))); });
+                pos += group.length;
+            });
+            c.appendChild(res);
+            c.appendChild(el('span', 'pt-hint', '1.: ⭐+silah · 2.: silah · 3.: +25 ❤️ · 4. ve sonrası ödül yok'));
+            return c;
+        }
+        var info = el('span', 'pt-hint', '');
+        function infoText(vv) {
+            var f = vv.mini && vv.mini.ff;
+            if (!f) return '';
+            return f.started ? '⏱ Kalan ' + fmtTime(f.left) : 'Birazdan başlıyor…';
+        }
+        info.textContent = infoText(v);
+        timerEls.push({ node: info, fn: infoText });
+        c.appendChild(info);
+        var list = el('ul', 'pt-duel-pairs pt-frog-rows');
+        mn.ff.rows.forEach(function (row, i) {
+            var li = el('li', 'pt-duel-pair');
+            li.appendChild(el('span', 'pt-duel-names', (row.bot ? '🤖 ' : '') + nameOf(v, row.id) + (row.id === v.me.id ? ' (sen)' : '')));
+            var bar = el('span', 'pt-frog-bar', '');
+            function barText(vv) {
+                var q = vv.mini && vv.mini.ff && vv.mini.ff.rows[i];
+                return q ? progressText(q.row, q.fin) : '';
+            }
+            bar.textContent = barText(v);
+            timerEls.push({ node: bar, fn: barText });
+            li.appendChild(bar);
+            list.appendChild(li);
+        });
+        c.appendChild(list);
+        if (v.mode === 'spectator') c.appendChild(el('span', 'pt-hint', '👀 İzliyorsun'));
+        return c;
+    }
+
     // Düello sürerken oynamayanlara (ya da maçı bitenlere) tüm maçların durumu: "A ⚔️ B · kalan 1:12" / "🏆 A kazandı"
     function duelPairsCard(v, c) {
         var mn = v.mini;
@@ -272,16 +326,17 @@
     function miniCard(v) {
         var mn = v.mini;
         var c = el('div', 'pt-card pt-mini');
-        if (duelPlaying(mn)) {
+        if (duelPlaying(mn) || (ffaGame(mn) && mn.live)) {
             c.classList.add('pt-duel-card');
             c.appendChild(miniRoot);
             return c;
         }
+        if (ffaGame(mn)) return ffaCard(v, c);
         var spinning = mn.left < 0 || mn.left > 1500;
         var isDuel = mn.type === 'duel' && !!mn.game && !!DUEL_TITLES[mn.game];
         if (isDuel && mn.left < 0 && mn.pairs && mn.pairs.length) return duelPairsCard(v, c);
         c.appendChild(el('strong', 'pt-card-title', isDuel ? '⚔️ Düello — ' + DUEL_TITLES[mn.game] : (mn.type === 'duel' ? '🎡 Şans Çarkı — Düello' : '🎡 Şans Çarkı')));
-        if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Yer tutucu minioyun: sıralama rastgele belirlenir.'));
+        if (!isDuel) c.appendChild(el('span', 'pt-hint', 'Acil yedek: sıralama rastgele belirlenir.'));
         var wheel = el('div', 'pt-wheel' + (spinning ? ' spinning' : ''), isDuel ? '⚔️' : '🎡');
         c.appendChild(wheel);
         if (spinning) {

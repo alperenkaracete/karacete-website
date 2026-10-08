@@ -37,7 +37,7 @@ function room(options) {
                 }
             });
             node.m = Machine.create({
-                me: { id, name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: first && !options.noCreator,
+                me: { id, name }, players: node.players, now: () => clock, rand, maps, forceMini: options.forceMini || null, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: first && !options.noCreator,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -71,7 +71,7 @@ function room(options) {
                 if (o.id !== id && o.online) queue.push({ to: o.id, msg: { type: 'player_joined', id, name: old.name } });
             });
             node.m = Machine.create({
-                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
+                me: { id, name: old.name }, players: node.players, now: () => clock, rand, maps, forceMini: options.forceMini || null, onEmote: (e) => { (api.emotes[id] = api.emotes[id] || []).push(e); }, creator: roomPlayers.length <= 1 && roomPlayers[0].id === id,
                 send: (msg) => {
                     if (!node.online) return;
                     const copy = JSON.parse(JSON.stringify(msg));
@@ -111,8 +111,8 @@ function lobby3() {
     return r;
 }
 
-function started(n, cfgAction) {
-    const r = room();
+function started(n, cfgAction, roomOpts) {
+    const r = room(roomOpts);
     const ids = ['A', 'B', 'C', 'D'].slice(0, n);
     ids.forEach((id) => r.join(id, 'Oyuncu' + id));
     if (cfgAction) r.m('A').dispatch(cfgAction);
@@ -304,8 +304,18 @@ test('botlar sıra kendilerine gelince lider tarafından oynanır; takipçiler g
     assert.ok(r.state('B').fx.length > 0);
 });
 
-test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, yeni tur başlar', async () => {
-    const r2 = started(3);
+// Bu testler genel akışı (minioyun -> sonuç -> ödül -> yeni tur) sınar: ffa oyunu (Kurbağa) zorlanır; kimse hamle yapmazsa tüm
+// oyuncular 0. satırda eşit derecede biter. Ayrıntılı Kurbağa senaryoları tests/parti-ffa-flow.test.js içindedir.
+const FFA = { forceMini: { game: 'kurbaga' } };
+
+// Kurbağa süresi dolana dek ilerler (hamle yapan yoksa KURBAGA_MS sonunda), sonuç kaydedilince durur (ödül henüz uygulanmadı)
+function untilRanked(r) {
+    let guard = 0;
+    while (!(r.view('B').mini && r.view('B').mini.ranking.length) && guard++ < 1000) r.advance(250, 250);
+}
+
+test('minioyun: tur sonunda Kurbağa oynanır, sonuç ödül verir, yeni tur başlar', async () => {
+    const r2 = started(3, null, FFA);
     let guard = 0;
     while (r2.state('A').g.stage !== 'mini' && guard++ < 200) {
         r2.m(curId(r2)).dispatch(R.autoAction(r2.state('A').g, { g: G.index(maps.pirate) }));
@@ -313,9 +323,11 @@ test('minioyun: tur sonunda yer tutucu çark çalışır, sonuç ödül verir, y
     }
     assert.equal(r2.state('A').g.stage, 'mini');
     await r2.settle();
+    untilRanked(r2);
     const mn = r2.view('B').mini;
-    assert.ok(mn && mn.ranking.length === mn.players.length, 'çark sonucu herkese gitti (ffa: 3, düello: 2)');
-    assert.ok(['ffa', 'duel'].includes(mn.type));
+    assert.ok(mn && mn.ranking.flat().length === mn.players.length, 'sonuç herkese gitti');
+    assert.equal(mn.type, 'ffa');
+    assert.equal(mn.game, 'kurbaga');
     const rd = r2.state('A').g.rd;
     r2.advance(C.MINI_HOLD_MS + 500);
     assert.equal(r2.state('A').g.stage, 'roll');
@@ -571,18 +583,19 @@ test('backend devralma: tek başına yenilenen kurucu yeni lobi kurar (kaybedece
 });
 
 test('günlük: minioyun sonucu tek satır (🥇A 🥈B 🥉C), tek tek ödül satırı yok', async () => {
-    const r = started(3);
+    const r = started(3, null, FFA);
     let guard = 0;
     while (r.state('A').g.stage !== 'mini' && guard++ < 200) {
         r.m(curId(r)).dispatch(R.autoAction(r.state('A').g, { g: G.index(maps.pirate) }));
         r.flush();
     }
     await r.settle();
+    untilRanked(r);
     r.advance(C.MINI_HOLD_MS + 500);
     const log = r.view('A').log;
     const lines = log.filter((l) => l.startsWith('🎡'));
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /^🎡 🥇\S+ 🥈\S+( 🥉\S+)?$/);          // düelloda iki, ffa'da üç madalya
+    assert.match(lines[0], /^🎡( (🥇|🥈|🥉|▫️)\S+)+$/u);          // tek satır; kimse oynamadıysa hepsi eşit derece
     assert.ok(!log.some((l) => /minioyunda \d\. oldu/.test(l) || /\(minioyun\)/.test(l)));
 });
 
@@ -811,6 +824,7 @@ async function stepWorld(r, idle) {
     const g = r.state('A').g;
     if (g.stage === 'mini') {
         await r.settle();
+        untilRanked(r);
         r.advance(C.MINI_HOLD_MS + 300, 300);
         return;
     }
@@ -824,7 +838,7 @@ async function stepWorld(r, idle) {
 }
 
 test('AFK: üst üste 2 turda hiç eylem yapmayan insanı bot devralır; "Ben buradayım" ile geri döner (bot 3 sn bekler)', async () => {
-    const r = room();
+    const r = room(FFA);
     r.join('A', 'A'); r.join('B', 'B'); r.join('C', 'C');
     r.m('A').dispatch({ type: 'start' }); r.flush();
     const target = 'B';

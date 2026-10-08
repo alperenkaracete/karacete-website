@@ -46,6 +46,7 @@ function room(seed, extra) {
             miniRoot: () => node.root,
             startMinigame: (spec) => {
                 const info = RULES[spec.game];
+                if (!info && extra && extra.noFfa && spec.type === 'ffa') return new Promise(() => {});       // oturum açılır ama hiç rapor vermez
                 if (!info) return Mini.startMinigame(spec);        // ffa / çark
                 const defs = makeDefs(info.prefix, info.rules);
                 if (!spec.observer) node.defs.push(defs);        // başsız hakem oturumları oyun kurmaz
@@ -66,6 +67,7 @@ function room(seed, extra) {
     }
     Object.assign(api, {
         get clock() { return clock; },
+        now: () => clock,         // (api.clock Object.assign sırasında bir kez okunur; güncel saat için now())
         m: (id) => nodes[id].m,
         state: (id) => nodes[id].m._state(),
         view: (id) => nodes[id].m.getView(),
@@ -208,4 +210,26 @@ const rewardsFromFx = (r, id) => {
     return out;
 };
 
-module.exports = { room, curId, reachDuel, pairOf, playToWin, mover, cdShoot, rewardsFromFx, gp, N, MAXHOLD, RULES, CDR, IDS, NAMES };
+// Kurbağa (ffa) turuna kadar oynar: lider her zaman A; humans insan, bots bot; bayrak ?mini=kurbaga
+async function reachFfa(opts) {
+    opts = opts || {};
+    const humans = opts.humans || 3;
+    const r = room(opts.seed || 5, Object.assign({ forceMini: { game: 'kurbaga' } }, opts.extra || {}));
+    for (let i = 0; i < humans; i++) r.join(IDS[i], NAMES[i]);
+    for (let i = 0; i < (opts.bots || 0); i++) r.m('A').dispatch({ type: 'bot_add' });
+    r.flush();
+    r.m('A').dispatch({ type: 'start' });
+    r.flush();
+    let guard = 0;
+    while (r.state('A').g.stage !== 'mini' && guard++ < 600) {
+        const cur = curId(r);
+        if (r.nodes[cur]) r.m(cur).dispatch(R.autoAction(r.state('A').g, { g: gp }));
+        else r.advance(1000);
+        r.flush();
+    }
+    assert.equal(r.state('A').g.stage, 'mini', 'minioyuna gelindi');
+    await r.settle();
+    return r;
+}
+
+module.exports = { room, reachFfa, curId, reachDuel, pairOf, playToWin, mover, cdShoot, rewardsFromFx, gp, N, MAXHOLD, RULES, CDR, IDS, NAMES };
