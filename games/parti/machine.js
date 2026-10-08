@@ -742,7 +742,7 @@
                 if (M.g.stage !== 'aim' || !M.g.aim || !M.aimAt || typeof a.q !== 'number' || !isFinite(a.q) || Math.floor(a.q) !== a.q || a.q < 0 || a.q > 1000) return false;
                 var elapsedAim = now() - M.aimAt;
                 var skAim = C.WEAPONS[M.g.aim.w].skill;
-                if (elapsedAim < C.AIM_MIN_MS) return false;
+                // Erken gelen dokunuş (saat/gecikme farkı) DÜŞÜRÜLMEZ: kenetlenip kabul edilir (arayüz ilk AIM_MIN_MS'te zaten dokunuş göndermez)
                 var specAim = Aim.makeAim(M.g.aim.w, M.g.aim.seed, M.g.aim.d);
                 act.q = elapsedAim > skAim.maxMs + C.AIM_GRACE_MS || !specAim ? -1 : Math.round(Aim.clampQ(specAim, a.q / 1000, elapsedAim, C.AIM_SLACK_MS) * 1000);
             }

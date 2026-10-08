@@ -84,6 +84,29 @@ test('atan: çubuk etkileşimli (pt-aim-mine, BIRAK), hedefin emojisi bölgede, 
     assert.equal(m.acts.length, 1, 'tek dokunuş: ikinci bırakma yok');
 });
 
+test('çubuk göründükten ilk AIM_MIN_MS (250 ms) dokunuş/Boşluk YOK SAYILIR (gösterge donmaz, mesaj gitmez); 250 ms sonra bırakır', () => {
+    clock = 100000;
+    const m = make();
+    m.ctl.sync(view('me', 'p2', clock - 100), clock);                       // çubuğun 100. ms'si
+    assert.ok(m.find('pt-aim-track').className.includes('pt-aim-wait'), 'hazırlanıyor göstergesi (soluk)');
+    m.find('pt-aim-track').fire('pointerdown', {});
+    m.find('pt-aim-drop').fire('pointerdown', {});
+    m.doc.key(' ');
+    assert.equal(m.acts.length, 0, 'erken dokunuş mesaj göndermez');
+    assert.ok(m.ctl._state().tapped === null, 'gösterge donmadı');
+    assert.ok(m.ctl.el.className.includes('pt-aim-mine'), 'atıcı kilitlenmedi');
+    clock += 100;
+    m.ctl.sync(view('me', 'p2', clock - 200), clock);                       // 200 ms: hâlâ erken
+    m.find('pt-aim-track').fire('pointerdown', {});
+    assert.equal(m.acts.length, 0);
+    clock += 60;
+    m.ctl.sync(view('me', 'p2', clock - 260), clock);                       // 260 ms: hazır
+    assert.ok(!m.find('pt-aim-track').className.includes('pt-aim-wait'));
+    m.find('pt-aim-track').fire('pointerdown', {});
+    assert.equal(m.acts.length, 1, 'AIM_MIN_MS sonra bırakır');
+    assert.equal(m.acts[0], Math.round(Aim.indicatorAt(spec(), 260) * 1000));
+});
+
 test('Boşluk tuşu bırakır (repeat yok sayılır; atan değilken/basılı tutarken etkisiz)', () => {
     clock = 100000;
     const m = make();
