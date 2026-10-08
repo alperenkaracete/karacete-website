@@ -52,6 +52,12 @@
             home: g.start, rev: 0, atk: 0, rd: 1, turn: 0, stage: 'roll', steps: 0, choices: null,
             order: [], P: {}, chests: {}, mini: null, winner: null, fr: 0
         };
+        if (state.mode === 'team') {
+            // takım büyüklüğü (eşit takımlar): etkin hedef bununla çarpılır
+            var tset = {};
+            opts.seats.forEach(function (s) { tset[s.t] = true; });
+            state.ts = Math.max(1, Math.round(opts.seats.length / Math.max(1, Object.keys(tset).length)));
+        }
         var rng = Rng(state, ctx);
         var seats = rng.shuffle(opts.seats);
         seats.forEach(function (s, i) {
@@ -77,9 +83,9 @@
     }
 
     // Etkin hedef (tek tanım): state.goal KİŞİ BAŞI hedeftir; takım modunda takımın toplamı bu değerle karşılaştırılır
-    // (kişi başı hedef × takım büyüklüğü). Solo modda state.goal aynen.
+    // (kişi başı hedef × takım büyüklüğü state.ts; eski durumlarda yoksa 2). Solo modda state.goal aynen.
     function effectiveGoal(state) {
-        return state.mode === 'team' ? state.goal * C.TEAM_SIZE : state.goal;
+        return state.mode === 'team' ? state.goal * (state.ts || C.TEAM_SIZE) : state.goal;
     }
 
     function teamStars(state, t) {

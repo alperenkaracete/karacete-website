@@ -66,15 +66,16 @@
             var av = C.AVATARS.filter(function (a) { return !used[a]; })[0] || C.AVATARS[0];
             var counts = {};
             M.S.forEach(function (s) { counts[s.t] = (counts[s.t] || 0) + 1; });
+            var tcnt = C.teamCount(M.S.length + 1, M.cf.tc);
             var team = 0;
-            while ((counts[team] || 0) >= 2 && team < 3) team++;
+            for (var tk = 1; tk < tcnt; tk++) if ((counts[tk] || 0) < (counts[team] || 0)) team = tk;      // en az dolu takım
             return { i: id, n: String(name || 'Oyuncu').slice(0, 20), a: av, t: team, b: bot ? 1 : 0, c: 1, d: 0 };
         }
 
         function initLeader() {
             M = {
                 ep: 1, rv: 0, ld: me.id, ph: 'lobby',
-                cf: { m: 'solo', mp: Object.keys(opts.maps)[0], gl: C.DEFAULT_GOAL },
+                cf: { m: 'solo', mp: Object.keys(opts.maps)[0], gl: C.DEFAULT_GOAL, tc: 0 },
                 S: [], g: null, dlAt: 0, dlLeft: 0, pz: false, bt: null, mn: null, lg: [], fx: [], fq: 0, kk: []
             };
             M.S.push(freshSeat(me.id, me.name, false));
@@ -139,6 +140,7 @@
             if (!g || typeof g !== 'object' || !g.P || typeof g.P !== 'object' || !Array.isArray(g.order)) return false;
             if (g.order.length > C.MAX_PLAYERS) return false;
             if (!isInt(g.rd, 1, 1e6) || !isInt(g.turn, -1, 64) || !isInt(g.goal, 1, 100)) return false;
+            if (g.ts !== undefined && !isInt(g.ts, 1, C.MAX_PLAYERS)) return false;
             for (var i = 0; i < g.order.length; i++) {
                 var id = g.order[i];
                 if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(g.P, id)) return false;
@@ -194,6 +196,7 @@
             // uzun kopan oyuncu birden çok devri kaçırmış olabilir.
             if (M && !resyncOk && msg.ep > M.ep + 1) return null;
             if (!msg.cf || (msg.cf.m !== 'solo' && msg.cf.m !== 'team') || !opts.maps[msg.cf.mp] || (msg.cf.gl !== C.GOAL_AUTO && C.GOALS.indexOf(msg.cf.gl) < 0)) return null;
+            if (msg.cf.tc !== undefined && msg.cf.tc !== 0 && C.TEAM_COUNTS.indexOf(msg.cf.tc) < 0) return null;       // eski yayınlarda tc yok = 0 (otomatik)
             if (!Array.isArray(msg.S) || msg.S.length > C.MAX_PLAYERS) return null;
             var t = now();
             var seats = [];
@@ -262,7 +265,7 @@
             }
             if (!Array.isArray(msg.lg) || msg.lg.length > 60 || !Array.isArray(msg.fx) || !isInt(msg.fq, 0, 1e9)) return null;
             return {
-                ep: msg.ep, rv: msg.rv, ld: msg.ld, ph: msg.ph, cf: { m: msg.cf.m, mp: msg.cf.mp, gl: msg.cf.gl },
+                ep: msg.ep, rv: msg.rv, ld: msg.ld, ph: msg.ph, cf: { m: msg.cf.m, mp: msg.cf.mp, gl: msg.cf.gl, tc: msg.cf.tc || 0 },
                 S: seats, g: msg.g, dlAt: t + msg.dl, dlLeft: msg.dl, pz: !!msg.pz, bt: typeof msg.bt === 'string' ? msg.bt : null, mn: mn,
                 lg: msg.lg.map(String).slice(-C.LOG_MAX), fx: msg.fx.slice(0, 40), fq: msg.fq, kk: Array.isArray(msg.kk) ? msg.kk.map(String) : []
             };
@@ -544,10 +547,14 @@
             if (n < C.MIN_PLAYERS) return 'En az 2 oyuncu gerekir (bot dahil).';
             if (M.S.some(function (s) { return !s.b && !s.c; })) return 'Bağlantısı kopan oyuncu var.';
             if (M.cf.m === 'team') {
-                if (n % 2) return 'Takım modunda oyuncu sayısı çift olmalı.';
+                var why = C.teamCheck(n, M.cf.tc);
+                if (why) return why;
+                var tcnt = C.teamCount(n, M.cf.tc);
+                var size = n / tcnt;
                 var counts = {};
                 M.S.forEach(function (s) { counts[s.t] = (counts[s.t] || 0) + 1; });
-                for (var k in counts) if (counts[k] !== 2) return 'Her takımda tam 2 oyuncu olmalı.';
+                for (var k = 0; k < tcnt; k++) if (counts[k] !== size) return 'Her takımda tam ' + size + ' oyuncu olmalı.';
+                if (Object.keys(counts).length !== tcnt) return 'Her takımda tam ' + size + ' oyuncu olmalı.';
             }
             return null;
         }
@@ -558,7 +565,8 @@
                 var j = rnd(i + 1);
                 var t = order[i]; order[i] = order[j]; order[j] = t;
             }
-            order.forEach(function (s, k) { s.t = Math.min(3, Math.floor(k / 2)); });
+            var tcnt = C.teamCount(order.length, M.cf.tc);
+            order.forEach(function (s, k) { s.t = k % tcnt; });
         }
 
         function startGame() {
@@ -599,12 +607,16 @@
                     }
                     if (typeof a.map === 'string' && opts.maps[a.map]) M.cf.mp = a.map;
                     if (a.goal === C.GOAL_AUTO || C.GOALS.indexOf(a.goal) >= 0) M.cf.gl = a.goal;
+                    if (a.tc !== undefined && (a.tc === 0 || C.TEAM_COUNTS.indexOf(a.tc) >= 0) && a.tc !== M.cf.tc) {
+                        M.cf.tc = a.tc;
+                        if (M.cf.m === 'team') randomTeams();           // takım sayısı değişti: yeniden dağıt
+                    }
                     return true;
                 }
                 case 'team': {
                     if (!leader || !seatOf(a.id) || !isInt(a.t, 0, 3)) return false;
                     var inTeam = M.S.filter(function (s) { return s.t === a.t && s.i !== a.id; }).length;
-                    if (inTeam >= 2) return false;
+                    if (inTeam >= Math.max(1, Math.ceil(M.S.length / C.teamCount(M.S.length, M.cf.tc)))) return false;      // takım dolu
                     seatOf(a.id).t = a.t;
                     return true;
                 }

@@ -88,7 +88,7 @@ test('ui/makine: etkin hedef gösterimi (tur çubuğu, takım çipleri, lobide k
     assert.ok(/'Tur ' \+ g\.rd \+ ' · Hedef ' \+ R\.effectiveGoal\(g\) \+ ' ⭐'/.test(ui));
     assert.ok(/R\.teamStars\(g, Number\(t\)\) \+ '\/' \+ R\.effectiveGoal\(g\) \+ ' ⭐'/.test(ui));
     assert.ok(/'Hedef ⭐ \(kişi başı\)'/.test(ui));
-    assert.ok(/'Takım hedefi: ' \+ per \* C\.TEAM_SIZE/.test(ui));
+    assert.ok(/'Takım hedefi: ' \+ per \* tsz/.test(ui), 'lobi ipucu gerçek takım büyüklüğüyle');
     const machine = fs.readFileSync(path.join(root, 'games', 'parti', 'machine.js'), 'utf8');
     assert.ok(/R\.effectiveGoal\(M\.g\)/.test(machine));
     assert.ok(!/\.goal\b[^;]*\bteamStars|teamStars[^;]*state\.goal/.test(fs.readFileSync(path.join(root, 'games', 'parti', 'rules.js'), 'utf8')), 'rules.js takım karşılaştırmasında ham goal kullanmaz');
