@@ -160,6 +160,13 @@
         KURBAGA_SEND_MS: 250,             // sıçrama raporlarını birleştirme aralığı (ölüm/varış anında hemen)
         KURBAGA_HEARTBEAT_MS: 2000,       // değişiklik olmasa da son durumu yeniden gönderme (lider devri / kayıp mesaj)
         KURBAGA_PUBLISH_MS: 500,          // lider ilerleme çubuğu yayınlarının alt aralığı (varış/ilk rapor hemen)
+        // Düşen Zemin (ffa): toplam süre, geri sayım payı, ağ raporu aralıkları (≤10 Hz üst sınır), lider yayını, donan telefon eşiği
+        DUSENZEMIN_MS: 120000,
+        DUSENZEMIN_COUNTDOWN_MS: 4000,
+        DUSENZEMIN_SEND_MS: 125,
+        DUSENZEMIN_HEARTBEAT_MS: 2000,
+        DUSENZEMIN_PUBLISH_MS: 500,
+        DUSENZEMIN_STALE_MS: 5000,
         DUEL_GAMES: Registry.ids('duel'),   // geriye uyum: düello oyunları registry'den türer (mini/registry.js)
         GOALS: [5, 10, 15, 20, 25],
         GOAL_AUTO: 0,                // 0 = otomatik: 2-3 kişide 15, 4-8 kişide 10

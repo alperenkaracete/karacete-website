@@ -61,9 +61,13 @@ games/parti/maps/*.js    harita verisi (pirate.js, space.js) - düğümler + dek
 games/parti/rules.js     oyun kuralları: tur akışı, silahlar, ölüm, takım, ödüller, bot (saf, deterministik)
 games/parti/minigame.js  startMinigame sözleşmesi + yedek "Şans Çarkı"
 games/parti/mini/registry.js      minioyun kaydı: { id, name, icon, kind: ffa|duel|grup, min, max, weight }; seçim, config ve arayüz buradan okur
+games/parti/mini/ffa-drivers.js    ffa oyun sürücüleri (machine.js oyuna özel kuralı bilmez): rep şeması, rapor denetimi, bitiş, sıralama, izleyici satırı
 games/parti/mini/kurbaga-rules.js   Kurbağa saf kurallar: tohumlu araçlar f(t), çarpışma, makullük denetimi, bot ilerleme, sıralama
 games/parti/mini/kurbaga-session.js Kurbağa oyuncu oturumu (DOM'suz): sıçrama sınırı, çarpışma, ağ raporu birleştirme, kalp atışı
 games/parti/mini/kurbaga-ui.js      Kurbağa arayüzü: kanvas, 4 ok düğmesi, klavye, akran yumuşatması
+games/parti/mini/dusenzemin-rules.js   Düşen Zemin saf kurallar: takvim, fizik, it, makullük/out/staleOut, botlar, sıralama
+games/parti/mini/dusenzemin-session.js Düşen Zemin oyuncu oturumu (DOM'suz): sabit adım fizik, rapor birleştirme, it, out, resume
+games/parti/mini/dusenzemin-ui.js      Düşen Zemin arayüzü: üstten kanvas, analog joystick + Zıpla/İt, klavye, çoklu dokunma
 games/parti/mini/duel-adapter.js  XOX/Dörtlü Bağla'yı iki oyunculu sahte ctx ile Parti düellosu olarak çalıştırır
 games/parti/mini/duel-referee.js  düello mesajlarını kurallarla yeniden oynayıp sonucu bulur (saf)
 games/parti/mini/duel-watch.js    oynamayanlar için kompakt canlı tahta anlık görüntüsü + salt-okunur çizici (saf çekirdek)
@@ -321,12 +325,12 @@ Seçim `games/parti/mini/registry.js` kaydından yapılır (`rules.minigameSpec`
   `minigameSpec` saf kalır, `lm` yazmaz; çark yedeği `lm`'yi değiştirmez).
 - **Şans Çarkı yalnız acil yedektir:** uygun oyun yok (`game: null`), Kurbağa'da hiç rapor gelmedi ya da oyun kurulamadı.
 
-| Odadaki durum | xox | connect4 | catdog | kurbaga |
-|---|---|---|---|---|
-| 2+ insan (bot olsun olmasın) | %25 | %25 | %25 | %25 |
-| 1 insan + botlar | - | - | - | %100 |
+| Odadaki durum | xox | connect4 | catdog | kurbaga | dusenzemin |
+|---|---|---|---|---|---|
+| 2+ insan (bot olsun olmasın) | %20 | %20 | %20 | %20 | %20 |
+| 1 insan + botlar | - | - | - | %50 | %50 |
 
-(Oranlar `tests/parti-mini-registry.test.js` içinde 8000 çekilişlik süpürmeyle doğrulanır; "bir önceki hariç" kuralı uzun vadede oranı
+(Oranlar `tests/parti-mini-registry.test.js` içinde 10000 çekilişlik süpürmeyle doğrulanır; "bir önceki hariç" kuralı uzun vadede oranı
 değiştirmez, yalnız üst üste tekrarı önler. Havuz ≤ 2 ise hariç tutma yoktur.)
 
 **Test bayrağı `?mini=<oyun-id>`** (`xox` | `connect4` | `catdog` | `kurbaga`): havuzu o oyuna indirir. `?mini=duel` rastgele düello,
@@ -360,13 +364,42 @@ düğmesi; klavye: oklar / WASD. Çarpınca başlangıç satırına dönülür (
   istemciler kalp atışıyla son durumu yeniden gönderir. Yeniden bağlanan (yeni sayfa) raporlanan satırdan devam eder.
 - **İzleyici / sonradan katılan / oynamayan:** liderin yayınından (≤ 500 ms'de bir; varışta hemen) ilerleme çubukları; botlar tohumdan.
 
+### Düşen Zemin (ffa)
+
+8 kişiye kadar **aynı anda**; son ayakta kalan kazanır. Arena 8×8 kare (kare 64 birim, oyuncu yarıçapı 14); herkes orta halkada başlar (koltuk sırası, tohumlu kaydırma).
+
+- **Takvim (tohumdan saf f, ağda yok):** tur sayısı hedef süreden türetilir (≈ 34 tur): son yıkılış ≈ **85 sn**'de **tek güvenli kareye** iner (son turlarda 2×2 → 1),
+  sonra o kare kalıcıdır; toplam süre 120 sn (`DUSENZEMIN_MS`), dolunca hayatta kalanlar eşit 1. Tur: uyarı `W_k` (2,4 → 1,1 sn) + yıkılma + 0,7 sn ara.
+  Uyarıda **güvenli kareler yanıp söner**, yanmayanlar yıkılır ve kalıcıdır (`UYARI_MODU = 'guvenli-yanar'`, ters çevirmek tek satır). Güvenli kümeler 45 kareden (%70) tek kareye,
+  azalmayan **alt küme zinciri** ve hep **bitişik** (izole kare yok); oyuncu tabanı `floor(n/2)+1` zamanın %75'ine dek korunur, son %25'te 1'e düşer.
+  Başlangıç halkası ilk güvenli kümededir; durağan duran oyuncu ilk 15 sn dolmadan düşer (testle sabit).
+- **Fizik:** sabit adım 1/60 sn, ivme + sürtünme, azami hız 240; **ZIPLA** 0,55 sn havada, 1,4 sn bekleme (havadayken zemin yıkılsa da düşülmez, iniş karesine bakılır);
+  **İT** ≈ 40 birim menzil, ±60° koni, 1,2 sn bekleme, hedefe 560'lık hız darbesi (sürtünmeyle söner); gövde temasında hafif karşılıklı itme.
+  **Düşme:** yerdeyken alt kare yıkıldıktan 120 ms sonra elenir; kenardan dışarı da düşer. Elenen **hayalet izleyici** olur (arenayı görür, hareket edemez).
+- **Kontroller:** mobil — sol altta analog joystick (ölü bölge + histerezis) + sağ altta 🦘 Zıpla / 👊 İt; her biri kendi `pointerId`'siyle izlenir (joystick ve düğme AYNI ANDA),
+  `touch-action: none`. Masaüstü — WASD/oklar + Boşluk (zıpla) + E/Shift (it); zıpla/it kenar tetiklidir (basılı tutma gerekmez, `event.repeat` yok sayılır).
+- **Ağ (`pt_mg`, mg `f:<tohum>:dusenzemin`):** her istemci KENDİ oyuncusunun fiziğini koşturur. `{k:'pos', n, x, y, z, vx, vy, a}` ≤ ~8 Hz birleştirilmiş (zıplama/it anında hemen,
+  2 sn kalp atışı); `{k:'push', to, dx, dy, n}` yalnız `to` (kurban) kendi üzerine uygular (menzil/bekleme kurbanın yerelinde denetlenir); `{k:'out', t, n}` elenme, kurban
+  kendi bildirir; kaybolursa diye `DUSENZEMIN_HEARTBEAT_MS` aralığında **tekrarlanır** (lider ilkini kabul eder, tekrarları yok sayar; yenilemeden gelen hayalet hiç göndermez). Herkes pos/out'u GÖRÜNTÜ için dinler (≈ 120 ms yumuşatma); güven ve sonuç yalnız liderde. `n` oyun saatinden başlar (yenileme çözümü, Kurbağa gibi).
+- **Lider denetimi:** konum arena sınırı içinde, hız üst sınırı, zaman bütçeli adım (⌊dt/150⌋+1); `out.t` ancak son bilinen karenin yıkılışından sonra (pencere: yıkılış … + 120 ms düşme + 550 ms havada kalma + saat payı)
+  ya da **kenar düşmesi** için son konum kenara (hız payı kadar) yakınsa kabul edilir; saçma olan yok sayılır. **Sıralama:** geç elenen iyi; aynı yıkılış turunda düşenler **eşit derece**
+  (anahtar yıkılış anı); kenardan itilerek düşenler kendi ms'siyle sıralanır; süre sonunda hayatta olanlar eşit 1.
+- **Donan/kopan telefon:** `DUSENZEMIN_STALE_MS` = 5 sn rapor gelmeyen oyuncu, **yalnız son bilinen karenin yıkılış anı geçmişse** elenmiş sayılır (anahtar = yıkılış anı); güvenli kareye basan
+  sessiz oyuncu elenmez. Kopan insan `finishMini`'de zaten sona yazılır. Arka plana atılan sekme dönüşte ≤ 2 sn ileri sarar (sabit adım yakalama).
+- **Erken bitiş:** bağlı hayatta insan kalmadı ya da hayatta (insan + bot) ≤ 1. **Botlar:** `botFall(tohum, id)` elenme anı (ham 14-109 sn, çoğu 70 sn'den önce, yıkılış anına oturur,
+  son yıkılışı geçmez; ortalama ≈ 50 sn), `botPosition` güvenli karede gezinti (hayalet); botlar hiç itilmez/itmez, sıralamaya girer. Dağılım testle sabit.
+- **Yenileme / lider devri:** `resume = {x,y,z,vx,vy,out}`; elenmiş oyuncu **elenmiş kalır** (hayalet, tekrar oynamaz, ikinci out raporu YOK); hayattaki oyuncu son raporlanan konumdan devam eder.
+  `ff.rep` pt_state'te taşınır (7 tamsayı/oyuncu; 8 oyuncuda ≤ 20 KB); lider devrinde sessizlik sayacı yeni liderde sıfırdan başlar (haksız eleme olmasın).
+- **ffa sürücü arayüzü:** `mini/ffa-drivers.js` — `machine.js` oyuna özel kuralı bilmez; her ffa oyunu `newRep/packRep/unpackRep/accept/watch/allDone/rank/resume/onTakeover/summaryRow` sağlar.
+  Kurbağa bu arayüze taşındı (davranış aynı, testler değişmedi).
+
 **Yeni minioyun eklemek:**
 
 1. `games/parti/mini/registry.js`'e satır ekle: `{ id, name, icon, kind: 'duel' | 'ffa', min, max, weight: 1 }`. Seçim, `Config.DUEL_GAMES` ve oranlar
    otomatik güncellenir; `tests/parti-mini-registry.test.js` dağılımını (≈ %100/oyun sayısı) ve şemayı doğrular.
 2. **Düello** ise aşağıdaki "Yeni düello minioyunu eklemek" adımlarını izle. **ffa** ise: saf kural + oturum modülü yaz (`kurbaga-*` örnek), `minigame.js`
-   içindeki `FFA` tablosuna oturumu ekle, `machine.js`'te rapor denetimini oyuna özel yap (şimdi Kurbağa'ya göre), `ui.js`'te `FFA_TITLES` ve
-   izleyici kartını ekle.
+   içindeki `FFA` tablosuna oturumu ekle ve `mini/ffa-drivers.js`'e sürücü ekle (rep şeması, `accept`, `allDone`, `rank`, `summaryRow` ...); `machine.js`
+   ve `ui.js` değişmez (başlık registry'den, izleyici satırı sürücüden).
 3. Bayrakla (`?mini=<id>`) uçtan uca dene; 3 sekmeyle (iki oyuncu + izleyici) deneme.
 
 **Yeni düello minioyunu eklemek** (iki kişilik, sıra tabanlı oyun `core/duel.js` ile yazılmış olmalı; çoklu düelloda otomatik çalışır, ek adım yok):
@@ -505,7 +538,10 @@ tarafta da doğrulanır (tur numarası, sıra, kurallara uygunluk); geçersizler
 - Parti: minioyunlar XOX, Dörtlü Bağla, Kedi - Köpek (düello) ve Kurbağa (ffa); düello sırasında
   lider devrinde ya da oyuncunun sayfası yenilenince düello baştan başlar (Kurbağa'da ilerleme korunur).
   **Eski önbellekli JS ile açılan sekme yeni `pt_state`'i (`mn.ff`, `lm`) anlamaz: sert yenile** (Ctrl+F5 / sayfayı yeniden yükle), aksi halde Kurbağa turunda
-  o sekme takılı görünür. Kurbağa ağ yükü (8 oyuncu ≈ 4 mesaj/sn/oyuncu, herkese yayın) gerçek odada ölçülmedi. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
+  o sekme takılı görünür. Kurbağa ağ yükü (8 oyuncu ≈ 4 mesaj/sn/oyuncu, herkese yayın) gerçek odada ölçülmedi.
+  **Düşen Zemin:** ağ yükü (8 oyuncu × ~8 mesaj/sn, tüm istemcilere; üst sınır ≤ 10 Hz, `DUSENZEMIN_SEND_MS`) ve backend sınırı ölçülmedi; **itme gecikmesi ≈ ağ gecikmesi**
+  (kurban kendi üzerine uyguladığı için itici darbeyi hemen görmez); itme kurban yetkili olduğundan hile için açık bir kapıdır (menzil/bekleme kurbanın bildiği akran konumuyla denetlenir ama
+  kesin değildir); yıkılış anları istemciler arası birkaç yüz ms kayabilir (out denetiminde pay var); fizik hissi ve joystick gerçek telefonda doğrulanmadı. Tam oyunu tek sayfada iki örnek olarak çalıştırmak mümkün değildir
   (oyun dosyaları modül düzeyinde tek örnek tutar): iki oyuncu için iki ayrı sekme gerekir. Sürerken gelen yeni oyuncu yalnızca izleyici
   olur; kopmuş oyuncunun koltuğu 3 dk sonra düşer.
 - Bomberman mobil joystick: tek hareket döngüsü (50 ms) ve `bomberman-joystick.js` denetleyicisi: adımlar arası **en az 150 ms** (yön değişimi, ölü bölgeye

@@ -54,6 +54,11 @@ function room(seed, extra) {
             },
             send: (msg) => {
                 if (!node.online) return;
+                // test: ilk extra.dropOuts adet out raporu (pt_mg k:'out') ağda kaybolur (oyuncu başına)
+                if (extra && extra.dropOuts && msg.type === 'pt_mg' && msg.m && msg.m.k === 'out') {
+                    node.dropped = (node.dropped || 0) + 1;
+                    if (node.dropped <= extra.dropOuts) return;
+                }
                 const copy = JSON.parse(JSON.stringify(msg));
                 api.sent.push({ from: node.id, msg: copy });
                 Object.values(nodes).forEach((o) => { if (o.id !== node.id && o.online) queue.push({ to: o.id, msg: copy }); });
@@ -214,7 +219,7 @@ const rewardsFromFx = (r, id) => {
 async function reachFfa(opts) {
     opts = opts || {};
     const humans = opts.humans || 3;
-    const r = room(opts.seed || 5, Object.assign({ forceMini: { game: 'kurbaga' } }, opts.extra || {}));
+    const r = room(opts.seed || 5, Object.assign({ forceMini: { game: opts.game || 'kurbaga' } }, opts.extra || {}));
     for (let i = 0; i < humans; i++) r.join(IDS[i], NAMES[i]);
     for (let i = 0; i < (opts.bots || 0); i++) r.m('A').dispatch({ type: 'bot_add' });
     r.flush();

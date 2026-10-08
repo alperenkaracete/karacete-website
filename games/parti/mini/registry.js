@@ -13,7 +13,8 @@
         { id: 'xox',      name: 'XOX',          icon: '❌', kind: 'duel', min: 2, max: 2, weight: 1 },
         { id: 'connect4', name: 'Dörtlü Bağla', icon: '🔴', kind: 'duel', min: 2, max: 2, weight: 1 },
         { id: 'catdog',   name: 'Kedi - Köpek', icon: '🐱', kind: 'duel', min: 2, max: 2, weight: 1 },
-        { id: 'kurbaga',  name: 'Kurbağa',      icon: '🐸', kind: 'ffa',  min: 1, max: 8, weight: 1 }
+        { id: 'kurbaga',  name: 'Kurbağa',      icon: '🐸', kind: 'ffa',  min: 1, max: 8, weight: 1 },
+        { id: 'dusenzemin', name: 'Düşen Zemin', icon: '🕳️', kind: 'ffa',  min: 1, max: 8, weight: 1 }
     ];
     var KINDS = ['ffa', 'duel', 'grup'];
 
