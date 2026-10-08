@@ -26,8 +26,8 @@
 // Ödüller (config REWARDS) dereceye göredir: [[a,b]] -> ikisi de 1.; [[w],[l]] -> 1. ve 2. DÜELLODA OLMAYAN oyuncular ranking'de
 // yer almaz; ödül yerine teselli (+25 can, config MINI_CONSOLATION) alır (ffa'da herkes sıralanır). Kopan insanlar finishMini'de sona yazılır.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./mini/duel-adapter.js'), { kurbaga: require('./mini/kurbaga-session.js') });
-    else root.PartiMinigame = factory(root.PartiDuelAdapter, { kurbaga: root.PartiKurbagaSession });
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./mini/duel-adapter.js'), { kurbaga: require('./mini/kurbaga-session.js'), dusenzemin: require('./mini/dusenzemin-session.js') });
+    else root.PartiMinigame = factory(root.PartiDuelAdapter, { kurbaga: root.PartiKurbagaSession, dusenzemin: root.PartiDusenZeminSession });
 })(typeof self !== 'undefined' ? self : this, function (Adapter, FFA) {
     'use strict';
 

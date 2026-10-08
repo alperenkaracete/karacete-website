@@ -396,14 +396,16 @@
         return Math.min(x, y, SIZE - x, SIZE - y);
     }
 
-    // Oyuncu elendiğini bildirdi (out.t oyun saatinden ms). last = son kabul edilen { x, y, at (oyun ms) }.
+    // Oyuncu elendiğini bildirdi (out.t oyun saatinden ms). last = son kabul edilen { x, y, vx?, vy?, at (oyun ms) }.
     // Kare yıkımı: collapseAt ≤ t ≤ collapseAt + OUT_WINDOW (yakın karelerden biri); anahtar = yıkılış anı (aynı turda düşenler eşit derece).
     // Kenar düşmesi: son konum kenara ≤ mesafe + hız payı içinde; anahtar = oyuncunun bildirdiği t.
     // -> { ok, kind: 'tile' | 'edge', key }
     function outCheck(sched, last, tOut) {
         if (!isInt(tOut, 0, 1e7)) return { ok: false };
         var dt = Math.max(0, tOut - (last.at || 0));
-        var reach = (MAXV * Math.min(dt, 1000)) / 1000 + PUSH_IMPULSE / 4 + R + 6;           // belirsizlik: raporsuz geçen sürede yürüyüş + itme payı
+        // belirsizlik: hareket eden oyuncu ≤125 ms'de bir raporlar (durana dek kalp atışı) -> bir gönderim aralığı kadar en yüksek hız + son hızla ölü hesap
+        var lastSpeed = Math.sqrt((last.vx || 0) * (last.vx || 0) + (last.vy || 0) * (last.vy || 0));
+        var reach = 0.125 * MAXV_ABS + lastSpeed * Math.min(dt, 1000) / 1000 + R + 6;
         var cand = nearbyTiles(last.x, last.y, reach);
         var bestC = -1;
         cand.forEach(function (tile) {

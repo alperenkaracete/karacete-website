@@ -402,7 +402,7 @@
                 var rep = {};
                 spec.players.forEach(function (id) {
                     var st = seatOf(id);
-                    if (st && !st.b) rep[id] = fd.newRep(id, { stAt: fStAt });
+                    if (st && !st.b) rep[id] = fd.newRep(id, { stAt: fStAt, seed: spec.seed, players: spec.players });
                 });
                 token.gm = spec.game;
                 token.pl = spec.players.slice();
@@ -783,7 +783,7 @@
                 });
             } else if (M.mn && M.mn.ff && !M.mn.applyAt) {
                 // ffa: rapor durumu pt_state ile geldi; istemciler son durumu kalp atışıyla yeniden gönderir
-                if (Drivers[M.mn.gm]) Drivers[M.mn.gm].onTakeover(M.mn.ff);
+                if (Drivers[M.mn.gm]) Drivers[M.mn.gm].onTakeover(M.mn.ff, now());
             } else if (M.mn && !M.mn.applyAt) {
                 // eski liderin minioyun sözü kayboldu: yer tutucu sonucu tohumdan yeniden üretilir
                 if (!M.mn.rk.length) M.mn.rk = normalizeRanking(Mini.wheelRanking({ players: M.mn.pl, seed: M.mn.sd }), M.mn.pl);
@@ -1114,7 +1114,7 @@
             var seat = seatOf(from);
             if (!drv || !ff.rep[from] || !seat || seat.b) return;
             var t = now();
-            var res = drv.accept(ff, from, m, t);
+            var res = drv.accept(ff, from, m, t, { seed: mn.sd, n: mn.pl.length });
             if (!res.ok) return;
             if (res.final) { ff.pubAt = t; ff.dirty = false; publish(); }
             else if (res.changed) ff.dirty = true;
@@ -1129,8 +1129,11 @@
             if (!drv) return;
             if (ff.dirty && t - (ff.pubAt || 0) >= drv.publishMs) { ff.dirty = false; ff.pubAt = t; publish(); }
             if (t < ff.stAt) return;
+            // donan/kopan oyuncu denetimi (sürücüye özel): değiştiyse hemen yayınla
+            if (drv.watch && drv.watch(ff, t, { seed: mn.sd, n: mn.pl.length })) { ff.pubAt = t; ff.dirty = false; publish(); }
             var live = mn.pl.filter(function (id) { var st = seatOf(id); return !!st && !st.b && st.c && ff.rep[id]; });
-            if (!drv.allDone(ff, live, t) && t < ff.endAt) return;
+            var botIds = mn.pl.filter(function (id) { return !ff.rep[id]; });
+            if (!drv.allDone(ff, live, t, { seed: mn.sd, players: mn.pl, bots: botIds }) && t < ff.endAt) return;
             var endMs = Math.max(0, Math.min(t, ff.endAt) - ff.stAt);
             var ranking = drv.rank({ players: mn.pl, bots: mn.pl.filter(function (id) { return !ff.rep[id]; }), seed: mn.sd, ff: ff, endMs: endMs });
             if (!ranking) ranking = Mini.wheelRanking({ players: mn.pl, seed: mn.sd });          // hiç rapor yok: acil yedek çark
@@ -1230,7 +1233,7 @@
                 var sdrv = Drivers[m.gm];
                 ffv = {
                     started: el >= 0, countdown: Math.max(0, -el), elapsed: Math.max(0, el), left: Math.max(0, m.ff.endAt - t),
-                    rows: m.pl.map(function (id) { return sdrv.summaryRow(m.ff, id, t, { seed: m.sd }); })
+                    rows: m.pl.map(function (id) { return sdrv.summaryRow(m.ff, id, t, { seed: m.sd, players: m.pl }); })
                 };
             }
             return { type: m.ty, ff: ffv, game: m.gm || null, players: m.pl, seed: m.sd, ranking: hidden ? [] : m.rk, medals: hidden ? null : medalsOf(m), pairs: pairs, extra: m.ex || null, myPair: mine,
