@@ -207,14 +207,20 @@
             // geri sayım / bitiş yazıları
             var label = st.f >= 0 ? '🏁 Vardın! ' + fmtSecs(st.f) : countdownLabel(e);
             if (label) {
+                var endAt0 = spec.getEndAt ? spec.getEndAt() : 0;
+                var sub = st.f >= 0 ? 'Diğerleri bekleniyor' + (endAt0 ? ' · kalan ' + Math.max(0, Math.ceil((endAt0 - t) / 1000)) + ' sn' : '') : '';
                 c2d.save();
                 c2d.fillStyle = 'rgba(0,0,0,0.45)';
-                c2d.fillRect(0, H / 2 - 36, W, 72);
+                c2d.fillRect(0, H / 2 - 36, W, sub ? 96 : 72);
                 c2d.fillStyle = '#fff';
                 c2d.font = 'bold 34px sans-serif';
                 c2d.textAlign = 'center';
                 c2d.textBaseline = 'middle';
                 c2d.fillText(label, W / 2, H / 2);
+                if (sub) {
+                    c2d.font = 'bold 16px sans-serif';
+                    c2d.fillText(sub, W / 2, H / 2 + 36);
+                }
                 c2d.restore();
             }
         }
@@ -228,6 +234,8 @@
             lastT = t;
             paint(tt, dt);
             var st = api.state();
+            var locked = st.f >= 0;
+            buttons.forEach(function (x) { if (x.b.disabled !== locked) x.b.disabled = locked; });       // vardıktan sonra düğmeler pasif
             var endAt = spec.getEndAt ? spec.getEndAt() : 0;
             hudTime.textContent = api.elapsed() < 0 || !endAt ? '' : '⏱ ' + Math.max(0, Math.ceil((endAt - tt) / 1000)) + ' sn';
             hudInfo.textContent = '💥 ' + st.d + ' · satır ' + st.r + '/' + K.GOAL_ROW;

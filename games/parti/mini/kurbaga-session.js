@@ -32,11 +32,19 @@
             if (isInt(spec.resume.d, 0, 100000)) s.d = spec.resume.d;
             if (isInt(spec.resume.f, 0, 1e7)) s.f = spec.resume.f;
         }
-        var n = 0;
+        // Sıra no oyun saatinden başlar: yenilenen sayfanın yeni oturumu, liderin önceki oturumdan kaydettiği n'nin altında kalıp
+        // raporları yok saydırmasın (önceki oturum ≤ geçen_ms/250 mesaj gönderdi).
+        var n = Math.max(0, Math.round(now() - startAt));
         var lastHop = -1e9;
         var lastSend = -1e9;
         var dirty = true;           // ilk tick'te ilk rapor hemen gider
         var immediate = true;
+        if (s.f >= 0) {
+            // Vardı durumunda açılır (yenileme): lider kaydı zaten var, varış raporu yeniden GÖNDERİLMEZ; kalp atışı durumu taşır
+            dirty = false;
+            immediate = false;
+            lastSend = now();
+        }
         var deathAt = -1e9;
         var peers = {};
         var done = false;

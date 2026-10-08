@@ -6,11 +6,12 @@ const C = require('../games/parti/config.js');
 const K = require('../games/parti/mini/kurbaga-rules.js');
 const { reachFfa, rewardsFromFx, IDS } = require('./duel-room.js');
 
-const mn = (r, id) => r.state(id || 'A').mn;
+const mn = (r, id) => r.state(id || leaderOf(r)).mn;
 const key = (r) => 'f:' + mn(r).sd + ':' + mn(r).gm;
 let seq = 1000000;
 // Lider denetimli rapor girişi (n büyük: oturumların kendi kalp atışları sonradan gelip ezmez)
-function report(r, from, o) { r.m('A')._ffaReport(from, Object.assign({ k: 'pos', c: 4, d: 0, n: ++seq }, o)); }
+const leaderOf = (r) => IDS.find((id) => r.nodes[id] && r.nodes[id].online && r.view(id).isLeader) || 'A';
+function report(r, from, o) { r.m(leaderOf(r))._ffaReport(from, Object.assign({ k: 'pos', c: 4, d: 0, n: ++seq }, o)); }
 function toElapsed(r, ms) { const target = mn(r).ff.stAt + ms; if (target > r.now()) r.advance(target - r.now(), 250); }
 // Gerçekçi tırmanış: her satır ayrı rapor, aralarında sıçrama süresi (lider makullük denetimi 1 hücre / ~150 ms bütçesi verir)
 function climb(r, id, toRow) {
@@ -291,4 +292,110 @@ test('doğrulama: bozuk ff yükü reddedilir; ffa jetonu 2 oyunculu eski düello
     legacy.mn.pl = ['A', 'B'];
     r.inject('C', legacy);
     assert.equal(r.state('C').mn.pm.length, 0, 'düello çifti uydurulmadı');
+});
+
+// ---- Sayfa yenileme: varış / ilerleme korunur ----
+const { NAMES } = require('./duel-room.js');
+function refresh(r, id) {
+    r.leave(id);
+    r.advance(300, 100);
+    r.join(id, NAMES[IDS.indexOf(id)]);
+    r.advance(1200, 100);
+}
+const sessState = (r, id) => r.m(id)._session().state();
+const lastFrom = (r, id, from) => r.sent.filter((s) => s.from === id && s.msg.type === 'pt_mg').slice(from || 0);
+
+test('varıp yenileyen oyuncu hedefte açılır: hareket kilitli, varış raporu yeniden gönderilmez, sıralama değişmez', async () => {
+    const r = await reachFfa({ humans: 3 });
+    toElapsed(r, 30000);
+    finish(r, 'B', 25000);
+    r.advance(600, 100);
+    const before = r.sent.length;
+    refresh(r, 'B');
+    const st = sessState(r, 'B');
+    assert.deepEqual({ r: st.r, f: st.f, d: st.d }, { r: 9, f: 25000, d: 0 }, 'hedefte, varış süresi korundu');
+    assert.equal(r.m('B')._session().hop('left', r.now()), false, 'hareket kilitli');
+    assert.equal(r.m('B')._session().hop('down', r.now()), false);
+    // yeni oturum yenilemeden sonra bir varış raporu (ilk anlık rapor) göndermedi
+    assert.equal(r.sent.slice(before).filter((s) => s.from === 'B' && s.msg.type === 'pt_mg').length, 0, 'yenilemeden sonra ilk saniyelerde rapor yok');
+    r.advance(1000, 100);
+    const beat = r.sent.slice(before).filter((s) => s.from === 'B' && s.msg.type === 'pt_mg');
+    assert.equal(beat.length, 1, '2 sn sonra yalnız kalp atışı');
+    assert.equal(beat[0].msg.m.e, 25000, 'kalp atışı vardı durumunu taşır');
+    assert.equal(r.state('A').mn.ff.rep.B.f, 25000, 'lider kaydı değişmedi');
+    finish(r, 'A', 26000);
+    finish(r, 'C', 27000);
+    r.advance(500, 250);
+    assert.deepEqual(ranking(r), [['B'], ['A'], ['C']], 'sıralama yenilemeden etkilenmedi');
+});
+
+test('ortada yenileme eskisi gibi: raporlanan satır/sütundan devam, yeni oturum raporları lider tarafından kabul edilir', async () => {
+    const r = await reachFfa({ humans: 3 });
+    toElapsed(r, 10000);
+    const s0 = r.m('B')._session();
+    r.advance(400, 100);
+    s0.hop('left', r.now());
+    s0.hop('left', r.now() + 200);
+    r.advance(5000, 250);                                     // kalp atışları: liderde n yükseldi
+    const rep0 = Object.assign({}, r.state('A').mn.ff.rep.B);
+    assert.ok(rep0.c <= 3);
+    refresh(r, 'B');
+    const st = sessState(r, 'B');
+    assert.equal(st.c, rep0.c, 'sütun korundu');
+    assert.equal(st.r, rep0.r);
+    assert.equal(st.f, -1, 'varmadı');
+    r.advance(500, 100);
+    assert.equal(r.m('B')._session().hop('left', r.now()), true, 'hareket edebilir');
+    r.advance(1500, 250);
+    assert.equal(r.state('A').mn.ff.rep.B.c, Math.max(0, rep0.c - 1), 'yeni oturumun raporu lider tarafından kabul edildi (n çakışması yok)');
+});
+
+test('lider yenilemesi: varış bilgisi (rep.f) yeni lidere taşınır, sıralama ve son çağrı bozulmaz', async () => {
+    const r = await reachFfa({ humans: 3 });
+    toElapsed(r, 30000);
+    finish(r, 'B', 25000);
+    r.advance(600, 100);
+    const end1 = r.state('A').mn.ff.endAt;
+    refresh(r, 'A');                                          // lider sayfayı yeniledi
+    const L = ['B', 'C', 'A'].find((id) => r.view(id).isLeader);
+    assert.ok(L && L !== 'A', 'başka biri lider oldu');
+    assert.equal(r.state(L).mn.ff.rep.B.f, 25000, 'rep.f korundu');
+    assert.ok(Math.abs(r.state(L).mn.ff.endAt - end1) <= 400, 'son çağrı sayacı sıfırlanmadı/uzamadı (yayın gecikmesi payı)');
+    // A'nın yeni oturumu da kayıtlı (vardıysa) durumunu geri alır
+    finish(r, 'A', 26000);
+    finish(r, 'C', 27000);
+    r.advance(500, 250);
+    assert.deepEqual(ranking(r), [['B'], ['A'], ['C']]);
+});
+
+test('son çağrı: varan yenilese de 20 sn sayacı sıfırlanmaz ve uzamaz; tüm insanlar varınca erken biter', async () => {
+    const r = await reachFfa({ humans: 3 });
+    toElapsed(r, 30000);
+    const t0 = finish(r, 'A', 28000);
+    const end1 = r.state('A').mn.ff.endAt;
+    assert.equal(end1, t0 + C.KURBAGA_LAST_CALL_MS);
+    r.advance(5000, 250);
+    refresh(r, 'A');
+    const near = (id) => Math.abs(r.state(id).mn.ff.endAt - end1) <= 400;
+    assert.ok(near(['A', 'B', 'C'].find((id) => r.view(id).isLeader)), 'yenileme sayacı değiştirmedi');
+    finish(r, 'B', 29000);
+    assert.ok(near(['A', 'B', 'C'].find((id) => r.view(id).isLeader)), 'ikinci varış uzatmadı');
+    const L = ['A', 'B', 'C'].find((id) => r.view(id).isLeader);
+    assert.equal(r.state(L).mn.applyAt, 0, 'C varmadı');
+    const lead = r.m(L);
+    for (let row = 1; row <= 8; row++) { lead._ffaReport('C', { k: 'pos', r: row, c: 4, d: 0, n: ++seq }); r.advance(160, 160); }
+    lead._ffaReport('C', { k: 'pos', r: 9, c: 4, d: 0, n: ++seq, e: r.now() - r.state(L).mn.ff.stAt - 10 });
+    r.advance(500, 250);
+    assert.ok(r.state(L).mn.applyAt > 0, 'yenileyen A dahil tüm insanlar vardı: erken bitti');
+    assert.ok(r.state(L).mn.ff.endAt - r.now() > 5000);
+});
+
+test('tek insan + bot: varıp yenileyince oyun erken bitişi bozulmaz', async () => {
+    const r = await reachFfa({ humans: 1, bots: 2 });
+    toElapsed(r, 30000);
+    finish(r, 'A', 25000);
+    // A lider ve tek insan: varınca erken biter; yenilemeden önce sonuç kaydedilmiş olmalı
+    untilRanked(r, 20);
+    assert.ok(r.view('A').mini.ranking.length > 0);
+    assert.equal(r.view('A').mini.ranking.flat().length, 3);
 });
