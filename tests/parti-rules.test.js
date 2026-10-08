@@ -349,7 +349,7 @@ test('kazanma: bireyselde hedef yıldıza ulaşan anında kazanır', () => {
 });
 
 test('kazanma: takımda toplam yıldız hedefe ulaşınca takım kazanır (kayıplar havuzdan düşer)', () => {
-    const s = game(4, { mode: 'team', goal: 6 });
+    const s = game(4, { mode: 'team', goal: 3 });          // kişi başı 3 → takım hedefi 6 (rules.effectiveGoal)
     s.P.p0.s = 3; s.P.p1.s = 2;
     const a = pirate.nodes.find((n) => n.next.length === 1 && g.byId[n.next[0]].next.length === 1);
     s.P.p1.pos = a.id;
@@ -813,11 +813,11 @@ test('Son Çılgınlık: 4 kala tetiklenmez; hedefe ulaşmış/geçmiş oyuncu i
 });
 
 test('Son Çılgınlık: takım modunda takımın toplamı hedefe ≤3 kalınca tetiklenir', () => {
-    const s = miniState(4, { mode: 'team', goal: 10 });
+    const s = miniState(4, { mode: 'team', goal: 5 });     // kişi başı 5 → takım hedefi 10
     s.P.p0.s = 4; s.P.p1.s = 3;                      // takım 0: 7 → 3 kala
     const r = R.applyMinigame(s, { ranking: [['p2'], ['p3']] }, ctx());
     assert.equal(r.state.fr, 1);
-    const t = miniState(4, { mode: 'team', goal: 10 });
+    const t = miniState(4, { mode: 'team', goal: 5 });
     t.P.p0.s = 6;                                    // tek oyuncu 6 ama takım 6 → 4 kala
     assert.equal(R.applyMinigame(t, { ranking: [['p2'], ['p3']] }, ctx()).state.fr, 0);
 });
